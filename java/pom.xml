@@ -5,8 +5,9 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>io.github.cyfko</groupId>
-    <artifactId>dverify</artifactId>
+    <artifactId>veridok</artifactId>
     <version>4.1.0</version>
+    <packaging>pom</packaging>
 
     <name>Distributed Tokens Verification</name>
     <description>A lightweight library that simplifies token verification in microservices architectures where any
@@ -29,6 +30,11 @@
             <organizationUrl>https://www.kunrin.com</organizationUrl>
         </developer>
     </developers>
+    <modules>
+        <module>veridok-core</module>
+        <module>veridok-kafka</module>
+        <module>veridok-databases</module>
+    </modules>
 
     <scm>
         <connection>scm:git:git://github.com/cyfko/dverify.git</connection>
@@ -38,20 +44,11 @@
 
     <dependencies>
         <dependency>
-            <groupId>org.apache.kafka</groupId>
-            <artifactId>kafka-clients</artifactId>
-            <version>3.9.0</version>
-        </dependency>
-        <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
             <version>2.18.2</version>
         </dependency>
-        <dependency>
-            <groupId>io.jsonwebtoken</groupId>
-            <artifactId>jjwt</artifactId>
-            <version>0.12.6</version>
-        </dependency>
+
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>

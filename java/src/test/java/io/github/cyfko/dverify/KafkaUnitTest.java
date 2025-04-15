@@ -3,7 +3,6 @@ package io.github.cyfko.dverify;
 import io.github.cyfko.dverify.exceptions.DataExtractionException;
 import io.github.cyfko.dverify.exceptions.JsonEncodingException;
 import io.github.cyfko.dverify.impl.GenericSignerVerifier;
-import io.github.cyfko.dverify.impl.kafka.*;
 
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.junit.jupiter.api.*;

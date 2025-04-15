@@ -1,22 +1,22 @@
-package io.github.cyfko.dverify.impl;
+package io.github.cyfko.veridok.core.impl;
+
+
 
 import com.fasterxml.jackson.databind.JsonNode;
-import io.github.cyfko.dverify.Signer;
-import io.github.cyfko.dverify.Verifier;
-import io.github.cyfko.dverify.exceptions.DataExtractionException;
-import io.github.cyfko.dverify.exceptions.JsonEncodingException;
-import io.github.cyfko.dverify.impl.kafka.Constant;
-import io.github.cyfko.dverify.util.JacksonUtil;
-import io.jsonwebtoken.Claims;
-import io.jsonwebtoken.Jwts;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.cyfko.veridok.core.*;
+import io.github.cyfko.veridok.core.Signer;
+import io.github.cyfko.veridok.core.exceptions.DataDeserializationException;
+import io.github.cyfko.veridok.core.exceptions.DataExtractionException;
+import io.github.cyfko.veridok.core.exceptions.DataSerializationException;
 
 import java.security.*;
-import java.security.spec.InvalidKeySpecException;
 import java.security.spec.X509EncodedKeySpec;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.Date;
+import java.util.Map;
 import java.util.concurrent.*;
 
 /**
@@ -33,7 +33,7 @@ import java.util.concurrent.*;
  * <p>
  * The metadata pushed to the broker includes:
  * <code>
- *   [mode]:[base64-encoded public key]:[expiry timestamp in millis]:[optional token (if uuid mode)]
+ *   [mode]:[base64-encoded public key]:[expiry timestamp in seconds]:[optional token (if uuid mode)]
  * </code>
  * </p>
  *
@@ -48,12 +48,14 @@ public class GenericSignerVerifier implements Signer, Verifier {
 
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(GenericSignerVerifier.class);
     private static final KeyFactory keyFactory;
+    private static final ObjectMapper objectMapper = new ObjectMapper();
 
     private final Broker broker;
     private final ScheduledExecutorService scheduler;
+    private final String generatedIdSalt;
+    private final DataTransformer dataTransformer;
     private KeyPair keyPair;
     private long lastExecutionTime = 0;
-    private String generatedIdSalt = "secured-app";
 
     static {
         try {
@@ -71,29 +73,18 @@ public class GenericSignerVerifier implements Signer, Verifier {
      * to rotate keys at fixed intervals.
      * </p>
      *
-     * @param broker the broker used to publish public key metadata to consumers
-     * @param salt salt a static salt used to improve the unpredictability of token IDs
+     * @param broker the broker used to publish public key metadata to consumers. Must not be {@code null}.
+     * @param salt salt a static salt used to improve the unpredictability of token IDs. Must not be {@code null} nor blank.
+     * @param dataTransformer the transformer used to respectively serialize or deserialize the data to sign or verify. Must not be {@code null}.
      */
-    public GenericSignerVerifier(Broker broker, String salt) {
-        this(broker);
+    public GenericSignerVerifier(Broker broker, String salt, DataTransformer dataTransformer) {
+        this.broker = broker;
+        this.generatedIdSalt = salt;
+        this.dataTransformer = dataTransformer;
+
         if (salt == null || salt.isBlank()) {
             throw new IllegalArgumentException("Salt cannot be null or empty");
         }
-        this.generatedIdSalt = salt;
-    }
-
-    /**
-     * Constructs a new {@code GenericSignerVerifier} with the given metadata broker.
-     *
-     * <p>
-     * On creation, a key pair is immediately generated, and a recurring task is scheduled
-     * to rotate keys at fixed intervals.
-     * </p>
-     *
-     * @param broker the broker used to publish public key metadata to consumers
-     */
-    public GenericSignerVerifier(Broker broker) {
-        this.broker = broker;
 
         // Generate initial key pair
         generatedKeysPair();
@@ -108,8 +99,37 @@ public class GenericSignerVerifier implements Signer, Verifier {
         );
     }
 
+    /**
+     * Constructs a new {@code GenericSignerVerifier} with the given metadata broker.
+     *
+     * <p>
+     * Upon creation, a key pair is immediately generated, and a recurring task is scheduled
+     * to rotate keys at fixed intervals.
+     * </p>
+     *
+     * @param broker the broker used to publish public key metadata to consumers
+     * @param salt salt a static salt used to improve the unpredictability of token IDs
+     */
+    public GenericSignerVerifier(Broker broker, String salt) {
+        this(broker, salt, new JacksonDataTransformer(objectMapper));
+    }
+
+    /**
+     * Constructs a new {@code GenericSignerVerifier} with the given metadata broker.
+     *
+     * <p>
+     * On creation, a key pair is immediately generated, and a recurring task is scheduled
+     * to rotate keys at fixed intervals.
+     * </p>
+     *
+     * @param broker the broker used to publish public key metadata to consumers
+     */
+    public GenericSignerVerifier(Broker broker) {
+        this(broker, "secured-app", new JacksonDataTransformer(objectMapper));
+    }
+
     @Override
-    public String sign(Object data, long seconds, TokenMode mode, long trackingId) throws JsonEncodingException {
+    public String sign(Object data, long seconds, TokenMode mode, long trackingId) throws DataSerializationException {
         if (data == null || seconds < 0) {
             throw new IllegalArgumentException("data must not be null and duration must be positive");
         }
@@ -119,7 +139,7 @@ public class GenericSignerVerifier implements Signer, Verifier {
             keyId = generateId(trackingId, generatedIdSalt);
         } catch (Exception e) {
             log.error("Unable to generate a secured unique ID from the tracking identifier {}", trackingId);
-            throw new JsonEncodingException(e.getMessage());
+            throw new IllegalStateException(e.getMessage());
         }
 
         String token;
@@ -129,11 +149,11 @@ public class GenericSignerVerifier implements Signer, Verifier {
             Date expiration = Date.from(now.plus(Duration.ofSeconds(seconds)));
 
             // Serialize the payload and sign the JWT
-            token = Jwts.builder()
+            token = JwtMaker.builder()
                     .subject(keyId)
-                    .claim("data", JacksonUtil.toJson(data))
-                    .issuedAt(issuedAt)
-                    .expiration(expiration)
+                    .claim("data", dataTransformer.serialize(data))
+                    .issuedAt(issuedAt.toInstant())
+                    .expiration(expiration.toInstant())
                     .signWith(keyPair.getPrivate())
                     .compact();
 
@@ -151,18 +171,18 @@ public class GenericSignerVerifier implements Signer, Verifier {
             log.error("Failed to send metadata to broker for keyId {}: {}", keyId, e.getMessage());
             throw new RuntimeException(e);
         } catch (Exception e) {
-            throw new JsonEncodingException("Failed to encode or sign data: " + e.getMessage());
+            throw new RuntimeException("Failed to encode or sign data: " + e.getMessage());
         }
     }
 
     @Override
-    public <T> T verify(String token, Class<T> clazz) throws DataExtractionException {
+    public Object verify(String token) throws DataExtractionException {
         try {
             String keyId = getKeyId(token);
-            Claims claims = getClaims(keyId, token);
-            String json = claims.get("data", String.class);
-            return JacksonUtil.fromJson(json, clazz);
-        } catch (DataExtractionException | IndexOutOfBoundsException e) {
+            Map<String, Object> claims = getClaims(keyId, token);
+            String data = (String) claims.get("data");
+            return dataTransformer.deserialize(data);
+        } catch (DataExtractionException | IndexOutOfBoundsException | DataDeserializationException e) {
             throw e;
         } catch (Exception e) {
             throw new DataExtractionException("Failed to extract or deserialize data from token -> " + e.getMessage());
@@ -183,7 +203,7 @@ public class GenericSignerVerifier implements Signer, Verifier {
         if (token.contains(".")) {
             String payloadBase64 = token.split("\\.")[1];
             String payloadJson = new String(Base64.getDecoder().decode(payloadBase64));
-            JsonNode node = JacksonUtil.fromJson(payloadJson, JsonNode.class);
+            JsonNode node = objectMapper.readValue(payloadJson, JsonNode.class);
             return node.get("sub").asText();
         }
         return token;
@@ -196,7 +216,7 @@ public class GenericSignerVerifier implements Signer, Verifier {
      * @param token the input token (either the JWT or the UUID)
      * @return parsed claims from the appropriate token
      */
-    private Claims getClaims(String keyId, String token) {
+    private Map<String, Object> getClaims(String keyId, String token) {
         String message = broker.get(keyId);
         log.info("Observed token for keyId {} is {}", keyId, message);
 
@@ -206,22 +226,18 @@ public class GenericSignerVerifier implements Signer, Verifier {
             PublicKey publicKey = keyFactory.generatePublic(new X509EncodedKeySpec(publicKeyBytes));
 
             return switch (TokenMode.valueOf(parts[0])) {
-                case jwt -> Jwts.parser()
+                case jwt -> JwtVerifier
                         .verifyWith(publicKey)
-                        .build()
-                        .parseSignedClaims(token)
-                        .getPayload();
+                        .parseSignedClaims(token);
 
-                case id -> Jwts.parser()
+                case id -> JwtVerifier
                         .verifyWith(publicKey)
-                        .build()
-                        .parseSignedClaims(parts[3])
-                        .getPayload();
+                        .parseSignedClaims(parts[3]);
             };
-        } catch (InvalidKeySpecException e) {
-            throw new RuntimeException("Failed to rebuild public key: " + e.getMessage(), e);
         } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException("Unexpected token format or metadata: " + e.getMessage(), e);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to rebuild public key: " + e.getMessage(), e);
         }
     }
 

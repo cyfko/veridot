@@ -1,12 +1,14 @@
-package io.github.cyfko.dverify.impl;
+package io.github.cyfko.veridok.kafka;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import io.github.cyfko.dverify.Signer;
-import io.github.cyfko.dverify.Verifier;
-import io.github.cyfko.dverify.exceptions.DataExtractionException;
-import io.github.cyfko.dverify.exceptions.JsonEncodingException;
-import io.github.cyfko.dverify.impl.kafka.Constant;
-import io.github.cyfko.dverify.util.JacksonUtil;
+import io.github.cyfko.dverify.*;
+import io.github.cyfko.veridok.kafka.Broker;
+import io.github.cyfko.veridok.kafka.Signer;
+import io.github.cyfko.veridok.kafka.TokenMode;
+import io.github.cyfko.veridok.kafka.Verifier;
+import io.github.cyfko.veridok.kafka.exceptions.DataExtractionException;
+import io.github.cyfko.veridok.kafka.exceptions.JsonEncodingException;
+import io.github.cyfko.veridok.kafka.util.JacksonUtil;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 

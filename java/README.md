@@ -60,9 +60,9 @@ The application relies on the following environment variables for configuration:
 - #### Data signature in the form of transparent token (jwt)
 
     ```java
-    import io.github.cyfko.dverify.TokenMode;
-    import io.github.cyfko.dverify.impl.GenericSignerVerifier;
-    import io.github.cyfko.dverify.impl.kafka.KafkaBrokerAdapter;
+    import io.github.cyfko.veridok.core.TokenMode;
+    import impl.io.github.cyfko.veridok.core.GenericSignerVerifier;
+    import kafka.impl.io.github.cyfko.veridok.core.KafkaBrokerAdapter;
     import java.util.Properties;
     
     Properties properties = new Properties();
@@ -75,14 +75,14 @@ The application relies on the following environment variables for configuration:
 
   #### Verifying the token and extracting the data
     ```java
-    import io.github.cyfko.dverify.TokenMode;Verifier verifier = new GenericSignerVerifier(KafkaBrokerAdapter()); // KafkaBrokerAdapter constructed with default properties
+    import io.github.cyfko.veridok.core.TokenMode;Verifier verifier = new GenericSignerVerifier(KafkaBrokerAdapter()); // KafkaBrokerAdapter constructed with default properties
     UserData userData = verifier.verify(jwt, UserData.class, TokenMode.jwt);
     System.out.println("Verified Data: " + userData.getEmail());  // output >> Verified Data: john.doe@example.com
     ```
 - #### Data signature in the form of an opaque token (uuid)
 
     ```java
-    import io.github.cyfko.dverify.TokenMode;
+    import io.github.cyfko.veridok.core.TokenMode;
     import java.util.Properties;
     
     Properties properties = new Properties();
@@ -130,11 +130,11 @@ CREATE TABLE broker_messages (
 #### 🧠 Usage
 
 ```java
-import io.github.cyfko.dverify.TokenMode;
+import io.github.cyfko.veridok.core.TokenMode;
 
 import javax.sql.DataSource;
 
-import io.github.cyfko.dverify.impl.db.DatabaseBroker;
+import db.impl.io.github.cyfko.veridok.core.DatabaseBroker;
 import io.github.cyfko.dverify.GenericSignerVerifier;
 
 DataSource dataSource = // obtain via HikariCP, Spring, etc.
