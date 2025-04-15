@@ -49,6 +49,9 @@ import java.util.logging.Logger;
  * @see KafkaProducer
  * @see KafkaConsumer
  * @see RocksDB
+ *
+ * @author Frank KOSSI
+ * @since 1.0.0
  */
 public class KafkaBrokerAdapter implements Broker {
     private static final Logger logger = Logger.getLogger(KafkaBrokerAdapter.class.getName());

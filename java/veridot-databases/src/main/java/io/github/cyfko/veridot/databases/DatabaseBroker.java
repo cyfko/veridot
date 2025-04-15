@@ -49,7 +49,7 @@ import java.util.concurrent.CompletableFuture;
  * <p>Note: Message keys must be unique. If a key is reused, the insertion will fail with a primary key violation.</p>
  *
  * @author Frank KOSSI
- * @since 3.0.3
+ * @since 1.0.0
  */
 public class DatabaseBroker implements Broker {
     private static final String COLUMN_KEY = "message_key";

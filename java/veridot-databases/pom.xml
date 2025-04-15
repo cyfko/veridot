@@ -6,20 +6,112 @@
 
     <groupId>io.github.cyfko</groupId>
     <artifactId>veridot-databases</artifactId>
-    <version>0.0.1</version>
+    <version>1.0.0</version>
+    <packaging>jar</packaging>
+
+    <name>Distributed Tokens Verification</name>
+    <description>A lightweight library that simplifies token verification in microservices architectures where any
+        service may need to verify any incoming token.
+    </description>
+    <url>https://github.com/cyfko/dverify.git</url>
+
+    <licenses>
+        <license>
+            <name>MIT License</name>
+            <url>http://www.opensource.org/licenses/mit-license.php</url>
+        </license>
+    </licenses>
+
+    <developers>
+        <developer>
+            <name>Frank KOSSI</name>
+            <email>frank.kossi@kunrin.com</email>
+            <organization>Kunrin SA</organization>
+            <organizationUrl>https://www.kunrin.com</organizationUrl>
+        </developer>
+    </developers>
+
+    <scm>
+        <connection>scm:git:git://github.com/cyfko/veridot.git</connection>
+        <developerConnection>scm:git:ssh://github.com:cyfko/veridot.git</developerConnection>
+        <url>https://github.com/cyfko/dverify/tree/master</url>
+    </scm>
 
     <properties>
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
+
     <dependencies>
         <dependency>
             <groupId>io.github.cyfko</groupId>
             <artifactId>veridot-core</artifactId>
-            <version>0.0.1</version>
+            <version>1.0.0</version>
             <scope>provided</scope>
         </dependency>
     </dependencies>
 
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.sonatype.central</groupId>
+                <artifactId>central-publishing-maven-plugin</artifactId>
+                <version>0.7.0</version>
+                <extensions>true</extensions>
+                <configuration>
+                    <publishingServerId>central</publishingServerId>
+                </configuration>
+            </plugin>
+
+            <!-- GPG signing  -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-gpg-plugin</artifactId>
+                <version>1.5</version>
+                <executions>
+                    <execution>
+                        <id>sign-artifacts</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>sign</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- Javadoc and source attachement  -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-source-plugin</artifactId>
+                <version>2.2.1</version>
+                <executions>
+                    <execution>
+                        <id>attach-sources</id>
+                        <goals>
+                            <goal>jar-no-fork</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-javadoc-plugin</artifactId>
+                <version>3.6.3</version>
+                <configuration>
+                    <additionalJOption>-tag apiNote:a:"API Note:"</additionalJOption>
+                    <additionalJOption>-tag implSpec:a:"Implementation Requirements:"</additionalJOption>
+                    <additionalJOption>-tag implNote:a:"Implementation Note:"</additionalJOption>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>attach-javadocs</id>
+                        <goals>
+                            <goal>jar</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
 </project>

@@ -36,17 +36,17 @@
         <dependency>
             <groupId>io.github.cyfko</groupId>
             <artifactId>veridot-core</artifactId>
-            <version>0.0.1</version>
+            <version>1.0.0</version>
         </dependency>
         <dependency>
             <groupId>io.github.cyfko</groupId>
             <artifactId>veridot-kafka</artifactId>
-            <version>0.0.1</version>
+            <version>1.0.0</version>
         </dependency>
         <dependency>
             <groupId>io.github.cyfko</groupId>
             <artifactId>veridot-databases</artifactId>
-            <version>0.0.1</version>
+            <version>1.0.0</version>
         </dependency>
 
         <dependency>
