@@ -60,7 +60,7 @@ The application relies on the following environment variables for configuration:
 - #### Data signature in the form of transparent token (jwt)
 
     ```java
-    import io.github.cyfko.veridok.core.TokenMode;
+    import io.github.cyfko.veridot.core.TokenMode;
     import impl.io.github.cyfko.veridok.core.GenericSignerVerifier;
     import kafka.impl.io.github.cyfko.veridok.core.KafkaBrokerAdapter;
     import java.util.Properties;
@@ -75,14 +75,14 @@ The application relies on the following environment variables for configuration:
 
   #### Verifying the token and extracting the data
     ```java
-    import io.github.cyfko.veridok.core.TokenMode;Verifier verifier = new GenericSignerVerifier(KafkaBrokerAdapter()); // KafkaBrokerAdapter constructed with default properties
+    import io.github.cyfko.veridot.core.TokenMode;Verifier verifier = new GenericSignerVerifier(KafkaBrokerAdapter()); // KafkaBrokerAdapter constructed with default properties
     UserData userData = verifier.verify(jwt, UserData.class, TokenMode.jwt);
     System.out.println("Verified Data: " + userData.getEmail());  // output >> Verified Data: john.doe@example.com
     ```
 - #### Data signature in the form of an opaque token (uuid)
 
     ```java
-    import io.github.cyfko.veridok.core.TokenMode;
+    import io.github.cyfko.veridot.core.TokenMode;
     import java.util.Properties;
     
     Properties properties = new Properties();
@@ -130,7 +130,7 @@ CREATE TABLE broker_messages (
 #### 🧠 Usage
 
 ```java
-import io.github.cyfko.veridok.core.TokenMode;
+import io.github.cyfko.veridot.core.TokenMode;
 
 import javax.sql.DataSource;
 
