@@ -9,11 +9,11 @@
     <version>1.0.0</version>
     <packaging>jar</packaging>
 
-    <name>Distributed Tokens Verification</name>
-    <description>A lightweight library that simplifies token verification in microservices architectures where any
-        service may need to verify any incoming token.
+    <name>Veridot Kafka</name>
+    <url>https://github.com/cyfko/veridot</url>
+    <description>An implementation of the io.github.cyfko.veridot-core Broker interface API to exchange token's metadata
+        events through Kafka.
     </description>
-    <url>https://github.com/cyfko/dverify.git</url>
 
     <licenses>
         <license>
@@ -33,8 +33,8 @@
 
     <scm>
         <connection>scm:git:git://github.com/cyfko/veridot.git</connection>
-        <developerConnection>scm:git:ssh://github.com:cyfko/veridot.git</developerConnection>
-        <url>https://github.com/cyfko/dverify/tree/master</url>
+        <developerConnection>scm:git:ssh://git@github.com/cyfko/veridot.git</developerConnection>
+        <url>https://github.com/cyfko/veridot</url>
     </scm>
 
     <properties>
