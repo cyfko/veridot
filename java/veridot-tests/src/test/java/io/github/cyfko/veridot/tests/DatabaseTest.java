@@ -2,10 +2,7 @@ package io.github.cyfko.veridot.tests;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
-import io.github.cyfko.veridot.core.Broker;
-import io.github.cyfko.veridot.core.Signer;
-import io.github.cyfko.veridot.core.TokenMode;
-import io.github.cyfko.veridot.core.Verifier;
+import io.github.cyfko.veridot.core.*;
 import io.github.cyfko.veridot.core.exceptions.BrokerExtractionException;
 import io.github.cyfko.veridot.core.exceptions.DataSerializationException;
 import io.github.cyfko.veridot.core.impl.GenericSignerVerifier;
@@ -27,9 +24,12 @@ public abstract class DatabaseTest {
     private final JdbcDatabaseContainer<?> sqlContainer;
     private Signer signer;
     private Verifier verifier;
+    private Revoker revoker;
+    private DataSource dataSource;
 
     public DatabaseTest(JdbcDatabaseContainer<?> sqlContainer){
         this.sqlContainer = sqlContainer;
+        sqlContainer.start();
     }
 
     private DataSource createDataSource() {
@@ -38,33 +38,32 @@ public abstract class DatabaseTest {
         config.setUsername(sqlContainer.getUsername());
         config.setPassword(sqlContainer.getPassword());
         config.setDriverClassName(sqlContainer.getDriverClassName());
+        config.setMaximumPoolSize(5);  // tune per your load
         return new HikariDataSource(config);
     }
 
     @BeforeAll
-    public void setUpClass() { sqlContainer.start(); }
+    public void setUpClass() {
+        dataSource = createDataSource();
 
-    @AfterAll
-    public void tearDownClass() {
-        sqlContainer.stop();
-    }
-
-    @BeforeEach
-    public void setUp() throws IOException {
-        Broker broker = new DatabaseBroker(createDataSource(), "broker_messages");
+        Broker broker = new DatabaseBroker(dataSource, "broker_messages");
         GenericSignerVerifier genericSignerVerifier = new GenericSignerVerifier(broker);
         signer = genericSignerVerifier;
         verifier = genericSignerVerifier;
+        revoker = genericSignerVerifier;
     }
 
-    @AfterEach
-    public void tearDown() {
-
+    @AfterAll
+    public void tearDownClass() {
+        if (dataSource instanceof HikariDataSource) {
+            ((HikariDataSource) dataSource).close();
+        }
+        sqlContainer.stop();
     }
 
     @ParameterizedTest()
     @EnumSource(value = TokenMode.class)
-    public void sign_method_with_valid_data_should_returns_token(TokenMode mode) throws DataSerializationException {
+    public void sign_method_with_valid_data_should_returns_token(TokenMode mode) {
         UserData data = new UserData("john.doe@example.com");
 
         String token = signer.sign(data, 60, mode, mode.name().hashCode());
@@ -113,7 +112,7 @@ public abstract class DatabaseTest {
     public void verify_valid_token_should_returns_payload(TokenMode mode) throws InterruptedException {
         String data = "john.doe@example.com";
         String token = signer.sign(data, 600, mode, mode.name().hashCode() + 5); // Generate a valid token
-        Thread.sleep(5000); // Wait 5 secs to ensure that the keys has been propagated to database
+        Thread.sleep(2000); // Wait 2 secs to ensure that the keys has been propagated to database
 
         String verifiedData = (String) verifier.verify(token);
 
@@ -123,17 +122,40 @@ public abstract class DatabaseTest {
 
     @Test
     public void verify_invalid_token_should_throws_exception() {
-        String invalidToken = "invalid.token.token"; // Simulating an invalid token
-
-        assertThrows(BrokerExtractionException.class, () -> verifier.verify(invalidToken));
+        assertThrows(BrokerExtractionException.class, () -> verifier.verify("invalid.token.token"));
     }
 
     @ParameterizedTest()
     @EnumSource(value = TokenMode.class)
     public void verify_expired_token_should_throws_exception(TokenMode mode) throws InterruptedException {
-        String data = "john.doe@example.com";
-        String token = signer.sign(data, 1, mode, mode.name().hashCode() + 6); // Token with short duration
+        String token = signer.sign("john.doe@example.com", 1, mode, mode.name().hashCode() + 6); // Token with short duration
         Thread.sleep(3000); // Wait 3 seconds for the token to expire
+
+        assertThrows(BrokerExtractionException.class, () -> verifier.verify(token));
+    }
+
+    @ParameterizedTest()
+    @EnumSource(value = TokenMode.class)
+    public void verify_revoked_token_should_throws_exception(TokenMode mode) throws InterruptedException {
+        String token = signer.sign("john.doe@example.com", 3600, mode, mode.name().hashCode() + 7); // Token with long duration (1 hour)
+        Thread.sleep(2000); // Wait 2 seconds before issuing the revocation command
+
+        revoker.revoke(token);
+        Thread.sleep(2000); // Wait 2 seconds to ensure revocation took place
+
+        assertThrows(BrokerExtractionException.class, () -> verifier.verify(token));
+    }
+
+    @ParameterizedTest()
+    @EnumSource(value = TokenMode.class)
+    public void verify_revoked_token_by_tracked_id_should_throws_exception(TokenMode mode) throws InterruptedException {
+        final long trackingId = mode.name().hashCode() + 8;
+
+        String token = signer.sign("john.doe@example.com", 3600, mode, trackingId); // Token with long duration (1 hour)
+        Thread.sleep(2000); // Wait 2 seconds before issuing the revocation command
+
+        revoker.revoke(trackingId);
+        Thread.sleep(2000); // Wait 2 seconds to ensure revocation took place
 
         assertThrows(BrokerExtractionException.class, () -> verifier.verify(token));
     }

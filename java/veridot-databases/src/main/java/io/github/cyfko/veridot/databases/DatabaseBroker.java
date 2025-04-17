@@ -6,9 +6,11 @@ import io.github.cyfko.veridot.core.exceptions.BrokerExtractionException;
 import javax.sql.DataSource;
 import java.sql.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.logging.Logger;
+
 
 /**
- * A {@link Broker} implementation that stores and retrieves messages
+ * A {@link io.github.cyfko.veridot.core.Broker} implementation that stores and retrieves messages
  * using a relational SQL database. This broker is useful in distributed environments where
  * consistent message delivery and verification are required across microservices or service replicas.
  *
@@ -16,7 +18,7 @@ import java.util.concurrent.CompletableFuture;
  * <ul>
  *     <li>Automatic creation of the broker table if it does not already exist</li>
  *     <li>Configurable table name, validated to prevent SQL injection</li>
- *     <li>Asynchronous message storage and retrieval using {@link CompletableFuture}</li>
+ *     <li>Asynchronous message storage and retrieval using {@link java.util.concurrent.CompletableFuture}</li>
  *     <li>Compatibility with major relational databases (PostgreSQL, MySQL, SQL Server, H2)</li>
  * </ul>
  *
@@ -54,7 +56,8 @@ import java.util.concurrent.CompletableFuture;
 public class DatabaseBroker implements Broker {
     private static final String COLUMN_KEY = "message_key";
     private static final String COLUMN_MESSAGE = "message_value";
-    private static final java.util.logging.Logger logger = java.util.logging.Logger.getLogger(DatabaseBroker.class.getName());
+    private static final Logger logger = Logger.getLogger(DatabaseBroker.class.getName());
+
     private final DataSource dataSource;
     private final String tableName;
 
@@ -135,19 +138,34 @@ public class DatabaseBroker implements Broker {
     }
 
     @Override
-    public CompletableFuture<Void> send(String key, String message) {
+    public CompletableFuture<Void> send(String keyId, String message) {
         return CompletableFuture.runAsync(() -> {
             try (Connection conn = dataSource.getConnection()) {
-                String sql = String.format(
-                        "INSERT INTO %s (%s, %s) VALUES (?, ?)",
-                        tableName, COLUMN_KEY, COLUMN_MESSAGE
-                );
+                if (keyId == null || keyId.isBlank() || message == null) return;
 
-                try (PreparedStatement stmt = conn.prepareStatement(sql)) {
-                    stmt.setString(1, key);
-                    stmt.setString(2, message);
-                    stmt.executeUpdate();
+                if (message.isBlank()) { // Delete the record with keyId
+                    String sql = String.format(
+                            "DELETE FROM %s WHERE %s = ?",
+                            tableName, COLUMN_KEY
+                    );
+
+                    try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+                        stmt.setString(1, keyId);
+                        stmt.executeUpdate();
+                    }
+                } else { // save a new records with that keyId
+                    String sql = String.format(
+                            "INSERT INTO %s (%s, %s) VALUES (?, ?)",
+                            tableName, COLUMN_KEY, COLUMN_MESSAGE
+                    );
+
+                    try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+                        stmt.setString(1, keyId);
+                        stmt.setString(2, message);
+                        stmt.executeUpdate();
+                    }
                 }
+
             } catch (SQLException e) {
                 throw new RuntimeException("Failed to store message in DB", e);
             }
@@ -172,8 +190,8 @@ public class DatabaseBroker implements Broker {
                 }
             }
         } catch (SQLException e) {
-            logger.severe("Failed to retrieve message from DB for key ID: " + keyId);
-            throw new BrokerExtractionException("Failed to retrieve message from DB", e);
+            logger.severe(e.getMessage());
+            throw new BrokerExtractionException("Failed to retrieve message from DB for key: " + keyId);
         }
     }
 }

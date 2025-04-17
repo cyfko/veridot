@@ -10,6 +10,7 @@ import io.github.cyfko.veridot.core.exceptions.DataDeserializationException;
 import io.github.cyfko.veridot.core.exceptions.BrokerExtractionException;
 import io.github.cyfko.veridot.core.exceptions.DataSerializationException;
 
+import java.nio.charset.StandardCharsets;
 import java.security.*;
 import java.security.spec.X509EncodedKeySpec;
 import java.time.Duration;
@@ -45,7 +46,7 @@ import java.util.logging.Logger;
  * @author Frank KOSSI
  * @since 1.0.0
  */
-public class GenericSignerVerifier implements Signer, Verifier {
+public class GenericSignerVerifier implements Signer, Verifier, Revoker {
 
     private static final Logger logger = Logger.getLogger(GenericSignerVerifier.class.getName());
     private static final KeyFactory keyFactory;
@@ -190,6 +191,15 @@ public class GenericSignerVerifier implements Signer, Verifier {
         }
     }
 
+    @Override
+    public void revoke(Object target) {
+        switch (target) {
+            case String token -> revokeByToken(token);
+            case Number number -> revokeByTrackingId(number.longValue());
+            default -> throw new IllegalArgumentException("Unsupported revocation target type: " + target.getClass());
+        }
+    }
+
     /**
      * Determines the key identifier for a given token.
      * <p>
@@ -219,7 +229,7 @@ public class GenericSignerVerifier implements Signer, Verifier {
      */
     private Map<String, Object> getClaims(String keyId, String token) {
         String message = broker.get(keyId);
-        logger.info("Observed token of key ID " + keyId + " is " + message);
+        logger.info(String.format("Observed token of key ID %s is %s", keyId, message));
 
         String[] parts = message.split(":");
         try {
@@ -268,8 +278,28 @@ public class GenericSignerVerifier implements Signer, Verifier {
     private static String generateId(long trackingId, String salt) throws Exception {
         String toHash = salt + "-" + trackingId;
         MessageDigest md = MessageDigest.getInstance("SHA-256");
-        byte[] hash = md.digest(toHash.getBytes("UTF-8"));
+        byte[] hash = md.digest(toHash.getBytes(StandardCharsets.UTF_8));
         String b64 = Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
         return b64.substring(0, 22);
+    }
+
+    private void revokeByTrackingId(long trackingId) {
+        try {
+            String keyId = generateId(trackingId, generatedIdSalt);
+            broker.send(keyId, "");
+        } catch (Exception e) {
+            logger.severe("Unable to regenerate keyId from the tracking identifier " + trackingId);
+            throw new IllegalArgumentException(e);
+        }
+    }
+
+    private void revokeByToken(String token) {
+        try {
+            String keyId = getKeyId(token);
+            broker.send(keyId, "");
+        } catch (Exception e) {
+            logger.severe("Unable to extract keyId from the token " + token);
+            throw new IllegalArgumentException(e);
+        }
     }
 }

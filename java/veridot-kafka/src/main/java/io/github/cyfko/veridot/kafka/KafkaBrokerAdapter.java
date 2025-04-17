@@ -25,7 +25,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
 /**
- * A Kafka-based implementation of the {@link Broker} interface that integrates Kafka messaging
+ * A Kafka-based implementation of the {@link io.github.cyfko.veridot.core.Broker} interface that integrates Kafka messaging
  * with an embedded RocksDB key-value store for persistent message tracking and retrieval.
  *
  * <p>This broker adapter supports both sending messages (public keys or signed tokens) to a Kafka topic and retrieving
@@ -42,19 +42,17 @@ import java.util.logging.Logger;
  *
  * <p>Required Kafka property:</p>
  * <ul>
- *   <li>{@link ProducerConfig#BOOTSTRAP_SERVERS_CONFIG} - Kafka cluster endpoint(s)</li>
+ *   <li>{@link org.apache.kafka.clients.producer.ProducerConfig#BOOTSTRAP_SERVERS_CONFIG} - Kafka cluster endpoint(s)</li>
  * </ul>
  *
- * @see Broker
- * @see KafkaProducer
- * @see KafkaConsumer
- * @see RocksDB
- *
- * @author Frank KOSSI
- * @since 1.0.0
+ * @see io.github.cyfko.veridot.core.Broker
+ * @see org.apache.kafka.clients.producer.KafkaProducer
+ * @see org.apache.kafka.clients.consumer.KafkaConsumer
+ * @see org.rocksdb.RocksDB
  */
 public class KafkaBrokerAdapter implements Broker {
     private static final Logger logger = Logger.getLogger(KafkaBrokerAdapter.class.getName());
+
     private final KafkaProducer<String,String> producer;
     private final KafkaConsumer<String, String> consumer;
     private final RocksDB db;
@@ -156,7 +154,7 @@ public class KafkaBrokerAdapter implements Broker {
                 logger.info("Public key sent to Kafka successfully with offset: " + metadata.offset());
                 future.complete(null);
             } else {
-                logger.severe("Error sending the public key to kafka: {}" + metadata.offset());
+                logger.severe("Error sending the public key to kafka: " + metadata.offset());
                 future.completeExceptionally(exception);
             }
         });
@@ -235,8 +233,20 @@ public class KafkaBrokerAdapter implements Broker {
         ConsumerRecords<String, String> records = consumer.poll(Duration.ofSeconds(10)); // At most 10 seconds to wait for.
         for (var record: records) {
             try {
-                // persist on embedded DB
-                db.put(record.key().getBytes(), record.value().getBytes());
+                String key = record.key();
+                String message = record.value();
+                if (key == null || key.isBlank() || message == null) {
+                    continue;
+                }
+
+                if (message.isBlank()){
+                    // remove this entry
+                    db.delete(key.getBytes());
+                } else {
+                    // persist on embedded DB
+                    byte[] bytes = message.getBytes();
+                    db.put(key.getBytes(), bytes);
+                }
             } catch (RocksDBException ex) {
                 logger.severe(ex.getMessage());
             }
@@ -263,11 +273,11 @@ public class KafkaBrokerAdapter implements Broker {
                 // Custom predicate: Delete if expired AND value contains "value1"
                 if ((now - timestamp) > 0) {
                     db.delete(iterator.key());
-                    logger.info("Deleted key after expiration: " + key);
+                    logger.info("Deleted key {} after expiration." + key);
                 }
             }
         } catch (RocksDBException e) {
-            e.printStackTrace();
+            logger.severe(e.getMessage());
         } catch (Exception e) {
             logger.severe("Error when running cleanup task: " + e.getMessage());
         }
