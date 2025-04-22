@@ -193,10 +193,12 @@ public class GenericSignerVerifier implements Signer, Verifier, Revoker {
 
     @Override
     public void revoke(Object target) {
-        switch (target) {
-            case String token -> revokeByToken(token);
-            case Number number -> revokeByTrackingId(number.longValue());
-            default -> throw new IllegalArgumentException("Unsupported revocation target type: " + target.getClass());
+        if (target instanceof String token) {
+            revokeByToken(token);
+        } else if (target instanceof Number number) {
+            revokeByTrackingId(number.longValue());
+        } else {
+            throw new IllegalArgumentException("Unsupported revocation target type: " + target.getClass());
         }
     }
 
