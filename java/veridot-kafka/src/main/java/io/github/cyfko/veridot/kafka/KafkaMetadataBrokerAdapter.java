@@ -1,6 +1,6 @@
 package io.github.cyfko.veridot.kafka;
 
-import io.github.cyfko.veridot.core.Broker;
+import io.github.cyfko.veridot.core.MetadataBroker;
 import io.github.cyfko.veridot.core.exceptions.BrokerExtractionException;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -25,7 +25,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
 /**
- * A Kafka-based implementation of the {@link io.github.cyfko.veridot.core.Broker} interface that integrates Kafka messaging
+ * A Kafka-based implementation of the {@link MetadataBroker} interface that integrates Kafka messaging
  * with an embedded RocksDB key-value store for persistent message tracking and retrieval.
  *
  * <p>This broker adapter supports both sending messages (public keys or signed tokens) to a Kafka topic and retrieving
@@ -45,13 +45,13 @@ import java.util.logging.Logger;
  *   <li>{@link org.apache.kafka.clients.producer.ProducerConfig#BOOTSTRAP_SERVERS_CONFIG} - Kafka cluster endpoint(s)</li>
  * </ul>
  *
- * @see io.github.cyfko.veridot.core.Broker
+ * @see MetadataBroker
  * @see org.apache.kafka.clients.producer.KafkaProducer
  * @see org.apache.kafka.clients.consumer.KafkaConsumer
  * @see org.rocksdb.RocksDB
  */
-public class KafkaBrokerAdapter implements Broker {
-    private static final Logger logger = Logger.getLogger(KafkaBrokerAdapter.class.getName());
+public class KafkaMetadataBrokerAdapter implements MetadataBroker {
+    private static final Logger logger = Logger.getLogger(KafkaMetadataBrokerAdapter.class.getName());
 
     private final KafkaProducer<String,String> producer;
     private final KafkaConsumer<String, String> consumer;
@@ -82,7 +82,7 @@ public class KafkaBrokerAdapter implements Broker {
      * @return a new instance of KafkaBrokerAdapter.
      * @throws IllegalArgumentException if required properties are missing.
      */
-    public static KafkaBrokerAdapter of(Properties props){
+    public static KafkaMetadataBrokerAdapter of(Properties props){
         if (!props.containsKey(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG)){
             throw new IllegalArgumentException("missing properties when trying to construct KafkaDataSigner");
         }
@@ -90,10 +90,10 @@ public class KafkaBrokerAdapter implements Broker {
         Properties usedProps = new Properties();
         usedProps.putAll(props);
         PropertiesUtil.addUniqueKafkaProperties(usedProps);
-        return new KafkaBrokerAdapter(usedProps);
+        return new KafkaMetadataBrokerAdapter(usedProps);
     }
 
-    private KafkaBrokerAdapter(Properties props) {
+    private KafkaMetadataBrokerAdapter(Properties props) {
         try {
             // configure embedded database
             this.options = new Options().setCreateIfMissing(true);
@@ -127,14 +127,14 @@ public class KafkaBrokerAdapter implements Broker {
      *
      * @param boostrapServers Kafka bootstrap server(s) to connect to.
      */
-    public KafkaBrokerAdapter(String boostrapServers) {
+    public KafkaMetadataBrokerAdapter(String boostrapServers) {
         this(PropertiesUtil.of(defaultKafkaProperties(), boostrapServers));
     }
 
     /**
      * Construct a KafkaBrokerAdapter using only the default Kafka properties.
      */
-    public KafkaBrokerAdapter() {
+    public KafkaMetadataBrokerAdapter() {
         this(defaultKafkaProperties());
     }
 

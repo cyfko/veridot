@@ -22,7 +22,7 @@ import java.util.concurrent.CompletableFuture;
  * @author Frank KOSSI
  * @since 1.0.0
  */
-public interface Broker {
+public interface MetadataBroker {
 
     /**
      * Asynchronously publishes a metadata message associated with a given key.

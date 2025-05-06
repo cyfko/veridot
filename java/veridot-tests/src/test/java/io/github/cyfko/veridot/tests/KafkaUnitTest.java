@@ -1,12 +1,13 @@
 package io.github.cyfko.veridot.tests;
 
-import io.github.cyfko.veridot.core.Signer;
+import io.github.cyfko.veridot.core.DataSigner;
 import io.github.cyfko.veridot.core.TokenMode;
-import io.github.cyfko.veridot.core.Verifier;
+import io.github.cyfko.veridot.core.TokenVerifier;
 import io.github.cyfko.veridot.core.exceptions.BrokerExtractionException;
 import io.github.cyfko.veridot.core.exceptions.DataSerializationException;
 import io.github.cyfko.veridot.core.impl.GenericSignerVerifier;
-import io.github.cyfko.veridot.kafka.KafkaBrokerAdapter;
+import io.github.cyfko.veridot.core.impl.BasicConfigurer;
+import io.github.cyfko.veridot.kafka.KafkaMetadataBrokerAdapter;
 import io.github.cyfko.veridot.kafka.VerifierConfig;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.junit.jupiter.api.*;
@@ -22,27 +23,27 @@ import java.util.Properties;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-public class KafkaUnitTest {
+class KafkaUnitTest {
 
     private static KafkaContainer kafkaContainer;
-    private Signer signer;
-    private Verifier verifier;
+    private DataSigner dataSigner;
+    private TokenVerifier tokenVerifier;
     private File tempDir;
 
     @BeforeAll
-    public static void setUpClass() {
+    static void setUpClass() {
         kafkaContainer = new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:latest"))
                 .withEmbeddedZookeeper();
         kafkaContainer.start();
     }
 
     @AfterAll
-    public static void tearDownClass() {
+    static void tearDownClass() {
         kafkaContainer.stop();
     }
 
     @BeforeEach
-    public void setUp() throws IOException {
+    void setUp() throws IOException {
         String kafkaBootstrapServers = kafkaContainer.getBootstrapServers();
 
         Properties props = new Properties();
@@ -51,13 +52,13 @@ public class KafkaUnitTest {
         tempDir = Files.createTempDirectory("rocksdb_db_test_").toFile();
         props.setProperty(VerifierConfig.EMBEDDED_DB_PATH_CONFIG, tempDir.getAbsolutePath());
 
-        GenericSignerVerifier genericSignerVerifier = new GenericSignerVerifier(KafkaBrokerAdapter.of(props));
-        signer = genericSignerVerifier;
-        verifier = genericSignerVerifier;
+        GenericSignerVerifier genericSignerVerifier = new GenericSignerVerifier(KafkaMetadataBrokerAdapter.of(props));
+        dataSigner = genericSignerVerifier;
+        tokenVerifier = genericSignerVerifier;
     }
 
     @AfterEach
-    public void tearDown() {
+    void tearDown() {
         if (tempDir.exists()) {
             tempDir.delete();
         }
@@ -65,10 +66,16 @@ public class KafkaUnitTest {
 
     @ParameterizedTest
     @EnumSource(value = TokenMode.class)
-    public void sign_method_with_valid_data_should_returns_jwt(TokenMode mode) throws DataSerializationException {
+    void sign_method_with_valid_data_should_returns_jwt(TokenMode mode) throws DataSerializationException {
         UserData data = new UserData("john.doe@example.com");
 
-        String jwt = signer.sign(data, 60, mode, 0);
+        BasicConfigurer configurer = BasicConfigurer.builder()
+                .useMode(mode)
+                .trackedBy(0)
+                .validity(60)
+                .build();
+
+        String jwt = dataSigner.sign(data, configurer);
 
         assertNotNull(jwt);
         assertFalse(jwt.isEmpty());
@@ -76,26 +83,43 @@ public class KafkaUnitTest {
 
     @ParameterizedTest
     @EnumSource(value = TokenMode.class)
-    public void sign_method_with_invalid_data_should_throws_exception(TokenMode mode) {
-        Object invalidData = null; // Simulating invalid data
+    void sign_method_with_invalid_data_should_throws_exception(TokenMode mode) {
 
-        Assertions.assertThrows(IllegalArgumentException.class, () -> signer.sign(invalidData, 60, mode, 0));
+        BasicConfigurer configurer = BasicConfigurer.builder()
+                .useMode(mode)
+                .trackedBy(0)
+                .validity(60)
+                .build();
+
+        Assertions.assertThrows(IllegalArgumentException.class, () -> dataSigner.sign(null, configurer));
     }
 
     @ParameterizedTest()
     @EnumSource(value = TokenMode.class)
-    public void sign_method_with_expired_duration_should_throws_exception(TokenMode mode) {
+    void sign_method_with_expired_duration_should_throws_exception(TokenMode mode) {
         UserData data = new UserData("john.doe@example.com");
 
-        Assertions.assertThrows(IllegalArgumentException.class, () -> signer.sign(data, -5, mode, 0));
+        BasicConfigurer configurer = BasicConfigurer.builder()
+                .useMode(mode)
+                .trackedBy(0)
+                .validity(-5)
+                .build();
+
+        Assertions.assertThrows(IllegalArgumentException.class, () -> dataSigner.sign(data, configurer));
     }
 
     @ParameterizedTest
     @EnumSource(value = TokenMode.class)
-    public void sign_valid_data_should_returns_jwt(TokenMode mode) throws DataSerializationException {
+    void sign_valid_data_should_returns_jwt(TokenMode mode) throws DataSerializationException {
         UserData data = new UserData("john.doe@example.com");
 
-        String jwt = signer.sign(data, 60, mode, 0);
+        BasicConfigurer configurer = BasicConfigurer.builder()
+                .useMode(mode)
+                .trackedBy(0)
+                .validity(60)
+                .build();
+
+        String jwt = dataSigner.sign(data, configurer);
 
         assertNotNull(jwt, "JWT should not be null");
         assertFalse(jwt.isEmpty(), "JWT should not be empty");
@@ -103,40 +127,59 @@ public class KafkaUnitTest {
 
     @ParameterizedTest
     @EnumSource(value = TokenMode.class)
-    public void sign_invalid_data_should_throws_exception(TokenMode mode) {
-        Object invalidData = null; // Simulating invalid data
+    void sign_invalid_data_should_throws_exception(TokenMode mode) {
 
-        assertThrows(IllegalArgumentException.class, () -> signer.sign(invalidData, 60, mode, 0));
+        BasicConfigurer configurer = BasicConfigurer.builder()
+                .useMode(mode)
+                .trackedBy(0)
+                .validity(60)
+                .build();
+
+        assertThrows(IllegalArgumentException.class, () -> dataSigner.sign(null, configurer));
     }
 
     @ParameterizedTest
     @EnumSource(value = TokenMode.class)
-    public void verify_valid_token_should_returns_payload(TokenMode mode) throws InterruptedException {
+    void verify_valid_token_should_returns_payload(TokenMode mode) throws InterruptedException {
         String data = "john.doe@example.com";
-        String jwt = signer.sign(data, 60, mode, 0); // Generate a valid token
+
+        BasicConfigurer configurer = BasicConfigurer.builder()
+                .useMode(mode)
+                .trackedBy(0)
+                .validity(60)
+                .build();
+
+        String jwt = dataSigner.sign(data, configurer); // Generate a valid token
         Thread.sleep(5000); // Wait 5 seconds to ensure that the keys has been propagated to kafka
 
-        String verifiedData = (String) verifier.verify(jwt);
+        String verifiedData = tokenVerifier.verify(jwt, String::toString);
 
         assertNotNull(verifiedData);
         assertEquals(data, verifiedData);
     }
 
     @Test
-    public void verify_invalid_token_should_throws_exception() {
+    void verify_invalid_token_should_throws_exception() {
         String invalidToken = "invalid.jwt.token"; // Simulating an invalid token
 
-        assertThrows(BrokerExtractionException.class, () -> verifier.verify(invalidToken));
+        assertThrows(BrokerExtractionException.class, () -> tokenVerifier.verify(invalidToken,String::toString));
     }
 
     @ParameterizedTest
     @EnumSource(value = TokenMode.class)
-    public void verify_expired_token_should_throws_exception(TokenMode mode) throws InterruptedException {
+    void verify_expired_token_should_throws_exception(TokenMode mode) throws InterruptedException {
         UserData data = new UserData("john.doe@example.com");
-        String token = signer.sign(data, 2, mode, 0); // Token with short duration
+
+        BasicConfigurer configurer = BasicConfigurer.builder()
+                .useMode(mode)
+                .trackedBy(0)
+                .validity(2)
+                .build();
+
+        String token = dataSigner.sign(data, configurer); // Token with short duration
         Thread.sleep(5000); // Wait 5 seconds for the token to expire
 
-        assertThrows(BrokerExtractionException.class, () -> verifier.verify(token));
+        assertThrows(BrokerExtractionException.class, () -> tokenVerifier.verify(token,String::toString));
     }
 }
 

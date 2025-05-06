@@ -102,7 +102,7 @@ The application relies on the following environment variables for configuration:
 
 ### 🔧 Using `GenericSignerVerifier` with a Relational database-based `Broker`
 
-`DVerify` also provides a database-backed broker implementation: `DatabaseBroker`. This allows your application to persist and retrieve messages (such as signed verification tokens) through a SQL database in a consistent, scalable manner.
+`DVerify` also provides a database-backed metadataBroker implementation: `DatabaseBroker`. This allows your application to persist and retrieve messages (such as signed verification tokens) through a SQL database in a consistent, scalable manner.
 
 This is ideal for:
 
@@ -141,8 +141,8 @@ DataSource dataSource = // obtain via HikariCP, Spring, etc.
         String
 tableName ="broker_messages";
 
-DatabaseBroker broker = new DatabaseBroker(dataSource, tableName);
-GenericSignerVerifier signerVerifier = new GenericSignerVerifier(broker);
+DatabaseBroker metadataBroker = new DatabaseBroker(dataSource, tableName);
+GenericSignerVerifier signerVerifier = new GenericSignerVerifier(metadataBroker);
 
 // Use as usual
 String jwt = signerVerifier.sign("service #1", Duration.ofHours(15), TokenMode.jwt);
@@ -153,7 +153,7 @@ String serviceName2 = signerVerifier.verify(uuid, String.class); // Expected: se
 ```
 #### ⚠️ Security & Best Practices
 - The tableName is validated to prevent SQL injection. Only alphanumeric and underscores are allowed.
-- `DatabaseBroker` automatically ensures the broker table exists on first usage. It inspects the database metadata and creates the table if it is missing — no extra setup required.
+- `DatabaseBroker` automatically ensures the metadataBroker table exists on first usage. It inspects the database metadata and creates the table if it is missing — no extra setup required.
   
 #### 🏗️ Cluster/Distributed Considerations
 In sharded database or clustered setups:

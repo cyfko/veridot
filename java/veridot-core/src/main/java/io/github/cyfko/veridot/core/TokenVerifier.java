@@ -3,6 +3,8 @@ package io.github.cyfko.veridot.core;
 import io.github.cyfko.veridot.core.exceptions.BrokerExtractionException;
 import io.github.cyfko.veridot.core.exceptions.DataDeserializationException;
 
+import java.util.function.Function;
+
 
 /**
  * Functional interface for verifying tokens and extracting their embedded payloads.
@@ -21,7 +23,8 @@ import io.github.cyfko.veridot.core.exceptions.DataDeserializationException;
  * @since 1.0.0
  */
 @FunctionalInterface
-public interface Verifier {
+public interface TokenVerifier {
+
     /**
      * Verifies the given token and extracts its payload.
      *
@@ -31,9 +34,10 @@ public interface Verifier {
      * </p>
      *
      * @param token the token to verify; must not be {@code null} or empty
+     * @param deserializer a non-null {@link Function} used to deserialize the payload extracted from the {@code token}
      * @return the deserialized payload object
      * @throws BrokerExtractionException if the token is invalid, expired, or cannot be decoded
      * @throws DataDeserializationException if the token is valid but the data cannot be deserialized
      */
-    Object verify(String token) throws BrokerExtractionException, DataDeserializationException;
+    <T> T verify(String token, Function<String,T> deserializer) throws BrokerExtractionException, DataDeserializationException;
 }

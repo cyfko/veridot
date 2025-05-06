@@ -1,6 +1,6 @@
 package io.github.cyfko.veridot.databases;
 
-import io.github.cyfko.veridot.core.Broker;
+import io.github.cyfko.veridot.core.MetadataBroker;
 import io.github.cyfko.veridot.core.exceptions.BrokerExtractionException;
 
 import javax.sql.DataSource;
@@ -10,7 +10,7 @@ import java.util.logging.Logger;
 
 
 /**
- * A {@link io.github.cyfko.veridot.core.Broker} implementation that stores and retrieves messages
+ * A {@link MetadataBroker} implementation that stores and retrieves messages
  * using a relational SQL database. This broker is useful in distributed environments where
  * consistent message delivery and verification are required across microservices or service replicas.
  *
@@ -53,15 +53,15 @@ import java.util.logging.Logger;
  * @author Frank KOSSI
  * @since 1.0.0
  */
-public class DatabaseBroker implements Broker {
+public class DatabaseMetadataBroker implements MetadataBroker {
     private static final String COLUMN_KEY = "message_key";
     private static final String COLUMN_MESSAGE = "message_value";
-    private static final Logger logger = Logger.getLogger(DatabaseBroker.class.getName());
+    private static final Logger logger = Logger.getLogger(DatabaseMetadataBroker.class.getName());
 
     private final DataSource dataSource;
     private final String tableName;
 
-    public DatabaseBroker(DataSource dataSource, String tableName) {
+    public DatabaseMetadataBroker(DataSource dataSource, String tableName) {
         if (!isValidTableName(tableName)) {
             throw new IllegalArgumentException(String.format("Invalid table name: [%s]. Should start with a letter and only contains letters, digits or underscore.", tableName));
         }

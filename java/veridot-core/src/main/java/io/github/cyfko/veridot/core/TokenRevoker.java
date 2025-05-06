@@ -22,7 +22,7 @@ package io.github.cyfko.veridot.core;
  * @author Frank KOSSI
  * @since 1.0.0
  */
-public interface Revoker {
+public interface TokenRevoker {
 
     /**
      * Revokes a token or credential associated with the given target.

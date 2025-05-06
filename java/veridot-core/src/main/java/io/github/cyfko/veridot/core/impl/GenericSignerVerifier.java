@@ -5,7 +5,7 @@ package io.github.cyfko.veridot.core.impl;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.cyfko.veridot.core.*;
-import io.github.cyfko.veridot.core.Signer;
+import io.github.cyfko.veridot.core.DataSigner;
 import io.github.cyfko.veridot.core.exceptions.DataDeserializationException;
 import io.github.cyfko.veridot.core.exceptions.BrokerExtractionException;
 import io.github.cyfko.veridot.core.exceptions.DataSerializationException;
@@ -19,16 +19,17 @@ import java.util.Base64;
 import java.util.Date;
 import java.util.Map;
 import java.util.concurrent.*;
+import java.util.function.Function;
 import java.util.logging.Logger;
 
 /**
- * Default implementation of both {@link Signer} and {@link Verifier} interfaces using ephemeral asymmetric keys.
+ * Default implementation of both {@link DataSigner} and {@link TokenVerifier} interfaces using ephemeral asymmetric keys.
  *
  * <p>This class handles:</p>
  * <ul>
  *   <li>Signing objects into time-bound JWT tokens (or UUIDs, depending on {@link TokenMode})</li>
  *   <li>Periodic generation (rotation) of RSA key pairs used for signing</li>
- *   <li>Publishing cryptographic metadata to a {@link Broker}, for verification by distributed consumers</li>
+ *   <li>Publishing cryptographic metadata to a {@link MetadataBroker}, for verification by distributed consumers</li>
  *   <li>Verifying tokens using the public key advertised by the token issuer</li>
  * </ul>
  *
@@ -46,16 +47,15 @@ import java.util.logging.Logger;
  * @author Frank KOSSI
  * @since 1.0.0
  */
-public class GenericSignerVerifier implements Signer, Verifier, Revoker {
+public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRevoker {
 
     private static final Logger logger = Logger.getLogger(GenericSignerVerifier.class.getName());
     private static final KeyFactory keyFactory;
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
-    private final Broker broker;
+    private final MetadataBroker metadataBroker;
     private final ScheduledExecutorService scheduler;
     private final String generatedIdSalt;
-    private final DataTransformer dataTransformer;
     private KeyPair keyPair;
     private long lastExecutionTime = 0;
 
@@ -75,14 +75,12 @@ public class GenericSignerVerifier implements Signer, Verifier, Revoker {
      * to rotate keys at fixed intervals.
      * </p>
      *
-     * @param broker the broker used to publish public key metadata to consumers. Must not be {@code null}.
+     * @param metadataBroker the broker used to publish public key metadata to consumers. Must not be {@code null}.
      * @param salt salt a static salt used to improve the unpredictability of token IDs. Must not be {@code null} nor blank.
-     * @param dataTransformer the transformer used to respectively serialize or deserialize the data to sign or verify. Must not be {@code null}.
      */
-    public GenericSignerVerifier(Broker broker, String salt, DataTransformer dataTransformer) {
-        this.broker = broker;
+    public GenericSignerVerifier(MetadataBroker metadataBroker, String salt) {
+        this.metadataBroker = metadataBroker;
         this.generatedIdSalt = salt;
-        this.dataTransformer = dataTransformer;
 
         if (salt == null || salt.isBlank()) {
             throw new IllegalArgumentException("Salt cannot be null or empty");
@@ -105,42 +103,27 @@ public class GenericSignerVerifier implements Signer, Verifier, Revoker {
      * Constructs a new {@code GenericSignerVerifier} with the given metadata broker.
      *
      * <p>
-     * Upon creation, a key pair is immediately generated, and a recurring task is scheduled
-     * to rotate keys at fixed intervals.
-     * </p>
-     *
-     * @param broker the broker used to publish public key metadata to consumers
-     * @param salt salt a static salt used to improve the unpredictability of token IDs
-     */
-    public GenericSignerVerifier(Broker broker, String salt) {
-        this(broker, salt, new JacksonDataTransformer(objectMapper));
-    }
-
-    /**
-     * Constructs a new {@code GenericSignerVerifier} with the given metadata broker.
-     *
-     * <p>
      * On creation, a key pair is immediately generated, and a recurring task is scheduled
      * to rotate keys at fixed intervals.
      * </p>
      *
-     * @param broker the broker used to publish public key metadata to consumers
+     * @param metadataBroker the broker used to publish public key metadata to consumers
      */
-    public GenericSignerVerifier(Broker broker) {
-        this(broker, "secured-app", new JacksonDataTransformer(objectMapper));
+    public GenericSignerVerifier(MetadataBroker metadataBroker) {
+        this(metadataBroker, "secured-app");
     }
 
     @Override
-    public String sign(Object data, long seconds, TokenMode mode, long trackingId) throws DataSerializationException {
-        if (data == null || seconds < 0) {
+    public String sign(Object data, Configurer configurer) throws DataSerializationException {
+        if (data == null || configurer.getDuration() < 0) {
             throw new IllegalArgumentException("data must not be null and duration must be positive");
         }
 
         final String keyId;
         try {
-            keyId = generateId(trackingId, generatedIdSalt);
+            keyId = generateId(configurer.getTracker(), generatedIdSalt);
         } catch (Exception e) {
-            logger.severe("Unable to generate a secured unique ID from the tracking identifier " + trackingId);
+            logger.severe("Unable to generate a secured unique ID from the tracking identifier " + configurer.getTracker());
             throw new IllegalStateException(e.getMessage());
         }
 
@@ -148,12 +131,13 @@ public class GenericSignerVerifier implements Signer, Verifier, Revoker {
         try {
             Instant now = Instant.now();
             Date issuedAt = Date.from(now);
-            Date expiration = Date.from(now.plus(Duration.ofSeconds(seconds)));
+            Date expiration = Date.from(now.plus(Duration.ofSeconds(configurer.getDuration())));
 
             // Serialize the payload and sign the JWT
+            String serializedData = configurer.getSerializer().apply(data);
             token = JwtMaker.builder()
                     .subject(keyId)
-                    .claim("data", dataTransformer.serialize(data))
+                    .claim("data", serializedData)
                     .issuedAt(issuedAt.toInstant())
                     .expiration(expiration.toInstant())
                     .signWith(keyPair.getPrivate())
@@ -161,12 +145,14 @@ public class GenericSignerVerifier implements Signer, Verifier, Revoker {
 
             // Publish metadata to broker
             String publicKeyBase64 = Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded());
+
+            final TokenMode mode = configurer.getMode();
             String metadata = switch (mode) {
                 case jwt -> String.format("%s:%s:%d:", mode.name(), publicKeyBase64, expiration.getTime());
                 case id -> String.format("%s:%s:%d:%s", mode.name(), publicKeyBase64, expiration.getTime(), token);
             };
 
-            broker.send(keyId, metadata).get(3, TimeUnit.MINUTES);
+            metadataBroker.send(keyId, metadata).get(3, TimeUnit.MINUTES);
 
             return (mode == TokenMode.jwt) ? token : keyId;
         } catch (ExecutionException | InterruptedException e) {
@@ -178,12 +164,12 @@ public class GenericSignerVerifier implements Signer, Verifier, Revoker {
     }
 
     @Override
-    public Object verify(String token) throws BrokerExtractionException {
+    public <T> T verify(String token, Function<String,T> deserializer) throws BrokerExtractionException {
         try {
             String keyId = getKeyId(token);
             Map<String, Object> claims = getClaims(keyId, token);
             String data = (String) claims.get("data");
-            return dataTransformer.deserialize(data);
+            return deserializer.apply(data);
         } catch (BrokerExtractionException | IndexOutOfBoundsException | DataDeserializationException e) {
             throw e;
         } catch (Exception e) {
@@ -230,7 +216,7 @@ public class GenericSignerVerifier implements Signer, Verifier, Revoker {
      * @return parsed claims from the appropriate token
      */
     private Map<String, Object> getClaims(String keyId, String token) {
-        String message = broker.get(keyId);
+        String message = metadataBroker.get(keyId);
         logger.info(String.format("Observed token of key ID %s is %s", keyId, message));
 
         String[] parts = message.split(":");
@@ -288,7 +274,7 @@ public class GenericSignerVerifier implements Signer, Verifier, Revoker {
     private void revokeByTrackingId(long trackingId) {
         try {
             String keyId = generateId(trackingId, generatedIdSalt);
-            broker.send(keyId, "");
+            metadataBroker.send(keyId, "");
         } catch (Exception e) {
             logger.severe("Unable to regenerate keyId from the tracking identifier " + trackingId);
             throw new IllegalArgumentException(e);
@@ -298,7 +284,7 @@ public class GenericSignerVerifier implements Signer, Verifier, Revoker {
     private void revokeByToken(String token) {
         try {
             String keyId = getKeyId(token);
-            broker.send(keyId, "");
+            metadataBroker.send(keyId, "");
         } catch (Exception e) {
             logger.severe("Unable to extract keyId from the token " + token);
             throw new IllegalArgumentException(e);

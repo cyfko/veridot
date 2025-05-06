@@ -3,7 +3,7 @@ package io.github.cyfko.veridot.tests;
 public class UserData {
     private String email;
 
-    // No-argument constructor
+    // Needed for Jackson
     public UserData() {
     }
 
