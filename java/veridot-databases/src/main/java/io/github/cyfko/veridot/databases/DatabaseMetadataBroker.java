@@ -144,16 +144,11 @@ public class DatabaseMetadataBroker implements MetadataBroker {
                 if (keyId == null || keyId.isBlank() || message == null) return;
 
                 if (message.isBlank()) { // Delete the record with keyId
-                    String sql = String.format(
-                            "DELETE FROM %s WHERE %s = ?",
-                            tableName, COLUMN_KEY
-                    );
-
-                    try (PreparedStatement stmt = conn.prepareStatement(sql)) {
-                        stmt.setString(1, keyId);
-                        stmt.executeUpdate();
-                    }
+                    removeEntry(keyId, conn);
                 } else { // save a new records with that keyId
+
+                    removeEntry(keyId, conn);
+
                     String sql = String.format(
                             "INSERT INTO %s (%s, %s) VALUES (?, ?)",
                             tableName, COLUMN_KEY, COLUMN_MESSAGE
@@ -170,6 +165,19 @@ public class DatabaseMetadataBroker implements MetadataBroker {
                 throw new RuntimeException("Failed to store message in DB", e);
             }
         });
+    }
+
+    // Remove entry from the secured keys
+    private void removeEntry(String keyId, Connection conn) throws SQLException {
+        String sql = String.format(
+                "DELETE FROM %s WHERE %s = ?",
+                tableName, COLUMN_KEY
+        );
+
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, keyId);
+            stmt.executeUpdate();
+        }
     }
 
     @Override

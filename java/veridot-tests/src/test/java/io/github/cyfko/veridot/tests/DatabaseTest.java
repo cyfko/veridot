@@ -239,4 +239,26 @@ public abstract class DatabaseTest {
         assertNotNull(verifiedData);
         assertEquals(data.getEmail(), verifiedData.getEmail());
     }
+
+    @ParameterizedTest()
+    @EnumSource(value = TokenMode.class)
+    void verify_token_regeneration_should_returns_payload_pojo(TokenMode mode) throws InterruptedException {
+        UserData data = new UserData("john.doe@example.com");
+
+        BasicConfigurer configurer = BasicConfigurer.builder()
+                .useMode(mode)
+                .trackedBy(mode.name().hashCode() + 9)
+                .validity(600)
+                .build();
+
+        dataSigner.sign(data, configurer); // Generate a valid token
+        String token = dataSigner.sign(data, configurer); // Regenerate a valid token
+
+        Thread.sleep(2000); // Wait 2 secs to ensure that the keys has been propagated to database
+
+        UserData verifiedData = tokenVerifier.verify(token, BasicConfigurer.deserializer(UserData.class));
+
+        assertNotNull(verifiedData);
+        assertEquals(data.getEmail(), verifiedData.getEmail());
+    }
 }
