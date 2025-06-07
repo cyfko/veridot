@@ -7,13 +7,13 @@ abstract class ConstantDefault{
 
 /// Defines environment variable names.
 abstract class Env{
-    static final String KEYS_ROTATION_MINUTES = "DVER_KEYS_ROTATION_MINUTES";
+    static final String KEYS_ROTATION_MINUTES = "VDOT_KEYS_ROTATION_MINUTES";
 }
 
 /**
  * A Placeholder for some constants.
  */
-public abstract class Constant {
+public abstract class Config {
     /**
      * The interval in minutes before the current used Asymmetric keys-pair changes.
      */

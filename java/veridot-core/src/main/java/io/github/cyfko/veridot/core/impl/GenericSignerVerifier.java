@@ -61,7 +61,7 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
 
     static {
         try {
-            keyFactory = KeyFactory.getInstance(Constant.ASYMMETRIC_KEYPAIR_ALGORITHM);
+            keyFactory = KeyFactory.getInstance(Config.ASYMMETRIC_KEYPAIR_ALGORITHM);
         } catch (Exception e) {
             throw new RuntimeException("Failed to initialize KeyFactory: " + e.getMessage(), e);
         }
@@ -94,7 +94,7 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         scheduler.scheduleAtFixedRate(
                 this::generatedKeysPair,
                 0,
-                Constant.KEYS_ROTATION_MINUTES,
+                Config.KEYS_ROTATION_MINUTES,
                 TimeUnit.MINUTES
         );
     }
@@ -250,9 +250,9 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
     private void generatedKeysPair() {
         long now = System.currentTimeMillis();
 
-        if (now - lastExecutionTime >= Constant.KEYS_ROTATION_MINUTES * 60 * 1000 || lastExecutionTime == 0) {
+        if (now - lastExecutionTime >= Config.KEYS_ROTATION_MINUTES * 60 * 1000 || lastExecutionTime == 0) {
             try {
-                KeyPairGenerator generator = KeyPairGenerator.getInstance(Constant.ASYMMETRIC_KEYPAIR_ALGORITHM);
+                KeyPairGenerator generator = KeyPairGenerator.getInstance(Config.ASYMMETRIC_KEYPAIR_ALGORITHM);
                 keyPair = generator.generateKeyPair();
                 logger.info("Ephemeral key pair rotated.");
             } catch (Exception e) {

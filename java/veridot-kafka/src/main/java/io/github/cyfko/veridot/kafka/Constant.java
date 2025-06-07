@@ -4,15 +4,15 @@ package io.github.cyfko.veridot.kafka;
 abstract class ConstantDefault{
     static final String KAFKA_BOOSTRAP_SERVERS = "localhost:9092";
     static final String TOKEN_VERIFIER_TOPIC = "token-verifier";
-    static final String EMBEDDED_DATABASE_PATH = "dverify_db_data";
-    static final String UNIQUE_BROKER_GROUP_ID_KEY = "dverify_db";
+    static final String EMBEDDED_DATABASE_PATH = "veridot_db_data";
+    static final String UNIQUE_BROKER_GROUP_ID_KEY = "veridot_db";
 }
 
 /// Defines environment variable names.
 abstract class Env{
-    static final String KAFKA_BOOSTRAP_SERVERS = "DVER_KAFKA_BOOSTRAP_SERVERS";
-    static final String KAFKA_TOKEN_VERIFIER_TOPIC = "DVER_TOKEN_VERIFIER_TOPIC";
-    static final String EMBEDDED_DATABASE_PATH = "DVER_EMBEDDED_DATABASE_PATH";
+    static final String KAFKA_BOOSTRAP_SERVERS = "VDOT_KAFKA_BOOSTRAP_SERVERS";
+    static final String KAFKA_TOKEN_VERIFIER_TOPIC = "VDOT_TOKEN_VERIFIER_TOPIC";
+    static final String EMBEDDED_DATABASE_PATH = "VDOT_EMBEDDED_DATABASE_PATH";
 }
 
 /**
@@ -35,11 +35,6 @@ public abstract class Constant {
      */
     public static final String EMBEDDED_DATABASE_PATH;
 
-
-    /**
-     * Algorithm used to generate asymmetric keys pair.
-     */
-    public static final String ASYMMETRIC_KEYPAIR_ALGORITHM = "Ed25519";
 
     static {
         final var boostrapServers = System.getenv(Env.KAFKA_BOOSTRAP_SERVERS);
