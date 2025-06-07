@@ -6,7 +6,7 @@ The current API especially provide a Kafka-aware implementation of the core [Met
 
 ## ✨ Features
 
-- 🔐 **JWT Signing & Verification** using RSA (ECDSA)
+- 🔐 **JWT Signing & Verification** using RSA
 - 🔁 **Automatic Key Rotation**
 - 📬 **Public Key Distribution for decentralized verification** via Kafka
 - 🧠 **Fast and Persistent Storage** using **[RocksDB](https://rocksdb.org/)** for ultra-fast verification
