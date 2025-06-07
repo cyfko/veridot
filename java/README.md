@@ -38,6 +38,27 @@ This module provides a **relational database-backed implementation of `MetadataB
 
 ---
 
+✅ veridot-tests
+
+> Location: [`/veridot-tests`](https://github.com/cyfko/veridot/tree/main/java/veridot-tests)
+
+This module contains integration and compatibility tests for the entire Veridot ecosystem:
+
+Ensures consistent behavior across all MetadataBroker implementations.
+
+Validates end-to-end scenarios such as token creation, propagation, verification, and revocation.
+
+Can be extended to test custom implementations or edge cases.
+
+To run the tests:
+
+```shell
+cd java/veridot-tests
+./gradlew test
+```
+
+---
+
 ## 🔄 How It All Fits Together
 
 Veridot enables distributed services to securely:
