@@ -26,14 +26,20 @@ For **Maven**:
 
 <dependency>
     <groupId>io.github.cyfko</groupId>
-    <artifactId>veridot</artifactId>
-    <version>2.1.0</version>
+    <artifactId>veridot-core</artifactId>
+    <version>2.0.0</version>
+</dependency>
+<dependency>
+    <groupId>io.github.cyfko</groupId>
+    <artifactId>veridot-kafka</artifactId>
+    <version>2.0.0</version>
 </dependency>
 ```
 
 For **Gradle**:
 ```gradle
-implementation 'io.github.cyfko:veridot:2.1.0'
+implementation 'io.github.cyfko:veridot-core:2.0.0'
+implementation 'io.github.cyfko:veridot-kafka:2.0.0'
 ```
 
 > ⚠️ **Important Note**  
@@ -72,6 +78,7 @@ props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092" /* some kafk
 props.put(Config.KEYS_ROTATION_MINUTES, 5);
 
 GenericSignerVerifier genericSignerVerifier = new GenericSignerVerifier(KafkaMetadataBrokerAdapter.of(props));
+
 DataSigner dataSigner = genericSignerVerifier;
 TokenVerifier tokenVerifier = genericSignerVerifier;
 TokenRevoker tokenRevoker = genericSignerVerifier;
@@ -80,21 +87,20 @@ String data = "john.doe@example.com";
 
 BasicConfigurer configurer = BasicConfigurer.builder()
         .useMode(TokenMode.jwt)
-        .trackedBy(5)       // Tracker identity, used for revocation purposes
-        .validity(60 * 5)   // Valid for 5 minutes
+        .trackedBy(5)       // Tracker identity, used for revocation purposes.
+        .validity(60 * 5)   // Valid for 5 minutes.
         .build();
 
-String token = dataSigner.sign(data, configurer);                    // Generate the JWT token embedding the data
-String verifiedData = tokenVerifier.verify(token, String::toString); // Verifying the JWT token and extracting the embedded data as a String
+String token = dataSigner.sign(data, configurer);                    // Generate the JWT token embedding the data.
+String verifiedData = tokenVerifier.verify(token, String::toString); // Verifying the JWT token and extracting the embedded data as a String.
 
 assertNotNull(verifiedData);
 
 assertEquals(data, verifiedData);
 
-tokenRevoker.revoke(token); // Revoke the token.
-/* tokenRevoker.revoke(5); // Can also be revoked by passing the tracker ID */
+tokenRevoker.revoke(token); // Revoke the token. Can also be revoked by passing the tracker ID instead of the token itself.
 
-assertThrows(BrokerExtractionException .class, () ->tokenVerifier.verify(token, String::toString));
+assertThrows(BrokerExtractionException .class, () -> tokenVerifier.verify(token, String::toString));
 ```
 ---
 
