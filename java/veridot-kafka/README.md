@@ -103,9 +103,7 @@ assertNotNull(verifiedData);
 assertEquals(data, verifiedData);
 
 /* Revoke the token when necessary */
-tokenRevoker.
-
-revoke(token); // Tokens can also be revoked by passing the tracker ID instead of the token itself.
+tokenRevoker.revoke(token); // Tokens can also be revoked by passing the tracker ID instead of the token itself.
 
 assertThrows(BrokerExtractionException .class, () -> tokenVerifier.verify(token, String::toString));
 ```
