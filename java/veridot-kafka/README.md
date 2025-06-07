@@ -1,4 +1,6 @@
-# A Kafka based implementation of the core [MetadataBroker](https://github.com/cyfko/veridot/blob/main/java/veridot-core/src/main/java/io/github/cyfko/veridot/core/MetadataBroker.java) API.
+# A Kafka based implementation of the [core](https://github.com/cyfko/veridot/blob/main/java/veridot-core) API 
+
+The current API especially provide a Kafka-aware implementation of the core [MetadataBroker](https://github.com/cyfko/veridot/blob/main/java/veridot-core/src/main/java/io/github/cyfko/veridot/core/MetadataBroker.java) Interface.
 
 ---
 
@@ -61,11 +63,17 @@ import io.github.cyfko.veridot.core.TokenRevoker;
 import io.github.cyfko.veridot.core.impl.BasicConfigurer;
 import io.github.cyfko.veridot.core.TokenMode;
 import io.github.cyfko.veridot.core.impl.Config;
+import io.github.cyfko.veridot.kafka.KafkaMetadataBrokerAdapter;
+
 import java.util.Properties;
 
 Properties props = new Properties();
-props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092" /* some kafka boostrap server */);
-props.put(Config.KEYS_ROTATION_MINUTES, 5);
+props.
+
+put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092" /* some kafka boostrap server */);
+props.
+
+put(Config.KEYS_ROTATION_MINUTES, 5);
 
 GenericSignerVerifier genericSignerVerifier = new GenericSignerVerifier(KafkaMetadataBrokerAdapter.of(props));
 DataSigner dataSigner = genericSignerVerifier;
@@ -84,12 +92,17 @@ String token = dataSigner.sign(data, configurer);                    // Generate
 String verifiedData = tokenVerifier.verify(token, String::toString); // Verifying the JWT token and extracting the embedded data as a String
 
 assertNotNull(verifiedData);
+
 assertEquals(data, verifiedData);
 
-tokenRevoker.revoke(token); // Revoke the token.
+tokenRevoker.
+
+revoke(token); // Revoke the token.
 /* tokenRevoker.revoke(5); // Can also be revoked by passing the tracker ID */
 
-assertThrows(BrokerExtractionException.class, () -> tokenVerifier.verify(token, String::toString));
+assertThrows(BrokerExtractionException .class, () ->tokenVerifier.
+
+verify(token, String::toString));
 ```
 ---
 
