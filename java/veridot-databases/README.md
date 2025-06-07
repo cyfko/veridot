@@ -1,6 +1,7 @@
 # A Database based implementation of the [core](https://github.com/cyfko/veridot/blob/main/java/veridot-core) API 
 
-The current API especially provide a Database-aware implementation of the core [MetadataBroker](https://github.com/cyfko/veridot/blob/main/java/veridot-core/src/main/java/io/github/cyfko/veridot/core/MetadataBroker.java) Interface.
+The current API especially provide a Database-aware implementation of the core [MetadataBroker](https://github.com/cyfko/veridot/blob/main/java/veridot-core/src/main/java/io/github/cyfko/veridot/core/MetadataBroker.java) Interface
+defined as a transport layer of metadata exploited for data signing and token verifcation purposes in a distributed environment.
 
 ---
 
