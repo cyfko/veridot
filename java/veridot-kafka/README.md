@@ -1,6 +1,4 @@
-# 📦 dverify
-
-A Kafka based implementation of the veridot API.
+# A Kafka based implementation of the core [MetadataBroker](https://github.com/cyfko/veridot/blob/main/java/veridot-core/src/main/java/io/github/cyfko/veridot/core/MetadataBroker.java) API.
 
 ---
 
