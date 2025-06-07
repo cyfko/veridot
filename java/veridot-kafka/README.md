@@ -68,12 +68,8 @@ import io.github.cyfko.veridot.kafka.KafkaMetadataBrokerAdapter;
 import java.util.Properties;
 
 Properties props = new Properties();
-props.
-
-put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092" /* some kafka boostrap server */);
-props.
-
-put(Config.KEYS_ROTATION_MINUTES, 5);
+props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092" /* some kafka boostrap server */);
+props.put(Config.KEYS_ROTATION_MINUTES, 5);
 
 GenericSignerVerifier genericSignerVerifier = new GenericSignerVerifier(KafkaMetadataBrokerAdapter.of(props));
 DataSigner dataSigner = genericSignerVerifier;
