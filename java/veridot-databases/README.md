@@ -97,28 +97,34 @@ import javax.sql.DataSource;
 DataSource dataSource = createDataSource();
 
 MetadataBroker metadataBroker = new DatabaseMetadataBroker(dataSource, "broker_messages");
+
+/* Create an instance of GenericSignerVerifier which implements DataSigner, TokenVerifier and TokenRevoker interfaces  */
 GenericSignerVerifier genericSignerVerifier = new GenericSignerVerifier(metadataBroker);
 
 DataSigner dataSigner = genericSignerVerifier;
 TokenVerifier tokenVerifier = genericSignerVerifier;
 TokenRevoker tokenRevoker = genericSignerVerifier;
 
-String data = "john.doe@example.com";
-
+/* Configure how to generate and track the token */
 BasicConfigurer configurer = BasicConfigurer.builder()
         .useMode(TokenMode.jwt)
         .trackedBy(5)       // Tracker identity, used for revocation purposes.
         .validity(60 * 5)   // Valid for 5 minutes.
         .build();
 
+/* Generate the token (sign the data of interest) */
+String data = "john.doe@example.com";
 String token = dataSigner.sign(data, configurer);                    // Generate the JWT token embedding the data.
+
+/* Verify the token (extracting the data of interest) */
 String verifiedData = tokenVerifier.verify(token, String::toString); // Verifying the JWT token and extracting the embedded data as a String.
 
 assertNotNull(verifiedData);
 
 assertEquals(data, verifiedData);
 
-tokenRevoker.revoke(token); // Revoke the token. Can also be revoked by passing the tracker ID instead of the token itself.
+/* Revoke the token when necessary */
+tokenRevoker.revoke(token); // Tokens can also be revoked by passing the tracker ID instead of the token itself.
 
 assertThrows(BrokerExtractionException .class, () -> tokenVerifier.verify(token, String::toString));
 ```
