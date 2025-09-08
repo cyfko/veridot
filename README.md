@@ -1,6 +1,6 @@
-# DVerify - Multi-Language Distributed Verification Library
+# Veridot - Multi-Language Distributed Verification Library
 
-DVerify is a lightweight and flexible library for verifying digitally signed data. Initially developed in Java, DVerify is now available in multiple languages, making it accessible across various platforms.
+Veridot is a lightweight and flexible library for verifying digitally signed data. Initially developed in Java, Veridot is now available in multiple languages, making it accessible across various platforms.
 
 ## ✨ Features
 
@@ -48,38 +48,38 @@ Authenticate users across blockchain-based or federated identity systems.
 
 ```mermaid
 sequenceDiagram
-    title DVerify Flow
+    title Veridot Flow
 
     actor Client
     actor Signer as Signer Microservice
     actor Verifier as Verifier Microservice
     
-    participant DvSigner as dverify Library (Signer)
-    participant Broker as Broker (Event Bus)
-    participant DvVerifier as dverify Library (Verifier)
+    participant DataSigner as veridot Library (Signer)
+    participant MetadataBroker as MetadataBroker (Event Bus)
+    participant TokenVerifier as veridot Library (Verifier)
     participant DB_Verifier as Embedded Database
 
     %% Signing Phase
     Client->>Signer: Request to sign data
-    Signer->>DvSigner: sign(data, duration)
-    DvSigner->>Broker: Publish metadata (token ID + additional info)
-    Broker-->>DvSigner: Ack (metadata published)
+    Signer->>DataSigner: sign(data, duration)
+    DataSigner->>MetadataBroker: Publish metadata (token ID + additional info)
+    MetadataBroker-->>DataSigner: Ack (metadata published)
     alt Each listening microservice
-        Broker->>DB_Verifier: Store metadata (token ID + additional info)
+        MetadataBroker->>DB_Verifier: Store metadata (token ID + additional info)
     end
-    DvSigner-->>Client: Deliver token
+    DataSigner-->>Client: Deliver token
 
     %% Verification Phase
     Client->>Verifier: Verify token
-    Verifier->>DvVerifier: verify(token)
-    DvVerifier->>DB_Verifier: Lookup metadata (local)
-    DB_Verifier-->>DvVerifier: Return verification result (valid/invalid)
-    DvVerifier-->>Client: Deliver result
+    Verifier->>TokenVerifier: verify(token)
+    TokenVerifier->>DB_Verifier: Lookup metadata (local)
+    DB_Verifier-->>TokenVerifier: Return verification result (valid/invalid)
+    TokenVerifier-->>Client: Deliver result
 ```
 
 ## Repository Structure
 ```
-dverify/
+veridot/
 │── java/       # Java implementation
 │── python/     # Python implementation
 │── nodejs/     # Node.js implementation
@@ -94,7 +94,7 @@ dverify/
 
 ## 📦 Available Implementations
 
-To install DVerify, follow these steps:
+To install Veridot, follow these steps:
 
 ### Java
 Visit the [Java documentation](java/README.md) for more details.
@@ -153,7 +153,7 @@ git push origin feature/your-feature
 ## 📢 Get Involved!
 💬 Have feedback or ideas? Let’s build a secure and efficient token verification system together!
 
-📌 GitHub: https://github.com/cyfko/dverify
+📌 GitHub: https://github.com/cyfko/veridot
 📧 Contact: frank.kossi@sprint-pay.com
 
 ## 📜 License

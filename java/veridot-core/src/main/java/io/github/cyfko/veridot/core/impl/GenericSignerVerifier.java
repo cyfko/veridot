@@ -20,6 +20,7 @@ import java.util.Date;
 import java.util.Map;
 import java.util.concurrent.*;
 import java.util.function.Function;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
@@ -217,14 +218,12 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
      */
     private Map<String, Object> getClaims(String keyId, String token) {
         String message = metadataBroker.get(keyId);
-        logger.info(String.format("Observed token of key ID %s is %s", keyId, message));
-
         String[] parts = message.split(":");
         try {
             byte[] publicKeyBytes = Base64.getDecoder().decode(parts[1]);
             PublicKey publicKey = keyFactory.generatePublic(new X509EncodedKeySpec(publicKeyBytes));
 
-            return switch (TokenMode.valueOf(parts[0])) {
+            final var claims = switch (TokenMode.valueOf(parts[0])) {
                 case jwt -> JwtVerifier
                         .verifyWith(publicKey)
                         .parseSignedClaims(token);
@@ -233,6 +232,10 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
                         .verifyWith(publicKey)
                         .parseSignedClaims(parts[3]);
             };
+
+            logger.log(Level.FINEST, String.format("Observed token infos: \n %s", claims));
+            return claims;
+
         } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException("Unexpected token format or metadata: " + e.getMessage(), e);
         } catch (Exception e) {
