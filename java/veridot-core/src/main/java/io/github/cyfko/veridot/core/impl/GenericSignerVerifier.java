@@ -257,9 +257,9 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             try {
                 KeyPairGenerator generator = KeyPairGenerator.getInstance(Config.ASYMMETRIC_KEYPAIR_ALGORITHM);
                 keyPair = generator.generateKeyPair();
-                logger.info("Ephemeral key pair rotated.");
+                logger.log(Level.FINEST, "Rotating ephemeral keys.");
             } catch (Exception e) {
-                logger.severe("Failed to generate key pair: " + e.getMessage());
+                logger.log(Level.FINEST,"Failed to generate key pair: " + e.getMessage());
             } finally {
                 lastExecutionTime = now;
             }
