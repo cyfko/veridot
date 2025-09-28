@@ -9,11 +9,10 @@
     <version>1.0.0</version>
     <packaging>pom</packaging>
 
-    <name>Distributed Tokens Verification</name>
-    <description>A lightweight library that simplifies token verification in microservices architectures where any
-        service may need to verify any incoming token.
+    <name>Veridot - Distributed Token Verification</name>
+    <description>Enterprise-grade distributed token verification library that simplifies token verification in microservices architectures where any service may need to verify any incoming token.
     </description>
-    <url>https://github.com/cyfko/dverify.git</url>
+    <url>https://cyfko.github.io/veridot</url>
 
     <licenses>
         <license>
@@ -38,10 +37,18 @@
     </modules>
 
     <scm>
-        <connection>scm:git:git://github.com/cyfko/dverify.git</connection>
-        <developerConnection>scm:git:ssh://github.com:cyfko/dverify.git</developerConnection>
-        <url>https://github.com/cyfko/dverify/tree/master</url>
+        <connection>scm:git:git://github.com/cyfko/veridot.git</connection>
+        <developerConnection>scm:git:ssh://github.com:cyfko/veridot.git</developerConnection>
+        <url>https://github.com/cyfko/veridot/tree/main</url>
     </scm>
+    
+    <distributionManagement>
+        <site>
+            <id>github-pages</id>
+            <name>GitHub Pages</name>
+            <url>https://cyfko.github.io/veridot</url>
+        </site>
+    </distributionManagement>
 
     <properties>
         <maven.compiler.source>21</maven.compiler.source>

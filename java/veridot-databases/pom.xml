@@ -9,10 +9,9 @@
     <version>2.0.2</version>
     <packaging>jar</packaging>
 
-    <name>Veridot Databases</name>
-    <url>https://github.com/cyfko/veridot</url>
-    <description>An implementation of the io.github.cyfko.veridot-core Broker interface API to exchange token's metadata events
-        through databases.
+    <name>Veridot Databases - Distributed Token Verification</name>
+    <url>https://cyfko.github.io/veridot</url>
+    <description>Database implementation module for Veridot - Provides database-based metadata broker for distributed token verification with support for various database systems.
     </description>
 
     <licenses>

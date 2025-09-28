@@ -9,10 +9,9 @@
     <version>2.0.1</version>
     <packaging>jar</packaging>
 
-    <name>Distributed Tokens Verification</name>
-    <url>https://github.com/cyfko/veridot.git</url>
-    <description>A lightweight library that simplifies token verification in microservices architectures where any
-        service may need to verify any incoming token.
+    <name>Veridot Core - Distributed Token Verification</name>
+    <url>https://cyfko.github.io/veridot</url>
+    <description>Core module for Veridot - Enterprise-grade distributed token verification library that simplifies token verification in microservices architectures where any service may need to verify any incoming token.
     </description>
 
     <licenses>
