@@ -1,0 +1,104 @@
+# Jekyll Configuration for Veridot Documentation
+title: Veridot
+description: Enterprise-Grade Distributed Token Verification Library
+url: "https://cyfko.github.io"
+baseurl: "/veridot"
+
+# Repository information
+repository: cyfko/veridot
+github_username: cyfko
+
+# Build settings
+markdown: kramdown
+highlighter: rouge
+theme: minima
+plugins:
+  - jekyll-feed
+  - jekyll-sitemap
+  - jekyll-seo-tag
+  - jekyll-github-metadata
+
+# Theme settings
+minima:
+  skin: dark
+  
+# Navigation
+header_pages:
+  - index.md
+  - docs/getting-started.md
+  - docs/java-guide.md
+  - docs/nodejs-guide.md
+  - docs/api-reference.md
+  - docs/security.md
+  - docs/deployment.md
+  - docs/examples.md
+  - docs/contributing.md
+
+# Collections for organized content
+collections:
+  guides:
+    output: true
+    permalink: /:collection/:name/
+  examples:
+    output: true
+    permalink: /:collection/:name/
+
+# Defaults
+defaults:
+  - scope:
+      path: ""
+      type: "posts"
+    values:
+      layout: "post"
+      author: "Veridot Team"
+  - scope:
+      path: ""
+      type: "guides"
+    values:
+      layout: "page"
+  - scope:
+      path: ""
+      type: "examples"
+    values:
+      layout: "page"
+
+# SEO and Social
+author:
+  name: Frank KOSSI
+  email: frank.kossi@kunrin.com
+  twitter: kunrin_sa
+
+social:
+  name: Veridot
+  links:
+    - https://twitter.com/kunrin_sa
+    - https://github.com/cyfko/veridot
+
+# Exclude from processing
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - node_modules
+  - vendor/bundle/
+  - vendor/cache/
+  - vendor/gems/
+  - vendor/ruby/
+  - java/
+  - nodejs/
+  - .gitignore
+  - LICENSE
+  - AUTHORS.md
+
+# Include additional files
+include:
+  - _pages
+
+# Syntax highlighting
+kramdown:
+  syntax_highlighter: rouge
+  syntax_highlighter_opts:
+    block:
+      line_numbers: false
+
+# GitHub Pages specific settings
+github: [metadata]
