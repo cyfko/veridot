@@ -53,182 +53,20 @@ Cette règle s'applique à toutes les versions du protocole.
 
 ### 4.2 Version 2
 
-#### 4.2.1 Spécification du PCI
+**Caractéristiques principales :**
+- **Structure** : `[2] : [<groupId> : <sequenceId>] | [<metadata>]`
+- **Architecture** : Système de groupes et séquences pour gestion multi-sessions
+- **Configuration** : Messages de configuration hiérarchiques via séquences réservées
+- **Métadonnées** : Format unifié avec encodage JSON+Base64
 
-Pour la version 2, le **PCI** est composé de deux parties séparées par **`:`** :
+**Innovations v2 :**
+- Groupes logiques permettant plusieurs sessions simultanées
+- Configuration dynamique via le protocole lui-même
+- Séquences réservées (`__CONFIG__`, `__ALL__`) pour administration
+- Hiérarchie de résolution (local → site → global → défaut)
 
-**&lt;groupId&gt; : &lt;sequenceId&gt;**
-
-**Définitions :**
-- **groupId** : identifiant du groupe logique auquel appartient le message
-  - Type : chaîne de caractères alphanumériques
-  - Utilisation typique : identifiant utilisateur, identifiant de ressource
-  
-- **sequenceId** : identifiant unique d'une séquence au sein du groupe
-  - Type : chaîne de caractères alphanumériques
-  - Utilisation typique : identifiant de session, identifiant de connexion
-
-#### 4.2.2 Identifiant de référence en version 2
-
-L'**identifiant de référence** d'un message normal est défini comme suit :
-
-**messageId = [2] : [&lt;groupId&gt; : &lt;sequenceId&gt;]**
-
-**Utilisation :**
-- **Révocation** : `REVOKE 2:user123:session001` pour invalider ce message spécifique
-- **Tracking** : Suivi des opérations liées à ce message
-- **Audit** : Identification unique dans les logs
-
-**Exemple :** `2:user123:session001`
-
-#### 4.2.3 Message complet version 2
-
-**Structure finale :**
-
-**[2] : [&lt;groupId&gt; : &lt;sequenceId&gt;] | [&lt;metadata&gt;]**
-
-**Contraintes syntaxiques :**
-- **version** : exactement `2`
-- **groupId** : non vide, ne contient pas les caractères `:` et `|`
-- **sequenceId** : non vide, ne contient pas les caractères `:` et `|`
-- **metadata** : données binaires ou textuelles, format libre
-
-**Sémantique opérationnelle :**
-- Un **groupe** peut contenir plusieurs **séquences** actives simultanément
-- Chaque **séquence** au sein d'un **groupe** est unique
-- La gestion des sessions simultanées et des révocations s'effectue au niveau du **groupe**
-- Les politiques de contrôle sont **définies par les messages de configuration du protocole**
-
-#### 4.2.4 Messages de Configuration
-
-**Configuration Locale (Par Groupe) :**
-- **Format :** `[2] : [<groupId>] : [__CONFIG__] | [<metadata>]`
-- **Portée :** Spécifique au groupe identifié par `groupId`
-- **Priorité :** Maximale (surcharge toute autre configuration)
-- **Exemple :** `2:user123:__CONFIG__|policy:RklGTw==,maxSessions:Mw==,ttl:MzYwMA==`
-
-**Configuration Globale (Par Site/Service) :**
-- **Format :** `[2] : [__CONFIG__] : [<siteId>] | [<metadata>]`
-- **Portée :** Tous les groupes du site/service identifié par `siteId`
-- **Priorité :** Intermédiaire (appliquée si pas de configuration locale)
-- **Exemples :**
-  - `2:__CONFIG__:PAYMENT_SERVICE|policy:TFJV,maxSessions:MTA=,ttl:NzIwMA==`
-  - `2:__CONFIG__:__ALL__|policy:RklGTw==,maxSessions:Mg==,ttl:MzYwMA==` (configuration globale)
-
-**Résolution Hiérarchique :**
-1. **Configuration locale** : `2:<groupId>:__CONFIG__|<metadata>`
-2. **Configuration de site** : `2:__CONFIG__:<siteId>|<metadata>`
-3. **Configuration globale** : `2:__CONFIG__:__ALL__|<metadata>`
-4. **Configuration par défaut** : Politique définie par l'implémentation
-
-**Évolution de Configuration :**
-- **Principe** : Le message de configuration le plus récent fait foi
-- **Mécanisme** : Même infrastructure de transport que les messages normaux
-- **Cohérence** : Ordre garanti des événements via le broker
-- **Changement dynamique** : Nouveau message de configuration = nouvelle politique appliquée
-
-#### 4.2.5 Séquences Réservées
-
-**Liste des Séquences Réservées :**
-- **`__CONFIG__`** : Messages de configuration de politiques
-- **`__ALL__`** : Identifiant universel pour configuration globale
-- **Format** : Les séquences réservées utilisent le préfixe `__` et le suffixe `__`
-
-**Usage Contextuel :**
-- Configuration locale : `2:<groupId>:__CONFIG__|<metadata>`
-- Configuration de site : `2:__CONFIG__:<siteId>|<metadata>`
-
-#### 4.2.6 Format Unifié des Métadonnées
-
-**Structure Générale**
-
-Toutes les métadonnées suivent un format unifié, qu'il s'agisse de messages normaux ou de séquences réservées :
-
-```
-<metadata> = <name>:<base64_encoded_value>[,<name>:<base64_encoded_value>...]
-```
-
-**Spécification Version 2 :**
-- **`<base64_encoded_value>`** : Valeur JSON encodée en base64
-- **Avantage** : Structure de données typée et facilement parsable
-- **Conversion** : `JSON.parse(atob(base64_value))` pour décoder
-
-**Notation :** Les crochets `[...]` indiquent que l'élément peut être répété (zéro ou plusieurs fois).
-
-**Exemples Concrets :**
-
-*Message normal pour vérification d'un token JWT signé avec ECDSA (groupe USER, séquence 001) :*
-```
-2:USER:001|mode:ZWNkc2E=,pubkey:BKNPG59qjz0qfR5Va2N8hbKmWi6dOBA/fLRe3As2rU+ssv1+nBp6Jzs178Wou5gsL556SXzJ7wjnWutr6C49PnA==
-```
-*Valeurs décodées :*
-- `mode` = `"ecdsa"`
-- `pubkey` = `"BKNPG59qjz0qfR5Va2N8hbKmWi6dOBA/fLRe3As2rU+ssv1+nBp6Jzs178Wou5gsL556SXzJ7wjnWutr6C49PnA=="`
-
-*Message normal pour vérification d'une clé d'API ECDSA (groupe USER, séquence 002) :*
-```
-2:USER:002|mode:ZWNkc2E=,pubkey:BKNPG59qjz0qfR5Va2N8hbKmWi6dOBA/fLRe3As2rU+ssv1+nBp6Jzs178Wou5gsL556SXzJ7wjnWutr6C49PnA==,payload:MEUCIQCqhPO3G7gLnsihLPucIp4fZrbAQJfmxYjdx+17ahtnzAIgakjSzZy3487scEMfDnjUr1zLFruD13K8UkEg5PKXHqY=
-```
-*Valeurs décodées :*
-- `mode` = `"ecdsa"`
-- `pubkey` = `"BKNPG59qjz0qfR5Va2N8hbKmWi6dOBA/fLRe3As2rU+ssv1+nBp6Jzs178Wou5gsL556SXzJ7wjnWutr6C49PnA=="`
-- `payload` = `"MEUCIQCqhPO3G7gLnsihLPucIp4fZrbAQJfmxYjdx+17ahtnzAIgakjSzZy3487scEMfDnjUr1zLFruD13K8UkEg5PKXHqY="`
-
-*Configuration de groupe (__CONFIG__) :*
-```
-2:USER:__CONFIG__|policy:RklGTw==,maxSessions:Mw==,ttl:MzYwMA==
-```
-*Valeurs décodées :*
-- `policy` = `"FIFO"`
-- `maxSessions` = `3`
-- `ttl` = `3600`
-
-*Configuration globale (__ALL__) :*
-```
-2:__CONFIG__:__ALL__|version:Mi4w,issuer:aXNzdWVyX2xk,globalPolicy:RklGTw==,defaultTTL:MzYwMA==,validUntil:MTIzNDU2Nzg5OQ==
-```
-*Valeurs décodées :*
-- `version` = `"2.0"`
-- `issuer` = `"issuer_id"`
-- `globalPolicy` = `"FIFO"`
-- `defaultTTL` = `3600`
-- `validUntil` = `1234567899`
-
-**Propriétés du Format :**
-- **Cohérence** : Même structure pour tous les types de messages
-- **Parsing unifié** : Un seul parseur pour toutes les métadonnées  
-- **Extensibilité** : Ajout facile de nouvelles propriétés
-- **Lisibilité** : Format `name:value` séparé par virgules, intuitif et parsable
-- **Sécurité** : Valeurs encodées en base64 pour éviter les conflits de caractères
-- **Robustesse** : Virgule comme séparateur (absente du charset base64)
-- **Simplicité** : Pas de caractères d'échappement nécessaires
-- **Structure Typée** : Valeurs JSON permettent types complexes (objets, tableaux, etc.)
-- **Interopérabilité** : JSON facilite l'échange entre différents langages
-
-**Propriétés Standard des Métadonnées :**
-
-*Pour les messages normaux :*
-- **mode** : Type de signature cryptographique (`rsa` ou `ecdsa`)
-- **pubkey** : Clé publique encodée en base64 pour la validation
-- **payload** : (Optionnel) Payload signé encodé en base64 pour les API keys
-
-*Pour les messages de configuration :*
-- **name** : Nom descriptif de la configuration
-- **desc** : Description de la configuration
-- **policy** : Politique appliquée (FIFO, LIFO, LRU, etc.)
-- **maxSessions** : Nombre maximum de sessions simultanées
-- **ttl** : Durée de vie par défaut (Time To Live)
-- **validUntil** : Date limite de validité de la configuration
-
-#### 4.2.7 Extensibilité des Séquences Réservées
-
-**Séquences Réservées Futures :**
-- **`__REVOKE__`** : Messages de révocation explicite
-- **`__METRICS__`** : Messages de métriques/monitoring
-- **`__STATUS__`** : Messages de statut système
-- **`__HEALTH__`** : Messages de health check
-
-**Règle de Nommage :** `__<NOM>__` (double underscore obligatoire)
+**📋 Pour la spécification complète de la version 2 :**  
+👉 **[Voir PROTOCOL_V2.md](./PROTOCOL_V2.md)** - Spécification détaillée avec contraintes syntaxiques, exemples complets et règles d'implémentation
 
 ---
 
