@@ -3,7 +3,7 @@ package io.github.cyfko.veridot.core.impl;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.cyfko.veridot.core.DataSigner;
-import io.github.cyfko.veridot.core.TokenMode;
+import io.github.cyfko.veridot.core.DistributionMode;
 import io.github.cyfko.veridot.core.exceptions.DataDeserializationException;
 import io.github.cyfko.veridot.core.exceptions.DataSerializationException;
 
@@ -11,48 +11,79 @@ import java.util.function.Function;
 
 /**
  * A simple implementation of {@link DataSigner.Configurer} that uses a builder pattern to configure
- * token signing parameters such as token mode, validity duration, serializer, and tracker ID.
+ * token signing parameters such as distribution mode, groupId, sequenceId, validity duration,
+ * and payload serializer.
+ *
+ * @since 2.0.0
  */
 public class BasicConfigurer implements DataSigner.Configurer {
+
     private static final ObjectMapper objectMapper = new ObjectMapper();
+
+    // ── Builder ──────────────────────────────────────────────────────────────
 
     /**
      * Builder for {@link BasicConfigurer}.
-     * <p>
-     * Provides configuration options for:
-     * <ul>
-     *     <li>{@link TokenMode} — the mode used to generate the token (default: {@code jwt})</li>
-     *     <li>Validity duration in seconds — required</li>
-     *     <li>Tracking ID — required (used for revocation and grouping)</li>
-     *     <li>Object serializer — optional; uses Jackson {@link ObjectMapper} by default</li>
-     * </ul>
+     *
+     * <p>Required fields: {@code groupId}, {@code validity}.<br>
+     * Optional fields: {@code sequenceId} (auto-generated UUID if null),
+     * {@code distribution} (defaults to {@link DistributionMode#DIRECT}),
+     * {@code serializer} (defaults to Jackson {@link ObjectMapper}).</p>
      */
     public static class Builder {
-        private TokenMode mode = TokenMode.jwt;
+        private String groupId;
+        private String sequenceId;
+        private DistributionMode distribution = DistributionMode.DIRECT;
         private Function<Object, String> serializer;
-        private Long tracker;
         private Long seconds;
 
         /**
-         * Sets the token mode.
+         * Sets the group identifier.
          *
-         * @param mode the {@link TokenMode} to use; must not be {@code null}
-         * @return this builder instance
-         * @throws IllegalArgumentException if {@code mode} is {@code null}
+         * @param groupId non-null, non-blank string matching {@code [A-Za-z0-9_-]{1,64}}
+         * @return this builder
+         * @throws IllegalArgumentException if {@code groupId} is null or blank
          */
-        public Builder useMode(TokenMode mode) {
-            if (mode == null) {
-                throw new IllegalArgumentException("token mode must not be null");
+        public Builder groupId(String groupId) {
+            if (groupId == null || groupId.isBlank()) {
+                throw new IllegalArgumentException("groupId must not be null or blank");
             }
-            this.mode = mode;
+            this.groupId = groupId;
+            return this;
+        }
+
+        /**
+         * Sets the optional sequence identifier within the group.
+         * If not set (or set to {@code null}), a UUID will be auto-generated at signing time.
+         *
+         * @param sequenceId a string matching {@code [A-Za-z0-9_-]{1,64}}, or {@code null}
+         * @return this builder
+         */
+        public Builder sequenceId(String sequenceId) {
+            this.sequenceId = sequenceId; // null is explicitly allowed
+            return this;
+        }
+
+        /**
+         * Sets the distribution mode.
+         *
+         * @param distribution how the signed token is delivered to the caller; must not be {@code null}
+         * @return this builder
+         * @throws IllegalArgumentException if {@code distribution} is {@code null}
+         */
+        public Builder distribution(DistributionMode distribution) {
+            if (distribution == null) {
+                throw new IllegalArgumentException("distribution mode must not be null");
+            }
+            this.distribution = distribution;
             return this;
         }
 
         /**
          * Sets the token validity duration in seconds.
          *
-         * @param seconds number of seconds the token remains valid
-         * @return this builder instance
+         * @param seconds number of seconds the token remains valid; must be positive
+         * @return this builder
          */
         public Builder validity(long seconds) {
             this.seconds = seconds;
@@ -60,23 +91,10 @@ public class BasicConfigurer implements DataSigner.Configurer {
         }
 
         /**
-         * Sets the tracking ID for the token.
-         * <p>
-         * This ID can be used later for revocation or grouping purposes.
-         *
-         * @param id tracking ID
-         * @return this builder instance
-         */
-        public Builder trackedBy(long id) {
-            this.tracker = id;
-            return this;
-        }
-
-        /**
          * Sets a custom object serializer to convert the data into a string (typically JSON).
          *
          * @param serializer a function that serializes an object to string; must not be {@code null}
-         * @return this builder instance
+         * @return this builder
          * @throws IllegalArgumentException if {@code serializer} is {@code null}
          */
         public Builder serializedBy(Function<Object, String> serializer) {
@@ -89,15 +107,9 @@ public class BasicConfigurer implements DataSigner.Configurer {
 
         /**
          * Builds a {@link BasicConfigurer} instance with the current configuration.
-         * <p>
-         * If not explicitly set, the following defaults are used:
-         * <ul>
-         *     <li>{@link TokenMode} defaults to {@code jwt}</li>
-         *     <li>{@link ObjectMapper} is used as the default serializer</li>
-         * </ul>
          *
          * @return a configured {@link BasicConfigurer} instance
-         * @throws IllegalStateException if required fields (tracker or validity duration) are not set
+         * @throws IllegalStateException if required fields ({@code groupId} or {@code validity}) are not set
          */
         public BasicConfigurer build() {
             if (serializer == null) {
@@ -109,18 +121,17 @@ public class BasicConfigurer implements DataSigner.Configurer {
                     }
                 };
             }
-
-            if (tracker == null) {
-                throw new IllegalStateException("tracker is required");
+            if (groupId == null) {
+                throw new IllegalStateException("groupId is required");
             }
-
             if (seconds == null) {
                 throw new IllegalStateException("validity duration (seconds) is required");
             }
-
             return new BasicConfigurer(this);
         }
     }
+
+    // ── Factory methods ───────────────────────────────────────────────────────
 
     /**
      * Returns a new {@link Builder} instance.
@@ -142,7 +153,6 @@ public class BasicConfigurer implements DataSigner.Configurer {
             if (clazz.equals(String.class)) {
                 return clazz.cast(data);
             }
-
             try {
                 return objectMapper.readValue(data, clazz);
             } catch (JsonProcessingException e) {
@@ -151,6 +161,8 @@ public class BasicConfigurer implements DataSigner.Configurer {
         };
     }
 
+    // ── Implementation ────────────────────────────────────────────────────────
+
     private final Builder builderConfig;
 
     private BasicConfigurer(Builder builder) {
@@ -158,13 +170,18 @@ public class BasicConfigurer implements DataSigner.Configurer {
     }
 
     @Override
-    public TokenMode getMode() {
-        return builderConfig.mode;
+    public String getGroupId() {
+        return builderConfig.groupId;
     }
 
     @Override
-    public long getTracker() {
-        return builderConfig.tracker;
+    public String getSequenceId() {
+        return builderConfig.sequenceId; // may be null → auto-generated by signer
+    }
+
+    @Override
+    public DistributionMode getDistribution() {
+        return builderConfig.distribution;
     }
 
     @Override

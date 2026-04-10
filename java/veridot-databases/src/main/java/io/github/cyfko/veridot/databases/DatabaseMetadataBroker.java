@@ -5,6 +5,8 @@ import io.github.cyfko.veridot.core.exceptions.BrokerExtractionException;
 
 import javax.sql.DataSource;
 import java.sql.*;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.logging.Logger;
 
@@ -201,5 +203,28 @@ public class DatabaseMetadataBroker implements MetadataBroker {
             logger.severe(e.getMessage());
             throw new BrokerExtractionException("Failed to retrieve message from DB for key: " + keyId);
         }
+    }
+
+    @Override
+    public List<String> getKeysByPrefix(String prefix) throws BrokerExtractionException {
+        List<String> keys = new ArrayList<>();
+        try (Connection conn = dataSource.getConnection()) {
+            String sql = String.format(
+                    "SELECT %s FROM %s WHERE %s LIKE ?",
+                    COLUMN_KEY, tableName, COLUMN_KEY
+            );
+            try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+                stmt.setString(1, prefix + "%");
+                ResultSet rs = stmt.executeQuery();
+                while (rs.next()) {
+                    keys.add(rs.getString(COLUMN_KEY));
+                }
+            }
+        } catch (SQLException e) {
+            logger.severe(e.getMessage());
+            throw new BrokerExtractionException(
+                    "Failed to retrieve keys by prefix from DB: " + prefix);
+        }
+        return keys;
     }
 }

@@ -15,6 +15,7 @@ import org.rocksdb.RocksIterator;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
 import java.util.UUID;
@@ -188,11 +189,39 @@ public class KafkaMetadataBrokerAdapter implements MetadataBroker {
     /**
      * Periodically persists Kafka messages and purges expired keys from RocksDB.
      */
+    /**
+     * Schedules a recurring task to persist messages consumed from the Kafka topic into RocksDB.
+     * Expired entry cleanup is intentionally omitted: expiration is validated at read-time
+     * by {@code GenericSignerVerifier} using TTL metadata embedded in V2 messages.
+     */
     private void scheduleAsyncWork() {
         scheduler.scheduleAtFixedRate(() -> {
-            removeOldEmbeddedDatabaseEntries(db);
             saveKafkaMessagesOnEmbeddedDatabase(consumer, db);
         }, 0, 1, TimeUnit.SECONDS);
+    }
+
+    @Override
+    public List<String> getKeysByPrefix(String prefix) throws BrokerExtractionException {
+        List<String> keys = new ArrayList<>();
+        try (RocksIterator iterator = db.newIterator()) {
+            byte[] prefixBytes = prefix.getBytes(StandardCharsets.UTF_8);
+            for (iterator.seek(prefixBytes); iterator.isValid(); iterator.next()) {
+                String key = new String(iterator.key(), StandardCharsets.UTF_8);
+                if (!key.startsWith(prefix)) {
+                    break; // RocksDB keys are lexicographically sorted; stop at prefix boundary
+                }
+                // Skip internal metadata keys
+                if (key.equals(ConstantDefault.UNIQUE_BROKER_GROUP_ID_KEY)) {
+                    continue;
+                }
+                keys.add(key);
+            }
+        } catch (Exception e) {
+            logger.severe("Error iterating keys by prefix [" + prefix + "]: " + e.getMessage());
+            throw new BrokerExtractionException(
+                    "Failed to retrieve keys by prefix from RocksDB: " + prefix);
+        }
+        return keys;
     }
 
     /**
@@ -253,33 +282,4 @@ public class KafkaMetadataBrokerAdapter implements MetadataBroker {
         }
     }
 
-    /**
-     * Iterates through all RocksDB entries and removes those considered expired based on timestamp logic.
-     *
-     * @param db the RocksDB instance.
-     */
-    private static void removeOldEmbeddedDatabaseEntries(RocksDB db) {
-        try (RocksIterator iterator = db.newIterator()) {
-            long now = System.currentTimeMillis();
-
-            for (iterator.seekToFirst(); iterator.isValid(); iterator.next()) {
-                String key = new String(iterator.key(), StandardCharsets.UTF_8);
-                String value = new String(iterator.value(), StandardCharsets.UTF_8);
-                if (key.equals(ConstantDefault.UNIQUE_BROKER_GROUP_ID_KEY)) continue;
-
-                // Extract timestamp from stored value
-                long timestamp = Long.parseLong(value.split(":")[2]);
-
-                // Custom predicate: Delete if expired AND value contains "value1"
-                if ((now - timestamp) > 0) {
-                    db.delete(iterator.key());
-                    logger.info("Deleted key {} after expiration." + key);
-                }
-            }
-        } catch (RocksDBException e) {
-            logger.severe(e.getMessage());
-        } catch (Exception e) {
-            logger.severe("Error when running cleanup task: " + e.getMessage());
-        }
-    }
 }
