@@ -112,4 +112,22 @@ class VerificationTest {
         assertThrows(BrokerExtractionException.class, () -> sv.verify(messageId, s -> s),
                 "Expired INDIRECT token must throw BrokerExtractionException");
     }
+
+    @Test
+    void verify_futureTimestamp_beyond5min_throws() {
+        // Manually inject a broker entry with a timestamp 10 minutes in the future
+        long futureTs = java.time.Instant.now().getEpochSecond() + 600; // +10 min
+        var props = new java.util.LinkedHashMap<String, String>();
+        props.put("mode", Config.DEFAULT_CRYPTO_MODE);
+        props.put("pubkey", "dummykey");
+        props.put("timestamp", String.valueOf(futureTs));
+        props.put("ttl", "3600");
+        String msg = ProtocolV2.buildMessage("drift-grp", "s1", props);
+        broker.send("2:drift-grp:s1", msg);
+
+        // Verify must reject due to clock drift > 5 min (§9.1)
+        assertThrows(BrokerExtractionException.class,
+                () -> sv.verify("2:drift-grp:s1", s -> s),
+                "Must reject messages with timestamp > 5min in the future");
+    }
 }

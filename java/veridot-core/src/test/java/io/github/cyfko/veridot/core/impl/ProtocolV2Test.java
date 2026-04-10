@@ -154,4 +154,32 @@ class ProtocolV2Test {
     void groupPrefix_format() {
         assertEquals("2:user123:", ProtocolV2.groupPrefix("user123"));
     }
+
+    @Test
+    void buildRevocationMessage_format() {
+        String msg = ProtocolV2.buildRevocationMessage("user123", "session001");
+        assertTrue(msg.startsWith("2:user123:__REVOKE__|"), "Must have __REVOKE__ header");
+        assertTrue(msg.contains("target:"), "Must contain target property");
+        assertTrue(msg.contains("timestamp:"), "Must contain timestamp property");
+
+        // Decode target to verify it matches
+        var meta = ProtocolV2.parseMetadata(msg);
+        assertEquals("session001", meta.get("target"));
+    }
+
+    @Test
+    void buildLocalConfigKey_format() {
+        assertEquals("2:myGroup:__CONFIG__", ProtocolV2.buildLocalConfigKey("myGroup"));
+        assertEquals("2:__CONFIG__:mySite", ProtocolV2.buildSiteConfigKey("mySite"));
+        assertEquals("2:__CONFIG__:__ALL__", ProtocolV2.buildGlobalConfigKey());
+    }
+
+    @Test
+    void isReservedSequence_detection() {
+        assertTrue(ProtocolV2.isReservedSequence("2:grp:__REVOKE__"), "__REVOKE__ is reserved");
+        assertTrue(ProtocolV2.isReservedSequence("2:grp:__CONFIG__"), "__CONFIG__ is reserved");
+        assertTrue(ProtocolV2.isReservedSequence("2:grp:__ALL__"), "__ALL__ is reserved");
+        assertFalse(ProtocolV2.isReservedSequence("2:grp:session001"), "Normal sequence is not reserved");
+        assertFalse(ProtocolV2.isReservedSequence("invalid"), "Non-messageId is not reserved");
+    }
 }

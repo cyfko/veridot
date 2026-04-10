@@ -54,9 +54,15 @@ class RevocationTest {
         String t2 = sv.sign("d2", BasicConfigurer.builder().groupId("u1").validity(600).build());
         String t3 = sv.sign("d3", BasicConfigurer.builder().groupId("u1").validity(600).build());
 
-        assertEquals(3, broker.getKeysByPrefix("2:u1:").size(), "Must have 3 active sessions before revokeGroup");
+        long normalCountBefore = broker.getKeysByPrefix("2:u1:").stream()
+                .filter(k -> !ProtocolV2.isReservedSequence(k)).count();
+        assertEquals(3, normalCountBefore, "Must have 3 active sessions before revokeGroup");
         sv.revokeGroup("u1");
-        assertEquals(0, broker.getKeysByPrefix("2:u1:").size(), "Must have 0 sessions after revokeGroup");
+        long normalCountAfter = broker.getKeysByPrefix("2:u1:").stream()
+                .filter(k -> !ProtocolV2.isReservedSequence(k)).count();
+        assertEquals(0, normalCountAfter, "Must have 0 normal sessions after revokeGroup");
+        // The __REVOKE__ message itself persists (for interoperability)
+        assertTrue(broker.containsKey("2:u1:__REVOKE__"), "Revocation message must persist in broker");
 
         assertThrows(BrokerExtractionException.class, () -> sv.verify(t1, s -> s));
         assertThrows(BrokerExtractionException.class, () -> sv.verify(t2, s -> s));
@@ -85,5 +91,38 @@ class RevocationTest {
     void revoke_unsupported_type_throws() {
         assertThrows(IllegalArgumentException.class, () -> sv.revoke(42L),
                 "Non-String targets must throw IllegalArgumentException");
+    }
+
+    @Test
+    void revoke_publishes_structured_revocation_message() {
+        var cfg = BasicConfigurer.builder().groupId("u1").sequenceId("s1").validity(600).build();
+        String jwt = sv.sign("data", cfg);
+        sv.revoke(jwt);
+
+        // The __REVOKE__ message must exist in the broker
+        String revokeKey = "2:u1:__REVOKE__";
+        assertTrue(broker.containsKey(revokeKey), "Revocation key must exist in broker");
+        String revokeMsg = broker.getRaw(revokeKey);
+        assertTrue(revokeMsg.startsWith("2:u1:__REVOKE__|"), "Must be a structured V2 __REVOKE__ message");
+        assertTrue(revokeMsg.contains("target:"), "Must contain 'target' property");
+        assertTrue(revokeMsg.contains("timestamp:"), "Must contain 'timestamp' property");
+    }
+
+    @Test
+    void revokeGroup_publishes_revocation_with_target_all() {
+        sv.sign("d1", BasicConfigurer.builder().groupId("u1").validity(600).build());
+        sv.sign("d2", BasicConfigurer.builder().groupId("u1").validity(600).build());
+        sv.revokeGroup("u1");
+
+        String revokeKey = "2:u1:__REVOKE__";
+        assertTrue(broker.containsKey(revokeKey), "Revocation key must exist after revokeGroup");
+        String revokeMsg = broker.getRaw(revokeKey);
+
+        // Parse and verify target == __ALL__
+        int pipeIdx = revokeMsg.indexOf('|');
+        assertTrue(pipeIdx > 0);
+        // Use ProtocolV2 to parse (package-private, accessible from this test class)
+        var meta = ProtocolV2.parseMetadata(revokeMsg);
+        assertEquals("__ALL__", meta.get("target"), "revokeGroup must use target=__ALL__");
     }
 }

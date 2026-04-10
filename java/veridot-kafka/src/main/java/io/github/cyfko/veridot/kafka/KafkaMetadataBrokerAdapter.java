@@ -254,11 +254,14 @@ public class KafkaMetadataBrokerAdapter implements MetadataBroker {
 
     /**
      * Polls Kafka messages and saves them into RocksDB using their key as the DB key.
+     * <p>
+     * Handles Protocol V2 __REVOKE__ messages (§5) by deleting targeted sequences from RocksDB.
+     * </p>
      *
      * @param consumer the KafkaConsumer instance.
      * @param db the RocksDB database.
      */
-    private static void saveKafkaMessagesOnEmbeddedDatabase(KafkaConsumer<String,String> consumer, RocksDB db) {
+    private void saveKafkaMessagesOnEmbeddedDatabase(KafkaConsumer<String,String> consumer, RocksDB db) {
         ConsumerRecords<String, String> records = consumer.poll(Duration.ofSeconds(10)); // At most 10 seconds to wait for.
         for (var record: records) {
             try {
@@ -269,16 +272,79 @@ public class KafkaMetadataBrokerAdapter implements MetadataBroker {
                 }
 
                 if (message.isBlank()){
-                    // remove this entry
+                    // remove this entry (direct deletion or V1-style revocation)
                     db.delete(key.getBytes());
+                } else if (key.contains(":__REVOKE__")) {
+                    // V2 structured revocation message (§5.2)
+                    processRevocationMessage(key, message, db);
+                    // Persist the __REVOKE__ message itself (for interoperability)
+                    db.put(key.getBytes(), message.getBytes());
                 } else {
-                    // persist on embedded DB
+                    // Normal message — persist on embedded DB
                     byte[] bytes = message.getBytes();
                     db.put(key.getBytes(), bytes);
                 }
             } catch (RocksDBException ex) {
                 logger.severe(ex.getMessage());
             }
+        }
+    }
+
+    /**
+     * Processes a V2 __REVOKE__ message: parses the {@code target} property and
+     * deletes the corresponding sequences from RocksDB.
+     *
+     * @param key     the revocation key, e.g. {@code "2:user123:__REVOKE__"}
+     * @param message the full V2 revocation message with metadata
+     * @param db      the RocksDB instance
+     */
+    private void processRevocationMessage(String key, String message, RocksDB db) {
+        try {
+            // Parse groupId from key: "2:groupId:__REVOKE__"
+            String[] keyParts = key.split(":", 3);
+            if (keyParts.length < 3) return;
+            String groupId = keyParts[1];
+
+            // Parse target from metadata (Base64url-encoded after the property name)
+            int pipeIdx = message.indexOf('|');
+            if (pipeIdx < 0) return;
+            String metaPart = message.substring(pipeIdx + 1);
+            String target = null;
+            for (String prop : metaPart.split(",")) {
+                int colonIdx = prop.indexOf(':');
+                if (colonIdx < 0) continue;
+                String name = prop.substring(0, colonIdx);
+                if ("target".equals(name)) {
+                    String encoded = prop.substring(colonIdx + 1);
+                    target = new String(java.util.Base64.getUrlDecoder().decode(encoded), StandardCharsets.UTF_8);
+                    break;
+                }
+            }
+            if (target == null) return;
+
+            if ("__ALL__".equals(target)) {
+                // Delete all normal sequences for this group
+                String prefix = "2:" + groupId + ":";
+                try (RocksIterator it = db.newIterator()) {
+                    byte[] prefixBytes = prefix.getBytes(StandardCharsets.UTF_8);
+                    for (it.seek(prefixBytes); it.isValid(); it.next()) {
+                        String k = new String(it.key(), StandardCharsets.UTF_8);
+                        if (!k.startsWith(prefix)) break;
+                        // Skip reserved sequences (__REVOKE__, __CONFIG__)
+                        if (k.contains(":__REVOKE__") || k.contains(":__CONFIG__")) continue;
+                        // Skip internal metadata keys
+                        if (k.equals(ConstantDefault.UNIQUE_BROKER_GROUP_ID_KEY)) continue;
+                        db.delete(it.key());
+                    }
+                }
+            } else {
+                // Delete specific sequence
+                String targetKey = "2:" + groupId + ":" + target;
+                db.delete(targetKey.getBytes(StandardCharsets.UTF_8));
+            }
+            logger.info("Processed __REVOKE__ for group " + groupId + ", target=" + target);
+        } catch (Exception e) {
+            logger.severe("Error processing revocation message: " + e.getMessage());
         }
     }
 

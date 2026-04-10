@@ -1,6 +1,7 @@
 package io.github.cyfko.veridot.core.impl;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.*;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -36,7 +37,7 @@ class ProtocolV2 {
     // ── Identifier validation ─────────────────────────────────────────────────
     private static final Pattern IDENTIFIER_PATTERN = Pattern.compile("^[A-Za-z0-9_-]{1,64}$");
 
-    // ── Standard property names ───────────────────────────────────────────────
+    // ── Standard property names (§7.4.1 Normal) ──────────────────────────────
     static final String PROP_MODE = "mode";
     static final String PROP_PUBKEY = "pubkey";
     static final String PROP_TIMESTAMP = "timestamp";
@@ -44,6 +45,12 @@ class ProtocolV2 {
     static final String PROP_TOKEN = "token";
     static final String PROP_SITE = "site";
     static final String PROP_TARGET = "target";
+
+    // ── Configuration property names (§7.4.2 Config) ─────────────────────────
+    static final String PROP_MAX_SESSIONS = "maxSessions";
+    static final String PROP_POLICY = "policy";
+    static final String PROP_DEFAULT_TTL = "defaultTTL";
+    static final String PROP_VALID_UNTIL = "validUntil";
 
     // ── Message building ──────────────────────────────────────────────────────
 
@@ -167,6 +174,61 @@ class ProtocolV2 {
      */
     static boolean isJwt(String s) {
         return s != null && s.contains(".");
+    }
+
+    // ── Reserved sequence detection ───────────────────────────────────────────
+
+    /**
+     * Returns {@code true} if the messageId's sequenceId is a reserved sequence
+     * (pattern: {@code __NAME__}).
+     */
+    static boolean isReservedSequence(String messageId) {
+        try {
+            String seqId = parseMessageId(messageId)[2];
+            return seqId.startsWith("__") && seqId.endsWith("__");
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    // ── Revocation helpers (§5) ───────────────────────────────────────────────
+
+    /**
+     * Returns the broker key for a revocation message: {@code 2:<groupId>:__REVOKE__}.
+     */
+    static String buildRevocationKey(String groupId) {
+        return buildMessageId(groupId, SEQ_REVOKE);
+    }
+
+    /**
+     * Builds a formal V2 revocation message (§5.2).
+     *
+     * @param groupId the group whose sequence(s) are being revoked
+     * @param target  the sequenceId to revoke, or {@code __ALL__} for group-wide revocation
+     * @return a complete V2 message: {@code 2:<groupId>:__REVOKE__|target:<b64>,timestamp:<b64>}
+     */
+    static String buildRevocationMessage(String groupId, String target) {
+        Map<String, String> props = new LinkedHashMap<>();
+        props.put(PROP_TARGET, target);
+        props.put(PROP_TIMESTAMP, String.valueOf(Instant.now().getEpochSecond()));
+        return buildMessage(groupId, SEQ_REVOKE, props);
+    }
+
+    // ── Configuration key helpers (§4) ────────────────────────────────────────
+
+    /** Local config key: {@code 2:<groupId>:__CONFIG__}. */
+    static String buildLocalConfigKey(String groupId) {
+        return buildMessageId(groupId, SEQ_CONFIG);
+    }
+
+    /** Site config key: {@code 2:__CONFIG__:<siteId>}. */
+    static String buildSiteConfigKey(String siteId) {
+        return buildMessageId(SEQ_CONFIG, siteId);
+    }
+
+    /** Global config key: {@code 2:__CONFIG__:__ALL__}. */
+    static String buildGlobalConfigKey() {
+        return buildMessageId(SEQ_CONFIG, SEQ_ALL);
     }
 
     // ── Identifier validation ─────────────────────────────────────────────────
