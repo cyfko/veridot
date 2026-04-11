@@ -25,19 +25,19 @@ Kafka-based implementation of the [`MetadataBroker`](https://github.com/cyfko/ve
 <dependency>
     <groupId>io.github.cyfko</groupId>
     <artifactId>veridot-core</artifactId>
-    <version>2.1.0</version>
+    <version>2.1.1</version>
 </dependency>
 <dependency>
     <groupId>io.github.cyfko</groupId>
     <artifactId>veridot-kafka</artifactId>
-    <version>2.1.0</version>
+    <version>2.1.1</version>
 </dependency>
 ```
 
 **Gradle**:
 ```gradle
-implementation 'io.github.cyfko:veridot-core:2.1.0'
-implementation 'io.github.cyfko:veridot-kafka:2.1.0'
+implementation 'io.github.cyfko:veridot-core:2.1.1'
+implementation 'io.github.cyfko:veridot-kafka:2.1.1'
 ```
 
 > ⚠️ This project follows [Semantic Versioning](https://semver.org/).
