@@ -215,4 +215,44 @@ class SessionCapacityTest {
         assertDoesNotThrow(() -> sv.verify(t1, s -> s), "Session s1 must survive REJECT");
         assertDoesNotThrow(() -> sv.verify(t2, s -> s), "Session s2 must survive REJECT");
     }
+
+    @Test
+    void reject_policy_allows_signing_when_all_sessions_expired() throws InterruptedException {
+        var sv = new GenericSignerVerifier(broker, "salt", 1, GenericSignerVerifier.EvictionPolicy.REJECT);
+
+        // Sign with TTL=1 second
+        sv.sign("d1", BasicConfigurer.builder().groupId("rej-exp").sequenceId("s1").validity(1).build());
+
+        // Wait for expiration
+        Thread.sleep(2500);
+
+        // The expired session should NOT count against the limit
+        assertDoesNotThrow(
+                () -> sv.sign("d2", BasicConfigurer.builder().groupId("rej-exp").sequenceId("s2").validity(600).build()),
+                "Signing must succeed when existing sessions have expired, even with REJECT policy");
+    }
+
+    @Test
+    void expired_sessions_are_garbage_collected_on_next_sign() throws InterruptedException {
+        var sv = new GenericSignerVerifier(broker, "salt", 2, GenericSignerVerifier.EvictionPolicy.FIFO);
+
+        // Sign 2 sessions with very short TTL
+        sv.sign("d1", BasicConfigurer.builder().groupId("gc").sequenceId("s1").validity(1).build());
+        sv.sign("d2", BasicConfigurer.builder().groupId("gc").sequenceId("s2").validity(1).build());
+
+        // Both entries exist in broker
+        assertTrue(broker.containsKey("2:gc:s1"), "s1 must exist before expiry");
+        assertTrue(broker.containsKey("2:gc:s2"), "s2 must exist before expiry");
+
+        // Wait for expiration
+        Thread.sleep(2500);
+
+        // Sign a new session — this triggers enforceSessionLimit which should GC expired entries
+        sv.sign("d3", BasicConfigurer.builder().groupId("gc").sequenceId("s3").validity(600).build());
+
+        // Expired entries must be physically deleted from the broker (lazy GC)
+        assertFalse(broker.containsKey("2:gc:s1"), "Expired s1 must be GC'd after next sign");
+        assertFalse(broker.containsKey("2:gc:s2"), "Expired s2 must be GC'd after next sign");
+        assertTrue(broker.containsKey("2:gc:s3"), "New s3 must exist");
+    }
 }

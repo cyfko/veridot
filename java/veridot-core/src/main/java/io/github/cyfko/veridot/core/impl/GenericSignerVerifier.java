@@ -577,12 +577,19 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             String prefix = ProtocolV2.groupPrefix(groupId);
             List<String> allKeys = metadataBroker.getKeysByPrefix(prefix);
 
-            // Filter to non-expired, non-reserved active keys
+            // Filter to non-expired, non-reserved active keys; garbage-collect expired entries
             List<String> validKeys = new ArrayList<>();
             for (String key : allKeys) {
                 if (ProtocolV2.isReservedSequence(key)) continue;
                 if (isMessageIdActive(key)) {
                     validKeys.add(key);
+                } else {
+                    // Lazy GC: remove expired entries from the broker to prevent stale accumulation
+                    try {
+                        metadataBroker.send(key, "");
+                    } catch (Exception gc) {
+                        logger.fine("Failed to GC expired key " + key + ": " + gc.getMessage());
+                    }
                 }
             }
 

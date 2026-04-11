@@ -14,13 +14,13 @@ Core module for **Veridot** — defines the API contracts and provides the defau
 <dependency>
     <groupId>io.github.cyfko</groupId>
     <artifactId>veridot-core</artifactId>
-    <version>2.1.1</version>
+    <version>2.1.2</version>
 </dependency>
 ```
 
 **Gradle**:
 ```gradle
-implementation 'io.github.cyfko:veridot-core:2.1.1'
+implementation 'io.github.cyfko:veridot-core:2.1.2'
 ```
 
 ---
