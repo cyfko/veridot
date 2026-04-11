@@ -1,71 +1,172 @@
-## 🧱 Project Structure
+# Veridot — Distributed Token Verification
 
-The **Veridot** project is structured to promote modularity, extensibility, and clean separation of concerns between contracts and implementations.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Java 17+](https://img.shields.io/badge/Java-17%2B-orange.svg)](https://openjdk.org/)
+[![Protocol V2](https://img.shields.io/badge/Protocol-V2-green.svg)](java/.agent/PROTOCOL_V2.md)
 
-### 📦 `veridot-core`
+**Enterprise-grade distributed token verification** for microservices architectures where any service may need to verify any incoming token — without shared secrets.
 
-> Location: [`/veridot-core`](https://github.com/cyfko/veridot/tree/main/java/veridot-core)
-
-This module defines the **core API**, including:
-
-* Fundamental interfaces like `DataSigner`, `TokenVerifier`, `MetadataBroker`, `DataTransformer`, and `TokenRevoker`.
-* The interaction model between signing, verification, metadata propagation, and revocation.
-* Common exceptions and domain contracts that govern token issuance and validation.
-
-It is **implementation-agnostic**, serving as the backbone for any custom or prebuilt Veridot components.
+Veridot implements **Protocol V2**, a binary-safe canonical message format with structured revocation, distributed configuration, and cryptographic clock-drift validation.
 
 ---
 
-### 🔌 `veridot-broker-kafka`
+## ✨ Key Features
 
-> Location: [`/veridot-kafka`](https://github.com/cyfko/veridot/tree/main/java/veridot-kafka)
-
-This module provides a **Kafka-based implementation of `MetadataBroker`**, enabling ephemeral token metadata propagation over a distributed messaging system.
-
-* Suited for high-throughput, event-driven environments.
-* Leverages Kafka topics to broadcast and retrieve public keys or verification metadata.
-
----
-
-### 🗃️ `veridot-broker-db`
-
-> Location: [`/veridot-databases`](https://github.com/cyfko/veridot/tree/main/java/veridot-databases)
-
-This module provides a **relational database-backed implementation of `MetadataBroker`**, using a persistent store (e.g., PostgreSQL, MySQL) to manage metadata.
-
-* Designed for systems that prefer durability and transactional consistency.
-* Useful in environments without Kafka or for audit-compliant workflows.
+- 🔐 **Ephemeral RSA key pairs** with automatic rotation
+- 📡 **Distributed public key propagation** via pluggable brokers (Kafka, SQL databases)
+- 🔄 **Two distribution modes**: DIRECT (JWT returned to caller) or INDIRECT (messageId reference)
+- ⚡ **Session capacity management** with FIFO/LIFO/LRU eviction policies
+- 📢 **Structured revocation** (`__REVOKE__`) for cross-processor interoperability
+- ⚙️ **Distributed configuration** (`__CONFIG__`) with local → site → global hierarchy
+- ⏱️ **Clock drift validation** (±5 minutes, §9.1)
+- 🔍 **Token tracking** — query active tokens by group, JWT, or messageId
 
 ---
 
-✅ veridot-tests
+## 📦 Project Structure
 
-> Location: [`/veridot-tests`](https://github.com/cyfko/veridot/tree/main/java/veridot-tests)
+| Module | Artifact | Description |
+|--------|----------|-------------|
+| [`veridot-core`](veridot-core/) | `io.github.cyfko:veridot-core` | Core API: interfaces, Protocol V2 implementation, `GenericSignerVerifier` |
+| [`veridot-kafka`](veridot-kafka/) | `io.github.cyfko:veridot-kafka` | Kafka-based `MetadataBroker` with RocksDB local cache |
+| [`veridot-databases`](veridot-databases/) | `io.github.cyfko:veridot-databases` | SQL database-backed `MetadataBroker` (PostgreSQL, MySQL, MariaDB…) |
+| [`veridot-tests`](veridot-tests/) | — | Integration tests across all broker implementations |
 
-This module contains integration and compatibility tests for the entire Veridot ecosystem:
+---
 
-Ensures consistent behavior across all MetadataBroker implementations.
+## 🚀 Quick Start
 
-Validates end-to-end scenarios such as token creation, propagation, verification, and revocation.
+### 1. Add dependencies
 
-Can be extended to test custom implementations or edge cases.
+**Maven** (with Kafka broker):
+```xml
+<dependency>
+    <groupId>io.github.cyfko</groupId>
+    <artifactId>veridot-core</artifactId>
+    <version>2.1.0</version>
+</dependency>
+<dependency>
+    <groupId>io.github.cyfko</groupId>
+    <artifactId>veridot-kafka</artifactId>
+    <version>2.1.0</version>
+</dependency>
+```
 
-To run the tests:
+**Maven** (with Database broker):
+```xml
+<dependency>
+    <groupId>io.github.cyfko</groupId>
+    <artifactId>veridot-core</artifactId>
+    <version>2.1.0</version>
+</dependency>
+<dependency>
+    <groupId>io.github.cyfko</groupId>
+    <artifactId>veridot-databases</artifactId>
+    <version>2.1.0</version>
+</dependency>
+```
 
-```shell
-cd java/veridot-tests
-./gradlew test
+### 2. Sign, verify, and revoke
+
+```java
+import io.github.cyfko.veridot.core.*;
+import io.github.cyfko.veridot.core.impl.*;
+
+// Create broker (Kafka or Database — see module READMEs)
+MetadataBroker broker = createBroker();
+
+// Create signer/verifier (implements DataSigner, TokenVerifier, TokenRevoker, TokenTracker)
+var sv = new GenericSignerVerifier(broker, "my-secret-salt");
+
+// Sign data → returns JWT (DIRECT mode, default)
+String jwt = sv.sign("john@example.com",
+    BasicConfigurer.builder()
+        .groupId("user-123")
+        .validity(300)  // 5 minutes
+        .build());
+
+// Verify token → extract original data
+String email = sv.verify(jwt, String::toString);
+
+// Revoke when needed
+sv.revoke(jwt);
+
+// Check if group has active tokens
+boolean active = sv.hasActiveToken("user-123");
 ```
 
 ---
 
-## 🔄 How It All Fits Together
+## 🔄 How It Works
 
-Veridot enables distributed services to securely:
+```
+┌──────────────┐     sign()      ┌──────────────────────┐
+│ Issuer       │ ──────────────→ │ GenericSignerVerifier │
+│ Service      │                 │                      │
+└──────────────┘                 │  1. Generate key pair│
+                                 │  2. Sign JWT         │
+                                 │  3. Publish V2 msg   │
+                                 └──────────┬───────────┘
+                                            │ send(messageId, v2Message)
+                                            ▼
+                                 ┌──────────────────────┐
+                                 │   MetadataBroker     │
+                                 │  (Kafka / Database)  │
+                                 └──────────┬───────────┘
+                                            │ get(messageId)
+                                            ▼
+┌──────────────┐    verify()     ┌──────────────────────┐
+│ Consumer     │ ──────────────→ │ GenericSignerVerifier │
+│ Service      │ ←────────────── │  (any instance)      │
+└──────────────┘   deserialized  └──────────────────────┘
+                     data
+```
 
-1. **Sign** payloads into short-lived, verifiable tokens.
-2. **Propagate** signing metadata (e.g., public keys) using a broker.
-3. **Verify** tokens with cryptographic integrity, retrieving metadata as needed.
-4. Optionally **revoke** tokens by ID or content for security control.
+---
 
-The architecture encourages you to plug in different `MetadataBroker` implementations depending on your system's needs (e.g., Kafka, DB, in-memory, etc.), while sharing the same token issuing and verifying core.
+## 🧪 Running Tests
+
+```bash
+# Unit tests (core)
+./mvnw -pl veridot-core test
+
+# Integration tests (requires Docker for Testcontainers)
+./mvnw -pl veridot-tests test
+```
+
+**Test coverage**: 169 tests across 11 suites (68 unit + 101 integration).
+
+---
+
+## 📋 Protocol V2
+
+Veridot implements [Protocol V2](https://cyfko.github.io/veridot) — a self-describing canonical message format:
+
+```
+2:<groupId>:<sequenceId>|mode:<b64>,pubkey:<b64>,timestamp:<b64>,ttl:<b64>
+```
+
+Key sections:
+- **§3** Normal messages (sign/verify lifecycle)
+- **§4** Distributed configuration (`__CONFIG__`)
+- **§5** Structured revocation (`__REVOKE__`)
+- **§9.1** Clock drift validation (±5 minutes)
+
+Full specification: [PROTOCOL_V2.md](.agent/PROTOCOL_V2.md)
+
+---
+
+## 📌 Requirements
+
+- Java ≥ 17
+- Maven 3.9+ (wrapper included)
+
+---
+
+## 📄 License
+
+[MIT License](LICENSE)
+
+---
+
+**Maintained by** [Frank KOSSI](mailto:frank.kossi@kunrin.com) — [Kunrin SA](https://www.kunrin.com)
