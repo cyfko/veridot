@@ -13,6 +13,10 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.testcontainers.containers.JdbcDatabaseContainer;
 
 import javax.sql.DataSource;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -217,5 +221,47 @@ public abstract class DatabaseTest {
         tokenRevoker.revokeGroup(groupId);
         Thread.sleep(2000);
         assertFalse(tokenTracker.hasActiveToken(groupId));
+    }
+    @ParameterizedTest
+    @EnumSource(value = DistributionMode.class)
+    void revokeGroup_physically_deletes_entries_from_database(DistributionMode mode) throws Exception {
+        String groupId = "revoke-phys-" + mode.name();
+        String seqA = "phys-a-" + mode.name();
+        String seqB = "phys-b-" + mode.name();
+
+        dataSigner.sign("d1", BasicConfigurer.builder().groupId(groupId).sequenceId(seqA).distribution(mode).validity(3600).build());
+        dataSigner.sign("d2", BasicConfigurer.builder().groupId(groupId).sequenceId(seqB).distribution(mode).validity(3600).build());
+        Thread.sleep(2000);
+
+        // Pre-condition: verify entries exist in the raw SQL table
+        String keyA = "2:" + groupId + ":" + seqA;
+        String keyB = "2:" + groupId + ":" + seqB;
+        assertTrue(existsInDb(keyA), "Sequence A must exist in DB before revokeGroup");
+        assertTrue(existsInDb(keyB), "Sequence B must exist in DB before revokeGroup");
+
+        tokenRevoker.revokeGroup(groupId);
+        Thread.sleep(2000);
+
+        // Post-condition: entries are physically absent from the SQL table
+        assertFalse(existsInDb(keyA), "Sequence A must be physically deleted from DB after revokeGroup");
+        assertFalse(existsInDb(keyB), "Sequence B must be physically deleted from DB after revokeGroup");
+
+        // The __REVOKE__ entry persists for interoperability
+        String revokeKey = "2:" + groupId + ":__REVOKE__";
+        assertTrue(existsInDb(revokeKey), "__REVOKE__ entry must persist in DB for interoperability");
+    }
+
+    /**
+     * Queries the raw SQL table to check if a message_key exists.
+     */
+    private boolean existsInDb(String messageKey) throws SQLException {
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(
+                     "SELECT COUNT(*) FROM broker_messages WHERE message_key = ?")) {
+            stmt.setString(1, messageKey);
+            ResultSet rs = stmt.executeQuery();
+            rs.next();
+            return rs.getInt(1) > 0;
+        }
     }
 }

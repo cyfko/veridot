@@ -6,6 +6,7 @@ import io.github.cyfko.veridot.core.*;
 import io.github.cyfko.veridot.core.exceptions.BrokerExtractionException;
 import io.github.cyfko.veridot.core.exceptions.DataDeserializationException;
 import io.github.cyfko.veridot.core.exceptions.DataSerializationException;
+import io.github.cyfko.veridot.core.exceptions.SessionCapacityExceededException;
 
 import java.security.*;
 import java.security.spec.X509EncodedKeySpec;
@@ -49,7 +50,9 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         /** Last In, First Out — evicts the newest sequence (highest timestamp). */
         LIFO,
         /** Least Recently Used — evicts the oldest sequence (same as FIFO in this implementation). */
-        LRU
+        LRU,
+        /** Reject — refuses the signing attempt instead of evicting an existing session. */
+        REJECT
     }
 
     // ── Static state ──────────────────────────────────────────────────────────
@@ -584,6 +587,9 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             }
 
             while (validKeys.size() >= config.maxSessions()) {
+                if (config.policy() == EvictionPolicy.REJECT) {
+                    throw new SessionCapacityExceededException(groupId, config.maxSessions());
+                }
                 String toEvict = selectEvictionTarget(validKeys, config.policy());
                 try {
                     // Publish formal revocation, then delete
@@ -597,6 +603,8 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
                 }
                 validKeys.remove(toEvict);
             }
+        } catch (SessionCapacityExceededException e) {
+            throw e; // must propagate to caller
         } catch (Exception e) {
             logger.severe("Error enforcing session limit for group [" + groupId + "]: " + e.getMessage());
         }

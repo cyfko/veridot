@@ -1,6 +1,6 @@
 package io.github.cyfko.veridot.core.exceptions;
 
-public class BrokerExtractionException extends RuntimeException {
+public class BrokerExtractionException extends VeridotException {
     public BrokerExtractionException(String message) {
         super(message);
     }

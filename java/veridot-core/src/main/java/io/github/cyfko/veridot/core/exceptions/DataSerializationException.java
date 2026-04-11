@@ -1,6 +1,6 @@
 package io.github.cyfko.veridot.core.exceptions;
 
-public class DataSerializationException extends RuntimeException {
+public class DataSerializationException extends VeridotException {
     public DataSerializationException(String message) {
         super(message);
     }

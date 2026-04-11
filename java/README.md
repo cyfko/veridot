@@ -15,7 +15,7 @@ Veridot implements **Protocol V2**, a binary-safe canonical message format with 
 - 🔐 **Ephemeral RSA key pairs** with automatic rotation
 - 📡 **Distributed public key propagation** via pluggable brokers (Kafka, SQL databases)
 - 🔄 **Two distribution modes**: DIRECT (JWT returned to caller) or INDIRECT (messageId reference)
-- ⚡ **Session capacity management** with FIFO/LIFO/LRU eviction policies
+- ⚡ **Session capacity management** with FIFO/LIFO/LRU/REJECT eviction policies
 - 📢 **Structured revocation** (`__REVOKE__`) for cross-processor interoperability
 - ⚙️ **Distributed configuration** (`__CONFIG__`) with local → site → global hierarchy
 - ⏱️ **Clock drift validation** (±5 minutes, §9.1)

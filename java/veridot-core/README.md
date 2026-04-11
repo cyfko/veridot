@@ -115,13 +115,15 @@ boolean exists = sv.hasActiveToken("2:user-123:session-A");
 
 ## ⚙️ Session Capacity Management
 
-When `maxSessions` is set, the signer automatically evicts old sessions when the limit is reached:
+When `maxSessions` is set, the signer manages sessions according to the configured eviction policy:
 
 ```java
+// Auto-evict oldest when limit reached
 var sv = new GenericSignerVerifier(broker, "salt", 3, EvictionPolicy.FIFO);
 
-// After 3 concurrent sessions for "user-123":
-//   → 4th sign() will REVOKE the oldest session, then create the new one
+// Or reject new sign() attempts when limit reached
+var sv = new GenericSignerVerifier(broker, "salt", 3, EvictionPolicy.REJECT);
+// → throws SessionCapacityExceededException on 4th sign()
 ```
 
 ### Eviction Policies
@@ -131,6 +133,7 @@ var sv = new GenericSignerVerifier(broker, "salt", 3, EvictionPolicy.FIFO);
 | `FIFO` | Evicts the **oldest** session (lowest timestamp) |
 | `LIFO` | Evicts the **newest** session (highest timestamp) |
 | `LRU`  | Evicts the **least recently used** session |
+| `REJECT` | **Refuses** the signing attempt — throws `SessionCapacityExceededException` |
 
 ### Distributed Configuration (§4)
 

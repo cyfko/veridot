@@ -22,7 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Structured `__REVOKE__` messages (§5)** — Formal revocation messages `2:grp:__REVOKE__|target:<b64>,timestamp:<b64>` for cross-processor interoperability
 - **Distributed `__CONFIG__` (§4)** — Dynamic configuration resolution from broker: local (`2:grp:__CONFIG__`) → site (`2:__CONFIG__:siteId`) → global (`2:__CONFIG__:__ALL__`) → constructor defaults
 - **Clock drift validation (§9.1)** — Messages with timestamps >5 minutes in the future are rejected
-- **EvictionPolicy** — `FIFO`, `LIFO`, `LRU` session eviction strategies when `maxSessions` is reached
+- **EvictionPolicy** — `FIFO`, `LIFO`, `LRU`, `REJECT` session eviction strategies when `maxSessions` is reached
+- **EvictionPolicy.REJECT** — Refuses the signing attempt with `SessionCapacityExceededException` instead of evicting an existing session
 - **TokenTracker interface** — `hasActiveToken(Object)` to query whether active tokens exist for a group, JWT, or messageId
 - **TokenRevoker.revokeGroup(String)** — Revoke all active sequences for a group
 - **Reserved sequence detection** — `__CONFIG__`, `__REVOKE__`, `__ALL__` excluded from session counting
@@ -33,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Session counting is now derived from broker state (not a local counter), per §3.5.1
 - Eviction emits formal `__REVOKE__` messages before deleting sequences
 - Config cache with 60s TTL reduces broker queries
+- **VeridotException** — All exceptions (`BrokerExtractionException`, `BrokerTransportException`, `DataSerializationException`, `DataDeserializationException`, `SessionCapacityExceededException`) now extend a common `VeridotException` root class for unified error handling
 
 ---
 

@@ -2,6 +2,7 @@ package io.github.cyfko.veridot.core.impl;
 
 import io.github.cyfko.veridot.core.InMemoryMetadataBroker;
 import io.github.cyfko.veridot.core.exceptions.BrokerExtractionException;
+import io.github.cyfko.veridot.core.exceptions.SessionCapacityExceededException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -161,5 +162,57 @@ class SessionCapacityTest {
         // Global config should apply: s1 evicted
         assertFalse(broker.containsKey("2:u2:s1"), "s1 must be evicted per global config");
         assertTrue(broker.containsKey("2:u2:s2"), "s2 must remain active");
+    }
+
+    // ── REJECT policy ────────────────────────────────────────────────────────
+
+    @Test
+    void reject_policy_throws_when_limit_reached() {
+        var sv = new GenericSignerVerifier(broker, "salt", 2, GenericSignerVerifier.EvictionPolicy.REJECT);
+
+        sv.sign("d1", BasicConfigurer.builder().groupId("rej").sequenceId("s1").validity(600).build());
+        sv.sign("d2", BasicConfigurer.builder().groupId("rej").sequenceId("s2").validity(600).build());
+
+        var ex = assertThrows(SessionCapacityExceededException.class,
+                () -> sv.sign("d3", BasicConfigurer.builder().groupId("rej").sequenceId("s3").validity(600).build()),
+                "3rd sign must throw when REJECT policy is active and limit is reached");
+
+        assertEquals("rej", ex.getGroupId());
+        assertEquals(2, ex.getMaxSessions());
+    }
+
+    @Test
+    void reject_policy_allows_signing_after_manual_revocation() {
+        var sv = new GenericSignerVerifier(broker, "salt", 1, GenericSignerVerifier.EvictionPolicy.REJECT);
+
+        String jwt = sv.sign("d1", BasicConfigurer.builder().groupId("rej2").sequenceId("s1").validity(600).build());
+
+        // Limit reached → 2nd sign throws
+        assertThrows(SessionCapacityExceededException.class,
+                () -> sv.sign("d2", BasicConfigurer.builder().groupId("rej2").sequenceId("s2").validity(600).build()));
+
+        // Manually revoke → slot freed
+        sv.revoke(jwt);
+
+        // Now signing works again
+        assertDoesNotThrow(
+                () -> sv.sign("d3", BasicConfigurer.builder().groupId("rej2").sequenceId("s3").validity(600).build()),
+                "Signing must succeed after manually revoking a session");
+    }
+
+    @Test
+    void reject_policy_does_not_evict_existing_sessions() {
+        var sv = new GenericSignerVerifier(broker, "salt", 2, GenericSignerVerifier.EvictionPolicy.REJECT);
+
+        String t1 = sv.sign("d1", BasicConfigurer.builder().groupId("rej3").sequenceId("s1").validity(600).build());
+        String t2 = sv.sign("d2", BasicConfigurer.builder().groupId("rej3").sequenceId("s2").validity(600).build());
+
+        // 3rd sign rejected
+        assertThrows(SessionCapacityExceededException.class,
+                () -> sv.sign("d3", BasicConfigurer.builder().groupId("rej3").sequenceId("s3").validity(600).build()));
+
+        // Both original sessions must still be verifiable
+        assertDoesNotThrow(() -> sv.verify(t1, s -> s), "Session s1 must survive REJECT");
+        assertDoesNotThrow(() -> sv.verify(t2, s -> s), "Session s2 must survive REJECT");
     }
 }

@@ -109,6 +109,34 @@ class RevocationTest {
     }
 
     @Test
+    void revokeGroup_physically_deletes_entries_from_store() {
+        // Create 3 sessions with known sequenceIds
+        sv.sign("d1", BasicConfigurer.builder().groupId("g1").sequenceId("ses-A").validity(600).build());
+        sv.sign("d2", BasicConfigurer.builder().groupId("g1").sequenceId("ses-B").validity(600).build());
+        sv.sign("d3", BasicConfigurer.builder().groupId("g1").sequenceId("ses-C").validity(600).build());
+
+        // Pre-conditions: all 3 entries exist physically in the store
+        assertTrue(broker.containsKey("2:g1:ses-A"), "ses-A must exist before revokeGroup");
+        assertTrue(broker.containsKey("2:g1:ses-B"), "ses-B must exist before revokeGroup");
+        assertTrue(broker.containsKey("2:g1:ses-C"), "ses-C must exist before revokeGroup");
+
+        sv.revokeGroup("g1");
+
+        // Post-conditions: each entry is physically removed (not just logically expired)
+        assertFalse(broker.containsKey("2:g1:ses-A"), "ses-A must be physically deleted after revokeGroup");
+        assertFalse(broker.containsKey("2:g1:ses-B"), "ses-B must be physically deleted after revokeGroup");
+        assertFalse(broker.containsKey("2:g1:ses-C"), "ses-C must be physically deleted after revokeGroup");
+
+        // Only the __REVOKE__ entry remains
+        assertTrue(broker.containsKey("2:g1:__REVOKE__"), "__REVOKE__ entry must persist for interoperability");
+
+        // Total keys for the group = exactly 1 (__REVOKE__ only)
+        var remainingKeys = broker.getKeysByPrefix("2:g1:");
+        assertEquals(1, remainingKeys.size(), "Only __REVOKE__ key should remain in broker");
+        assertEquals("2:g1:__REVOKE__", remainingKeys.get(0));
+    }
+
+    @Test
     void revokeGroup_publishes_revocation_with_target_all() {
         sv.sign("d1", BasicConfigurer.builder().groupId("u1").validity(600).build());
         sv.sign("d2", BasicConfigurer.builder().groupId("u1").validity(600).build());
