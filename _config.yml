@@ -29,6 +29,7 @@ header_pages:
   - docs/java-guide.md
   - docs/nodejs-guide.md
   - docs/api-reference.md
+  - docs/protocol-specification.md
   - docs/security.md
   - docs/deployment.md
   - docs/examples.md

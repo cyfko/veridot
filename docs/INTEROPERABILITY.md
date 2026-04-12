@@ -1,7 +1,7 @@
 Interoperability
 ================
 
-To ensure compatibility across programming languages, **DVerify** standardizes the events exchanged through a broker. That event should be made of a `key` and a `message` with the following format:  
+To ensure compatibility across programming languages, **Veridot** standardizes the events exchanged through a broker. That event should be made of a `key` and a `message` with the following format:  
 
 - **Key:** The broker's event key is a string that represents a unique identifier. This guarantees uniqueness and seamless integration across diverse systems.
 - **Message:** The broker's event message is a string that conform to the following structure:  
@@ -17,7 +17,7 @@ To ensure compatibility across programming languages, **DVerify** standardizes t
 
 ## 🔐 Deterministic Unique ID Generation
 
-**DVerify** uses a **deterministic**, **secure**, and **interoperable** generator of unique identifiers for broker's event keys from integers.
+**Veridot** uses a **deterministic**, **secure**, and **interoperable** generator of unique identifiers for broker's event keys from integers.
 
 ---
 

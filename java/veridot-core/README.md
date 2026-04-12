@@ -1,137 +1,185 @@
-# Veridot Token Architecture
+# veridot-core
 
-## Overview
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.cyfko/veridot-core.svg)](https://central.sonatype.com/artifact/io.github.cyfko/veridot-core)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-This document describes the modular and extensible architecture of Veridot, a system for securely issuing, verifying, and revoking short-lived cryptographic tokens in distributed environments.
+Core module for **Veridot** — defines the API contracts and provides the default implementation (`GenericSignerVerifier`) conforming to [Protocol V2](../.agent/PROTOCOL_V2.md).
 
 ---
 
-## Components
+## 📦 Installation
 
-### 1. `DataSigner` (Token Generator)
+**Maven**:
+```xml
+<dependency>
+    <groupId>io.github.cyfko</groupId>
+    <artifactId>veridot-core</artifactId>
+    <version>3.0.0</version>
+</dependency>
+```
 
-Responsible for creating signed tokens from a given data payload.
+**Gradle**:
+```gradle
+implementation 'io.github.cyfko:veridot-core:3.0.0'
+```
+
+---
+
+## 🏗️ API Overview
+
+### Interfaces
+
+| Interface | Purpose |
+|-----------|---------|
+| `DataSigner` | Sign data into a verifiable token (JWT or messageId) |
+| `TokenVerifier` | Verify a token and extract the original payload |
+| `TokenRevoker` | Revoke a specific token or an entire group |
+| `TokenTracker` | Query whether active (non-revoked, non-expired) tokens exist |
+| `MetadataBroker` | Transport layer for publishing/retrieving V2 messages |
+
+### Default Implementation
+
+`GenericSignerVerifier` implements all four interfaces:
 
 ```java
-String sign(Object data, Configurer configurer);
-```
+// Minimal — no session limit
+var sv = new GenericSignerVerifier(broker, "salt");
 
-* **Inputs**: Payload (`Object`), configuration (duration, mode, tracker)
-* **Output**: Signed token (e.g., JWT or UUID-based string)
+// With session management
+var sv = new GenericSignerVerifier(broker, "salt", 5, EvictionPolicy.FIFO);
+//                                                  ↑ max 5 concurrent sessions per group
+```
 
 ---
 
-### 2. `TokenVerifier` (Token Validator)
+## 🚀 Usage
 
-Verifies token authenticity and extracts the original payload.
+### Signing (DIRECT mode — returns JWT)
 
 ```java
-<T> T verify(String token, Function<String, T> deserializer);
+String jwt = sv.sign("payload-data",
+    BasicConfigurer.builder()
+        .groupId("user-123")       // required — business entity
+        .validity(300)             // required — TTL in seconds
+        .build());
 ```
 
-* **Inputs**: Token string, deserialization function
-* **Output**: Deserialized original data
-
----
-
-### 3. `DataTransformer` (Serialization Layer)
-
-Handles data serialization and deserialization.
+### Signing (INDIRECT mode — returns messageId)
 
 ```java
-String serialize(Object data);
-Object deserialize(String data);
+String messageId = sv.sign("payload-data",
+    BasicConfigurer.builder()
+        .groupId("user-123")
+        .sequenceId("session-A")   // optional — auto-generated UUID if omitted
+        .distribution(DistributionMode.INDIRECT)
+        .validity(600)
+        .build());
+// messageId = "2:user-123:session-A"
 ```
 
-* Supports: JSON, XML, Protobuf, etc.
-* Used by both signing and verifying modules
-
----
-
-### 4. `MetadataBroker` (Metadata Distributor)
-
-Broadcasts and retrieves metadata required for token verification.
+### Verification
 
 ```java
-CompletableFuture<Void> send(String key, String message);
-String get(String key);
+// Works with both JWT (DIRECT) and messageId (INDIRECT)
+VerifiedData<String> result = sv.verify(token, String::toString);
+String payload = result.data();
+
+// With POJO deserialization
+VerifiedData<MyPojo> pojoResult = sv.verify(token, BasicConfigurer.deserializer(MyPojo.class));
+MyPojo pojo = pojoResult.data();
 ```
 
-* **Responsibilities**:
-
-    * Distribute ephemeral public keys
-    * Store and retrieve token-related metadata
-    * Enable loose coupling between signer and verifier
-
----
-
-### 5. `TokenRevoker` (Revocation Service)
-
-Blacklists specific token IDs or full token strings.
+### Revocation
 
 ```java
-void revoke(Object target);
+// Revoke a specific session
+sv.revoke("user-123", "session-A");
+
+// Revoke ALL sessions for a group
+sv.revoke("user-123", null);
 ```
 
-* **Inputs**: Token UUID, long tracker, or token string
-* **Used by**: Security systems, logout mechanisms, abuse prevention
+### Tracking
 
----
+```java
+// Check if a group has any active tokens
+boolean active = sv.hasActiveToken("user-123");
 
-## Flow Diagram
+// Check a specific token
+boolean valid = sv.hasActiveToken(jwt);
 
-```
-+----------------+       (sign)       +--------------------+
-|  Issuer Service| --------------->   |    DataSigner      |
-+----------------+                   +--------------------+
-        |                                   |
-        |           (send key)             |
-        |--------------------------------->|
-        |           MetadataBroker         |
-        |<---------------------------------|
-        |                                   |
-        |                                   |--> Sign -> Token (JWT/UUID)
-        |                                   |
-        |                                   v
-        |----------------- token --------->|
-+------------------+                    +--------------------+
-|   Consumer Svc   | ---- verify ------> |   TokenVerifier    |
-+------------------+                    +--------------------+
-         ^                                     |
-         |         (get key metadata)          |
-         |-------------------------------------|
-         |           MetadataBroker            |
-         |<------------------------------------|
+// Check a specific messageId
+boolean exists = sv.hasActiveToken("2:user-123:session-A");
 ```
 
 ---
 
-## Customization Points
+## ⚙️ Session Capacity Management
 
-| Component         | Extension Point                     | Purpose                        |
-| ----------------- | ----------------------------------- | ------------------------------ |
-| `TokenMode`       | Enum or strategy pattern            | Choose between JWT, UUID, etc. |
-| `DataTransformer` | Replace with Jackson, XML, etc.     | Format flexibility             |
-| `Configurer`      | Implementation injected in context  | Token config per use-case      |
-| `MetadataBroker`  | Redis, Kafka, in-memory, DB, etc.   | Message propagation layer      |
-| `TokenRevoker`    | Cache or persistent blacklist store | Revoke by ID or full token     |
+When `maxSessions` is set, the signer manages sessions according to the configured eviction policy:
+
+```java
+// Auto-evict oldest when limit reached
+var sv = new GenericSignerVerifier(broker, "salt", 3, EvictionPolicy.FIFO);
+
+// Or reject new sign() attempts when limit reached
+var sv = new GenericSignerVerifier(broker, "salt", 3, EvictionPolicy.REJECT);
+// → throws SessionCapacityExceededException on 4th sign()
+```
+
+### Eviction Policies
+
+| Policy | Behavior |
+|--------|----------|
+| `FIFO` | Evicts the **oldest** session (lowest timestamp) |
+| `LIFO` | Evicts the **newest** session (highest timestamp) |
+| `LRU`  | Evicts the **least recently used** session |
+| `REJECT` | **Refuses** the signing attempt — throws `SessionCapacityExceededException` |
+
+### Distributed Configuration (§4)
+
+Session limits can also be configured dynamically via the broker, with a 3-level hierarchy:
+
+1. **Local**: `2:<groupId>:__CONFIG__|maxSessions:<b64>,policy:<b64>,...`
+2. **Site**: `2:__CONFIG__:<siteId>|...`
+3. **Global**: `2:__CONFIG__:__ALL__|...`
+4. **Default**: Constructor parameters
 
 ---
 
-## Best Practices
+## 🔐 Protocol V2 Message Format
 
-* Use **ephemeral keys** and rotate frequently
-* Configure short **token TTLs** via `Configurer.getDuration()`
-* Use `Configurer.getTracker()` to link tokens to users or sessions
-* Abstract serialization with `DataTransformer` to support evolution
-* Allow **pluggable modes** beyond JWT (e.g., encrypted formats)
+```
+2:<groupId>:<sequenceId>|mode:<b64>,pubkey:<b64>,timestamp:<b64>,ttl:<b64>
+```
+
+- **Version**: always `2`
+- **Identifiers**: `[A-Za-z0-9_-]{1,64}`
+- **Values**: Base64url-encoded (RFC 4648 §5, no padding)
+- **Reserved sequences**: `__CONFIG__`, `__REVOKE__`, `__ALL__`
+
+### Security
+
+- ±5 minute clock drift validation (§9.1)
+- Strict TTL enforcement: `now < timestamp + ttl`
+- Ephemeral RSA key pairs with configurable rotation interval
 
 ---
 
-## License
+## 🔧 Environment Variables
 
-[MIT License](LICENSE)
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `VDOT_KEYS_ROTATION_MINUTES` | RSA key pair rotation interval | `1440` (24h) |
 
 ---
 
-For implementation samples, see relevant implementation provider or contact core maintainers.
+## 📌 Requirements
+
+- Java ≥ 17
+
+---
+
+## 📄 License
+
+[MIT License](../LICENSE)

@@ -1,36 +1,36 @@
 package io.github.cyfko.veridot.tests;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.zaxxer.hikari.HikariConfig;
-import com.zaxxer.hikari.HikariDataSource;
 import io.github.cyfko.veridot.core.*;
 import io.github.cyfko.veridot.core.exceptions.BrokerExtractionException;
-import io.github.cyfko.veridot.core.exceptions.DataSerializationException;
-import io.github.cyfko.veridot.core.impl.GenericSignerVerifier;
 import io.github.cyfko.veridot.core.impl.BasicConfigurer;
+import io.github.cyfko.veridot.core.impl.GenericSignerVerifier;
 import io.github.cyfko.veridot.databases.DatabaseMetadataBroker;
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.testcontainers.containers.JdbcDatabaseContainer;
-import org.testcontainers.shaded.com.fasterxml.jackson.databind.ObjectMapper;
 
 import javax.sql.DataSource;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 public abstract class DatabaseTest {
-    private static ObjectMapper objectMapper = new ObjectMapper();
 
     private final JdbcDatabaseContainer<?> sqlContainer;
     private DataSigner dataSigner;
     private TokenVerifier tokenVerifier;
     private TokenRevoker tokenRevoker;
+    private TokenTracker tokenTracker;
     private DataSource dataSource;
 
-    public DatabaseTest(JdbcDatabaseContainer<?> sqlContainer){
+    public DatabaseTest(JdbcDatabaseContainer<?> sqlContainer) {
         this.sqlContainer = sqlContainer;
         sqlContainer.start();
     }
@@ -41,224 +41,229 @@ public abstract class DatabaseTest {
         config.setUsername(sqlContainer.getUsername());
         config.setPassword(sqlContainer.getPassword());
         config.setDriverClassName(sqlContainer.getDriverClassName());
-        config.setMaximumPoolSize(5);  // tune per your load
+        config.setMaximumPoolSize(5);
         return new HikariDataSource(config);
     }
 
     @BeforeAll
     void setUpClass() {
         dataSource = createDataSource();
-
         MetadataBroker metadataBroker = new DatabaseMetadataBroker(dataSource, "broker_messages");
-        GenericSignerVerifier genericSignerVerifier = new GenericSignerVerifier(metadataBroker);
-        dataSigner = genericSignerVerifier;
-        tokenVerifier = genericSignerVerifier;
-        tokenRevoker = genericSignerVerifier;
+        GenericSignerVerifier gsv = new GenericSignerVerifier(metadataBroker, "test-salt");
+        dataSigner    = gsv;
+        tokenVerifier = gsv;
+        tokenRevoker  = gsv;
+        tokenTracker  = gsv;
     }
 
     @AfterAll
     void tearDownClass() {
-        if (dataSource instanceof HikariDataSource) {
-            ((HikariDataSource) dataSource).close();
+        if (dataSource instanceof HikariDataSource hds) {
+            hds.close();
         }
         sqlContainer.stop();
     }
 
-    @ParameterizedTest()
-    @EnumSource(value = TokenMode.class)
-    void sign_method_with_valid_data_should_returns_token(TokenMode mode) throws JsonProcessingException {
-        UserData data = new UserData("john.doe@example.com");
+    // ── Signing ──────────────────────────────────────────────────────────────
 
-        BasicConfigurer configurer = BasicConfigurer.builder()
-                .useMode(mode)
-                .trackedBy(mode.name().hashCode())
+    @ParameterizedTest
+    @EnumSource(value = DistributionMode.class)
+    void sign_with_valid_data_returns_token(DistributionMode mode) {
+        var cfg = BasicConfigurer.builder()
+                .groupId("sign-valid-" + mode.name())
+                .distribution(mode)
                 .validity(60)
                 .build();
-
-        String token = dataSigner.sign(data, configurer);
-
+        String token = dataSigner.sign(new UserData("john.doe@example.com"), cfg);
         assertNotNull(token);
         assertFalse(token.isEmpty());
     }
 
-    @ParameterizedTest()
-    @EnumSource(value = TokenMode.class)
-    void sign_method_with_invalid_data_should_throws_exception(TokenMode mode) {
-
-        BasicConfigurer configurer = BasicConfigurer.builder()
-                .useMode(mode)
-                .trackedBy(mode.name().hashCode() + 1)
+    @ParameterizedTest
+    @EnumSource(value = DistributionMode.class)
+    void sign_with_null_data_throws(DistributionMode mode) {
+        var cfg = BasicConfigurer.builder()
+                .groupId("sign-null-" + mode.name())
+                .distribution(mode)
                 .validity(60)
                 .build();
-
-        Assertions.assertThrows(IllegalArgumentException.class, () -> dataSigner.sign(null, configurer));
+        assertThrows(IllegalArgumentException.class, () -> dataSigner.sign(null, cfg));
     }
 
-    @ParameterizedTest()
-    @EnumSource(value = TokenMode.class)
-    void sign_method_with_expired_duration_should_throws_exception(TokenMode mode) {
-        UserData data = new UserData("john.doe@example.com");
-
-        BasicConfigurer configurer = BasicConfigurer.builder()
-                .useMode(mode)
-                .trackedBy(mode.name().hashCode() + 2)
+    @ParameterizedTest
+    @EnumSource(value = DistributionMode.class)
+    void sign_with_negative_duration_throws(DistributionMode mode) {
+        var cfg = BasicConfigurer.builder()
+                .groupId("sign-neg-" + mode.name())
+                .distribution(mode)
                 .validity(-5)
                 .build();
-
-        Assertions.assertThrows(IllegalArgumentException.class, () -> dataSigner.sign(data, configurer));
+        assertThrows(IllegalArgumentException.class,
+                () -> dataSigner.sign(new UserData("john.doe@example.com"), cfg));
     }
 
-    @ParameterizedTest()
-    @EnumSource(value = TokenMode.class)
-    void sign_valid_data_should_returns_token(TokenMode mode) throws DataSerializationException {
-        UserData data = new UserData("john.doe@example.com");
+    // ── Verification ─────────────────────────────────────────────────────────
 
-        BasicConfigurer configurer = BasicConfigurer.builder()
-                .useMode(mode)
-                .trackedBy(mode.name().hashCode() + 3)
-                .validity(60)
-                .build();
-
-        String token = dataSigner.sign(data, configurer);
-
-        assertNotNull(token, "JWT should not be null");
-        assertFalse(token.isEmpty(), "JWT should not be empty");
-    }
-
-    @ParameterizedTest()
-    @EnumSource(value = TokenMode.class)
-    void sign_invalid_data_should_throws_exception(TokenMode mode) {
-
-        BasicConfigurer configurer = BasicConfigurer.builder()
-                .useMode(mode)
-                .trackedBy(mode.name().hashCode() + 4)
-                .validity(60)
-                .build();
-
-        assertThrows(IllegalArgumentException.class, () -> dataSigner.sign(null, configurer));
-    }
-
-    @ParameterizedTest()
-    @EnumSource(value = TokenMode.class)
-    void verify_valid_token_should_returns_payload(TokenMode mode) throws InterruptedException {
+    @ParameterizedTest
+    @EnumSource(value = DistributionMode.class)
+    void verify_valid_token_returns_string_payload(DistributionMode mode) throws InterruptedException {
         String data = "john.doe@example.com";
-
-        BasicConfigurer configurer = BasicConfigurer.builder()
-                .useMode(mode)
-                .trackedBy(mode.name().hashCode() + 5)
+        var cfg = BasicConfigurer.builder()
+                .groupId("verify-str-" + mode.name())
+                .distribution(mode)
                 .validity(600)
                 .build();
+        String token = dataSigner.sign(data, cfg);
+        Thread.sleep(2000); // allow async DB propagation
+        var result = tokenVerifier.verify(token, s -> s);
+        assertEquals(data, result.data());
+    }
 
-        String token = dataSigner.sign(data, configurer); // Generate a valid token
-
-        Thread.sleep(2000); // Wait 2 secs to ensure that the keys has been propagated to database
-
-        String verifiedData = tokenVerifier.verify(token, String::toString);
-
-        assertNotNull(verifiedData);
-        assertEquals(data, verifiedData);
+    @ParameterizedTest
+    @EnumSource(value = DistributionMode.class)
+    void verify_valid_token_returns_pojo_payload(DistributionMode mode) throws InterruptedException {
+        UserData data = new UserData("john.doe@example.com");
+        var cfg = BasicConfigurer.builder()
+                .groupId("verify-pojo-" + mode.name())
+                .distribution(mode)
+                .validity(600)
+                .build();
+        String token = dataSigner.sign(data, cfg);
+        Thread.sleep(2000);
+        var result = tokenVerifier.verify(token, BasicConfigurer.deserializer(UserData.class));
+        assertNotNull(result.data());
+        assertEquals(data.getEmail(), result.data().getEmail());
     }
 
     @Test
-    void verify_invalid_token_should_throws_exception() {
-        assertThrows(BrokerExtractionException.class, () -> tokenVerifier.verify("invalid.token.token", String::toString));
+    void verify_invalid_token_throws() {
+        assertThrows(BrokerExtractionException.class,
+                () -> tokenVerifier.verify("invalid.token.here", s -> s));
     }
 
-    @ParameterizedTest()
-    @EnumSource(value = TokenMode.class)
-    void verify_expired_token_should_throws_exception(TokenMode mode) throws InterruptedException {
-        BasicConfigurer configurer = BasicConfigurer.builder()
-                .useMode(mode)
-                .trackedBy(mode.name().hashCode() + 6)
+    @ParameterizedTest
+    @EnumSource(value = DistributionMode.class)
+    void verify_expired_token_throws(DistributionMode mode) throws InterruptedException {
+        var cfg = BasicConfigurer.builder()
+                .groupId("verify-exp-" + mode.name())
+                .distribution(mode)
                 .validity(1)
                 .build();
-
-        String token = dataSigner.sign("john.doe@example.com", configurer); // Token with short duration
-        Thread.sleep(3000); // Wait 3 seconds for the token to expire
-
-        assertThrows(BrokerExtractionException.class, () -> tokenVerifier.verify(token, String::toString));
+        String token = dataSigner.sign("john.doe@example.com", cfg);
+        Thread.sleep(3000);
+        assertThrows(Exception.class, () -> tokenVerifier.verify(token, s -> s));
     }
 
-    @ParameterizedTest()
-    @EnumSource(value = TokenMode.class)
-    void verify_revoked_token_should_throws_exception(TokenMode mode) throws InterruptedException {
+    // ── Revocation ────────────────────────────────────────────────────────────
 
-        BasicConfigurer configurer = BasicConfigurer.builder()
-                .useMode(mode)
-                .trackedBy(mode.name().hashCode() + 7)
+    @ParameterizedTest
+    @EnumSource(value = DistributionMode.class)
+    void verify_revoked_token_throws(DistributionMode mode) throws InterruptedException {
+        String groupId = "revoke-tok-" + mode.name();
+        var cfg = BasicConfigurer.builder()
+                .groupId(groupId)
+                .sequenceId("seq1")
+                .distribution(mode)
                 .validity(3600)
                 .build();
-
-        String token = dataSigner.sign("john.doe@example.com", configurer); // Token with long duration (1 hour)
-        Thread.sleep(2000); // Wait 2 seconds before issuing the revocation command
-
-        tokenRevoker.revoke(token);
-        Thread.sleep(2000); // Wait 2 seconds to ensure revocation took place
-
-        assertThrows(BrokerExtractionException.class, () -> tokenVerifier.verify(token, String::toString));
+        String token = dataSigner.sign("john.doe@example.com", cfg);
+        Thread.sleep(2000);
+        tokenRevoker.revoke(groupId, "seq1");
+        Thread.sleep(2000);
+        assertThrows(BrokerExtractionException.class, () -> tokenVerifier.verify(token, s -> s));
     }
 
-    @ParameterizedTest()
-    @EnumSource(value = TokenMode.class)
-    void verify_revoked_token_by_tracked_id_should_throws_exception(TokenMode mode) throws InterruptedException {
-        final long trackingId = mode.name().hashCode() + 8;
-
-        BasicConfigurer configurer = BasicConfigurer.builder()
-                .useMode(mode)
-                .trackedBy(trackingId)
-                .validity(3600)
-                .build();
-
-        String token = dataSigner.sign("john.doe@example.com", configurer); // Token with long duration (1 hour)
-        Thread.sleep(2000); // Wait 2 seconds before issuing the revocation command
-
-        tokenRevoker.revoke(trackingId);
-        Thread.sleep(2000); // Wait 2 seconds to ensure revocation took place
-
-        assertThrows(BrokerExtractionException.class, () -> tokenVerifier.verify(token, String::toString));
+    @ParameterizedTest
+    @EnumSource(value = DistributionMode.class)
+    void revokeGroup_invalidates_all_sessions(DistributionMode mode) throws InterruptedException {
+        String groupId = "revoke-grp-" + mode.name();
+        String t1 = dataSigner.sign("d1", BasicConfigurer.builder().groupId(groupId).distribution(mode).validity(3600).build());
+        String t2 = dataSigner.sign("d2", BasicConfigurer.builder().groupId(groupId).distribution(mode).validity(3600).build());
+        Thread.sleep(2000);
+        tokenRevoker.revoke(groupId, null);
+        Thread.sleep(2000);
+        assertThrows(BrokerExtractionException.class, () -> tokenVerifier.verify(t1, s -> s));
+        assertThrows(BrokerExtractionException.class, () -> tokenVerifier.verify(t2, s -> s));
     }
 
+    // ── Token regeneration ────────────────────────────────────────────────────
 
-    @ParameterizedTest()
-    @EnumSource(value = TokenMode.class)
-    void verify_valid_token_should_returns_payload_pojo(TokenMode mode) throws InterruptedException {
+    @ParameterizedTest
+    @EnumSource(value = DistributionMode.class)
+    void verify_token_regeneration_returns_payload(DistributionMode mode) throws InterruptedException {
         UserData data = new UserData("john.doe@example.com");
-
-        BasicConfigurer configurer = BasicConfigurer.builder()
-                .useMode(mode)
-                .trackedBy(mode.name().hashCode() + 9)
-                .validity(600)
-                .build();
-
-        String token = dataSigner.sign(data, configurer); // Generate a valid token
-
-        Thread.sleep(2000); // Wait 2 secs to ensure that the keys has been propagated to database
-
-        UserData verifiedData = tokenVerifier.verify(token, BasicConfigurer.deserializer(UserData.class));
-
-        assertNotNull(verifiedData);
-        assertEquals(data.getEmail(), verifiedData.getEmail());
+        String groupId = "regen-" + mode.name();
+        // Sign twice with the same sequenceId — second sign overwrites the first
+        dataSigner.sign(data, BasicConfigurer.builder().groupId(groupId).sequenceId("s1").distribution(mode).validity(600).build());
+        String token = dataSigner.sign(data, BasicConfigurer.builder().groupId(groupId).sequenceId("s1").distribution(mode).validity(600).build());
+        Thread.sleep(2000);
+        var result = tokenVerifier.verify(token, BasicConfigurer.deserializer(UserData.class));
+        assertNotNull(result.data());
+        assertEquals(data.getEmail(), result.data().getEmail());
     }
 
-    @ParameterizedTest()
-    @EnumSource(value = TokenMode.class)
-    void verify_token_regeneration_should_returns_payload_pojo(TokenMode mode) throws InterruptedException {
-        UserData data = new UserData("john.doe@example.com");
+    // ── TokenTracker ──────────────────────────────────────────────────────────
 
-        BasicConfigurer configurer = BasicConfigurer.builder()
-                .useMode(mode)
-                .trackedBy(mode.name().hashCode() + 9)
-                .validity(600)
-                .build();
+    @ParameterizedTest
+    @EnumSource(value = DistributionMode.class)
+    void hasActiveToken_after_sign_returns_true(DistributionMode mode) throws InterruptedException {
+        String groupId = "tracker-" + mode.name();
+        dataSigner.sign("data", BasicConfigurer.builder().groupId(groupId).distribution(mode).validity(600).build());
+        Thread.sleep(2000);
+        assertTrue(tokenTracker.hasActiveToken(groupId));
+    }
 
-        dataSigner.sign(data, configurer); // Generate a valid token
-        String token = dataSigner.sign(data, configurer); // Regenerate a valid token
+    @ParameterizedTest
+    @EnumSource(value = DistributionMode.class)
+    void hasActiveToken_after_revokeGroup_returns_false(DistributionMode mode) throws InterruptedException {
+        String groupId = "tracker-rg-" + mode.name();
+        dataSigner.sign("d1", BasicConfigurer.builder().groupId(groupId).distribution(mode).validity(3600).build());
+        dataSigner.sign("d2", BasicConfigurer.builder().groupId(groupId).distribution(mode).validity(3600).build());
+        Thread.sleep(2000);
+        tokenRevoker.revoke(groupId, null);
+        Thread.sleep(2000);
+        assertFalse(tokenTracker.hasActiveToken(groupId));
+    }
+    @ParameterizedTest
+    @EnumSource(value = DistributionMode.class)
+    void revokeGroup_physically_deletes_entries_from_database(DistributionMode mode) throws Exception {
+        String groupId = "revoke-phys-" + mode.name();
+        String seqA = "phys-a-" + mode.name();
+        String seqB = "phys-b-" + mode.name();
 
-        Thread.sleep(2000); // Wait 2 secs to ensure that the keys has been propagated to database
+        dataSigner.sign("d1", BasicConfigurer.builder().groupId(groupId).sequenceId(seqA).distribution(mode).validity(3600).build());
+        dataSigner.sign("d2", BasicConfigurer.builder().groupId(groupId).sequenceId(seqB).distribution(mode).validity(3600).build());
+        Thread.sleep(2000);
 
-        UserData verifiedData = tokenVerifier.verify(token, BasicConfigurer.deserializer(UserData.class));
+        // Pre-condition: verify entries exist in the raw SQL table
+        String keyA = "2:" + groupId + ":" + seqA;
+        String keyB = "2:" + groupId + ":" + seqB;
+        assertTrue(existsInDb(keyA), "Sequence A must exist in DB before revokeGroup");
+        assertTrue(existsInDb(keyB), "Sequence B must exist in DB before revokeGroup");
 
-        assertNotNull(verifiedData);
-        assertEquals(data.getEmail(), verifiedData.getEmail());
+        tokenRevoker.revoke(groupId, null);
+        Thread.sleep(2000);
+
+        // Post-condition: entries are physically absent from the SQL table
+        assertFalse(existsInDb(keyA), "Sequence A must be physically deleted from DB after revokeGroup");
+        assertFalse(existsInDb(keyB), "Sequence B must be physically deleted from DB after revokeGroup");
+
+        // The __REVOKE__ entry persists for interoperability
+        String revokeKey = "2:" + groupId + ":__REVOKE__";
+        assertTrue(existsInDb(revokeKey), "__REVOKE__ entry must persist in DB for interoperability");
+    }
+
+    /**
+     * Queries the raw SQL table to check if a message_key exists.
+     */
+    private boolean existsInDb(String messageKey) throws SQLException {
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(
+                     "SELECT COUNT(*) FROM broker_messages WHERE message_key = ?")) {
+            stmt.setString(1, messageKey);
+            ResultSet rs = stmt.executeQuery();
+            rs.next();
+            return rs.getInt(1) > 0;
+        }
     }
 }

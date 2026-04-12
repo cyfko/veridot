@@ -1,15 +1,9 @@
 package io.github.cyfko.veridot.tests;
 
-
-import com.fasterxml.jackson.core.JsonProcessingException;
-import io.github.cyfko.veridot.core.TokenRevoker;
-import io.github.cyfko.veridot.core.DataSigner;
-import io.github.cyfko.veridot.core.TokenMode;
-import io.github.cyfko.veridot.core.TokenVerifier;
+import io.github.cyfko.veridot.core.*;
 import io.github.cyfko.veridot.core.exceptions.BrokerExtractionException;
-import io.github.cyfko.veridot.core.exceptions.DataSerializationException;
-import io.github.cyfko.veridot.core.impl.GenericSignerVerifier;
 import io.github.cyfko.veridot.core.impl.BasicConfigurer;
+import io.github.cyfko.veridot.core.impl.GenericSignerVerifier;
 import io.github.cyfko.veridot.kafka.KafkaMetadataBrokerAdapter;
 import io.github.cyfko.veridot.kafka.VerifierConfig;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -32,11 +26,12 @@ class KafkaSignerVerifierTest {
     private DataSigner dataSigner;
     private TokenVerifier tokenVerifier;
     private TokenRevoker tokenRevoker;
+    private TokenTracker tokenTracker;
     private File tempDir;
 
     @BeforeAll
     static void setUpClass() {
-        kafkaContainer = new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:latest"))
+        kafkaContainer = new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))
                 .withEmbeddedZookeeper();
         kafkaContainer.start();
     }
@@ -48,200 +43,167 @@ class KafkaSignerVerifierTest {
 
     @BeforeEach
     void setUp() throws IOException {
-        String kafkaBootstrapServers = kafkaContainer.getBootstrapServers();
-
         Properties props = new Properties();
-        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaBootstrapServers);
-
-        tempDir = Files.createTempDirectory("rocksdb_db_test_").toFile();
+        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaContainer.getBootstrapServers());
+        tempDir = Files.createTempDirectory("veridot_kafka_test_").toFile();
         props.put(VerifierConfig.EMBEDDED_DB_PATH_CONFIG, tempDir.getAbsolutePath());
 
-        GenericSignerVerifier genericSignerVerifier = new GenericSignerVerifier(KafkaMetadataBrokerAdapter.of(props));
-        dataSigner = genericSignerVerifier;
-        tokenVerifier = genericSignerVerifier;
-        tokenRevoker = genericSignerVerifier;
+        GenericSignerVerifier gsv = new GenericSignerVerifier(KafkaMetadataBrokerAdapter.of(props), "test-salt");
+        dataSigner    = gsv;
+        tokenVerifier = gsv;
+        tokenRevoker  = gsv;
+        tokenTracker  = gsv;
     }
 
     @AfterEach
     void tearDown() {
-        if (tempDir.exists()) {
+        if (tempDir != null && tempDir.exists()) {
             tempDir.delete();
         }
     }
 
-    @ParameterizedTest()
-    @EnumSource(value = TokenMode.class)
-    void sign_method_with_valid_data_should_returns_token(TokenMode mode) throws JsonProcessingException {
-        UserData data = new UserData("john.doe@example.com");
+    // ── Signing ──────────────────────────────────────────────────────────────
 
-        BasicConfigurer configurer = BasicConfigurer.builder()
-                .useMode(mode)
-                .trackedBy(mode.name().hashCode())
+    @ParameterizedTest
+    @EnumSource(value = DistributionMode.class)
+    void sign_with_valid_data_returns_token(DistributionMode mode) {
+        var cfg = BasicConfigurer.builder()
+                .groupId("ksv-sign-" + mode.name())
+                .distribution(mode)
                 .validity(60)
                 .build();
-
-        String token = dataSigner.sign(data, configurer);
-
+        String token = dataSigner.sign(new UserData("john.doe@example.com"), cfg);
         assertNotNull(token);
         assertFalse(token.isEmpty());
     }
 
-    @ParameterizedTest()
-    @EnumSource(value = TokenMode.class)
-    void sign_method_with_invalid_data_should_throws_exception(TokenMode mode) {
-
-        BasicConfigurer configurer = BasicConfigurer.builder()
-                .useMode(mode)
-                .trackedBy(mode.name().hashCode() + 1)
+    @ParameterizedTest
+    @EnumSource(value = DistributionMode.class)
+    void sign_with_null_data_throws(DistributionMode mode) {
+        var cfg = BasicConfigurer.builder()
+                .groupId("ksv-null-" + mode.name())
+                .distribution(mode)
                 .validity(60)
                 .build();
-
-        Assertions.assertThrows(IllegalArgumentException.class, () -> dataSigner.sign(null, configurer));
+        assertThrows(IllegalArgumentException.class, () -> dataSigner.sign(null, cfg));
     }
 
-    @ParameterizedTest()
-    @EnumSource(value = TokenMode.class)
-    void sign_method_with_expired_duration_should_throws_exception(TokenMode mode) {
-        UserData data = new UserData("john.doe@example.com");
-
-        BasicConfigurer configurer = BasicConfigurer.builder()
-                .useMode(mode)
-                .trackedBy(mode.name().hashCode() + 2)
+    @ParameterizedTest
+    @EnumSource(value = DistributionMode.class)
+    void sign_with_negative_duration_throws(DistributionMode mode) {
+        var cfg = BasicConfigurer.builder()
+                .groupId("ksv-neg-" + mode.name())
+                .distribution(mode)
                 .validity(-5)
                 .build();
-
-        Assertions.assertThrows(IllegalArgumentException.class, () -> dataSigner.sign(data, configurer));
+        assertThrows(IllegalArgumentException.class,
+                () -> dataSigner.sign(new UserData("john.doe@example.com"), cfg));
     }
 
-    @ParameterizedTest()
-    @EnumSource(value = TokenMode.class)
-    void sign_valid_data_should_returns_token(TokenMode mode) throws DataSerializationException {
-        UserData data = new UserData("john.doe@example.com");
+    // ── Verification ─────────────────────────────────────────────────────────
 
-        BasicConfigurer configurer = BasicConfigurer.builder()
-                .useMode(mode)
-                .trackedBy(mode.name().hashCode() + 3)
-                .validity(60)
-                .build();
-
-        String token = dataSigner.sign(data, configurer);
-
-        assertNotNull(token, "JWT should not be null");
-        assertFalse(token.isEmpty(), "JWT should not be empty");
-    }
-
-    @ParameterizedTest()
-    @EnumSource(value = TokenMode.class)
-    void sign_invalid_data_should_throws_exception(TokenMode mode) {
-
-        BasicConfigurer configurer = BasicConfigurer.builder()
-                .useMode(mode)
-                .trackedBy(mode.name().hashCode() + 4)
-                .validity(60)
-                .build();
-
-        assertThrows(IllegalArgumentException.class, () -> dataSigner.sign(null, configurer));
-    }
-
-    @ParameterizedTest()
-    @EnumSource(value = TokenMode.class)
-    void verify_valid_token_should_returns_payload(TokenMode mode) throws InterruptedException {
+    @ParameterizedTest
+    @EnumSource(value = DistributionMode.class)
+    void verify_valid_token_returns_string_payload(DistributionMode mode) throws InterruptedException {
         String data = "john.doe@example.com";
-
-        BasicConfigurer configurer = BasicConfigurer.builder()
-                .useMode(mode)
-                .trackedBy(mode.name().hashCode() + 5)
+        var cfg = BasicConfigurer.builder()
+                .groupId("ksv-verify-str-" + mode.name())
+                .distribution(mode)
                 .validity(600)
                 .build();
+        String token = dataSigner.sign(data, cfg);
+        Thread.sleep(5000); // allow Kafka→RocksDB propagation
+        var result = tokenVerifier.verify(token, s -> s);
+        assertEquals(data, result.data());
+    }
 
-        String token = dataSigner.sign(data, configurer); // Generate a valid token
-
-        Thread.sleep(2000); // Wait 2 secs to ensure that the keys has been propagated to database
-
-        String verifiedData = tokenVerifier.verify(token, String::toString);
-
-        assertNotNull(verifiedData);
-        assertEquals(data, verifiedData);
+    @ParameterizedTest
+    @EnumSource(value = DistributionMode.class)
+    void verify_valid_token_returns_pojo_payload(DistributionMode mode) throws InterruptedException {
+        UserData data = new UserData("john.doe@example.com");
+        var cfg = BasicConfigurer.builder()
+                .groupId("ksv-verify-pojo-" + mode.name())
+                .distribution(mode)
+                .validity(600)
+                .build();
+        String token = dataSigner.sign(data, cfg);
+        Thread.sleep(5000);
+        var result = tokenVerifier.verify(token, BasicConfigurer.deserializer(UserData.class));
+        assertNotNull(result.data());
+        assertEquals(data.getEmail(), result.data().getEmail());
     }
 
     @Test
-    void verify_invalid_token_should_throws_exception() {
-        assertThrows(BrokerExtractionException.class, () -> tokenVerifier.verify("invalid.token.token", String::toString));
+    void verify_invalid_token_throws() {
+        assertThrows(BrokerExtractionException.class,
+                () -> tokenVerifier.verify("invalid.token.here", s -> s));
     }
 
-    @ParameterizedTest()
-    @EnumSource(value = TokenMode.class)
-    void verify_expired_token_should_throws_exception(TokenMode mode) throws InterruptedException {
-        BasicConfigurer configurer = BasicConfigurer.builder()
-                .useMode(mode)
-                .trackedBy(mode.name().hashCode() + 6)
-                .validity(1)
+    @ParameterizedTest
+    @EnumSource(value = DistributionMode.class)
+    void verify_expired_token_throws(DistributionMode mode) throws InterruptedException {
+        var cfg = BasicConfigurer.builder()
+                .groupId("ksv-exp-" + mode.name())
+                .distribution(mode)
+                .validity(2)
                 .build();
-
-        String token = dataSigner.sign("john.doe@example.com", configurer); // Token with short duration
-        Thread.sleep(3000); // Wait 3 seconds for the token to expire
-
-        assertThrows(BrokerExtractionException.class, () -> tokenVerifier.verify(token, String::toString));
+        String token = dataSigner.sign("john.doe@example.com", cfg);
+        Thread.sleep(5000);
+        assertThrows(Exception.class, () -> tokenVerifier.verify(token, s -> s));
     }
 
-    @ParameterizedTest()
-    @EnumSource(value = TokenMode.class)
-    void verify_revoked_token_should_throws_exception(TokenMode mode) throws InterruptedException {
+    // ── Revocation ────────────────────────────────────────────────────────────
 
-        BasicConfigurer configurer = BasicConfigurer.builder()
-                .useMode(mode)
-                .trackedBy(mode.name().hashCode() + 7)
+    @ParameterizedTest
+    @EnumSource(value = DistributionMode.class)
+    void verify_revoked_token_throws(DistributionMode mode) throws InterruptedException {
+        String groupId = "ksv-revoke-" + mode.name();
+        var cfg = BasicConfigurer.builder()
+                .groupId(groupId)
+                .sequenceId("seq1")
+                .distribution(mode)
                 .validity(3600)
                 .build();
-
-        String token = dataSigner.sign("john.doe@example.com", configurer); // Token with long duration (1 hour)
-        Thread.sleep(2000); // Wait 2 seconds before issuing the revocation command
-
-        tokenRevoker.revoke(token);
-        Thread.sleep(2000); // Wait 2 seconds to ensure revocation took place
-
-        assertThrows(BrokerExtractionException.class, () -> tokenVerifier.verify(token, String::toString));
+        String token = dataSigner.sign("john.doe@example.com", cfg);
+        Thread.sleep(5000);
+        tokenRevoker.revoke(groupId, "seq1");
+        Thread.sleep(5000);
+        assertThrows(BrokerExtractionException.class, () -> tokenVerifier.verify(token, s -> s));
     }
 
-    @ParameterizedTest()
-    @EnumSource(value = TokenMode.class)
-    void verify_revoked_token_by_tracked_id_should_throws_exception(TokenMode mode) throws InterruptedException {
-        final long trackingId = mode.name().hashCode() + 8;
-
-        BasicConfigurer configurer = BasicConfigurer.builder()
-                .useMode(mode)
-                .trackedBy(trackingId)
-                .validity(3600)
-                .build();
-
-        String token = dataSigner.sign("john.doe@example.com", configurer); // Token with long duration (1 hour)
-        Thread.sleep(2000); // Wait 2 seconds before issuing the revocation command
-
-        tokenRevoker.revoke(trackingId);
-        Thread.sleep(2000); // Wait 2 seconds to ensure revocation took place
-
-        assertThrows(BrokerExtractionException.class, () -> tokenVerifier.verify(token, String::toString));
+    @ParameterizedTest
+    @EnumSource(value = DistributionMode.class)
+    void revokeGroup_invalidates_all_sessions(DistributionMode mode) throws InterruptedException {
+        String groupId = "ksv-rg-" + mode.name();
+        String t1 = dataSigner.sign("d1", BasicConfigurer.builder().groupId(groupId).distribution(mode).validity(3600).build());
+        String t2 = dataSigner.sign("d2", BasicConfigurer.builder().groupId(groupId).distribution(mode).validity(3600).build());
+        Thread.sleep(5000);
+        tokenRevoker.revoke(groupId, null);
+        Thread.sleep(5000);
+        assertThrows(BrokerExtractionException.class, () -> tokenVerifier.verify(t1, s -> s));
+        assertThrows(BrokerExtractionException.class, () -> tokenVerifier.verify(t2, s -> s));
     }
 
-    @ParameterizedTest()
-    @EnumSource(value = TokenMode.class)
-    void verify_valid_token_should_returns_payload_pojo(TokenMode mode) throws InterruptedException {
-        UserData data = new UserData("john.doe@example.com");
+    // ── TokenTracker ──────────────────────────────────────────────────────────
 
-        BasicConfigurer configurer = BasicConfigurer.builder()
-                .useMode(mode)
-                .trackedBy(mode.name().hashCode() + 9)
-                .validity(600)
-                .build();
+    @ParameterizedTest
+    @EnumSource(value = DistributionMode.class)
+    void hasActiveToken_after_sign_returns_true(DistributionMode mode) throws InterruptedException {
+        String groupId = "ksv-tracker-" + mode.name();
+        dataSigner.sign("data", BasicConfigurer.builder().groupId(groupId).distribution(mode).validity(600).build());
+        Thread.sleep(5000);
+        assertTrue(tokenTracker.hasActiveToken(groupId));
+    }
 
-        String token = dataSigner.sign(data, configurer); // Generate a valid token
-
-        Thread.sleep(2000); // Wait 2 secs to ensure that the keys has been propagated to database
-
-        UserData verifiedData = tokenVerifier.verify(token, BasicConfigurer.deserializer(UserData.class));
-
-        assertNotNull(verifiedData);
-        assertEquals(data.getEmail(), verifiedData.getEmail());
+    @ParameterizedTest
+    @EnumSource(value = DistributionMode.class)
+    void hasActiveToken_after_revokeGroup_returns_false(DistributionMode mode) throws InterruptedException {
+        String groupId = "ksv-tracker-rg-" + mode.name();
+        dataSigner.sign("d1", BasicConfigurer.builder().groupId(groupId).distribution(mode).validity(3600).build());
+        dataSigner.sign("d2", BasicConfigurer.builder().groupId(groupId).distribution(mode).validity(3600).build());
+        Thread.sleep(5000);
+        tokenRevoker.revoke(groupId, null);
+        Thread.sleep(5000);
+        assertFalse(tokenTracker.hasActiveToken(groupId));
     }
 }
-

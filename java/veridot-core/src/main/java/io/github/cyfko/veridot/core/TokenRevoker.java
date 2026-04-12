@@ -1,34 +1,61 @@
 package io.github.cyfko.veridot.core;
 
 /**
- * Defines the contract for revoking previously issued tokens or credentials.
+ * Contract for invalidating previously issued tokens.
  *
- * <p>
- * Implementations of this interface are responsible for invalidating or blacklisting
- * a token identified by the given {@code target}. The {@code target} can be either:
- * </p>
+ * <p>Revocation is expressed in terms of Protocol V2 identifiers ({@code groupId} and
+ * {@code sequenceId}) rather than opaque token strings, ensuring that the revocation is
+ * broker-centric — any service sharing the same {@link MetadataBroker} will immediately
+ * stop accepting the revoked token, regardless of which service issued it.</p>
  *
+ * <p>Two revocation scopes are supported:</p>
  * <ul>
- *   <li>a globally unique identifier used to track the token (e.g., a long or UUID)</li>
- *   <li>the token itself (e.g., a signed {@code String})</li>
+ *   <li><strong>Session revocation</strong> — invalidates a single active sequence within a group.</li>
+ *   <li><strong>Group revocation</strong> — invalidates all active sequences belonging to a group
+ *       (e.g., a user log-out from all devices).</li>
  * </ul>
  *
- * <p>
- * Future implementations may support additional {@code target} types.
- * This interface is especially useful in distributed systems where token invalidation
- * must be decoupled from token creation and verified at runtime.
- * </p>
+ * <h2>Typical usage</h2>
+ * <pre>{@code
+ * TokenRevoker revoker = new GenericSignerVerifier(broker, "my-salt");
+ *
+ * // Revoke a specific session (obtained from VerifiedData after verification)
+ * revoker.revoke("user-123", "session-A");
+ *
+ * // Revoke ALL active sessions for a user (e.g., security breach, password change)
+ * revoker.revoke("user-123", null);
+ * }</pre>
+ *
+ * <h2>Integration with verification flow</h2>
+ * <pre>{@code
+ * // After verifying a token, you can revoke its session using the extracted identifiers
+ * VerifiedData<String> result = verifier.verify(token, s -> s);
+ * revoker.revoke(result.groupId(), result.sequenceId());
+ * }</pre>
  *
  * @author Frank KOSSI
  * @since 1.0.0
+ * @see VerifiedData
+ * @see TokenVerifier
  */
 public interface TokenRevoker {
 
     /**
-     * Revokes a token or credential associated with the given target.
+     * Revokes one specific session or all sessions of a group.
      *
-     * @param target a unique identifier ({@link Long}), the token itself ({@link String}), or another supported object
-     *               representing the token to revoke; must not be {@code null}
+     * <p>If {@code sequenceId} is non-null, only that particular session is revoked.
+     * Any subsequent attempt to verify the corresponding token will result in a
+     * {@link io.github.cyfko.veridot.core.exceptions.BrokerExtractionException}.</p>
+     *
+     * <p>If {@code sequenceId} is {@code null}, all active sessions belonging to
+     * {@code groupId} are revoked atomically — typically used during a full user
+     * sign-out or a group-level security invalidation.</p>
+     *
+     * @param groupId    the group whose session(s) should be revoked;
+     *                   must not be {@code null} or blank
+     * @param sequenceId the specific session to revoke, or {@code null} to revoke
+     *                   all sessions of the group
+     * @throws IllegalArgumentException if {@code groupId} is {@code null} or blank
      */
-    void revoke(Object target);
+    void revoke(String groupId, String sequenceId);
 }
