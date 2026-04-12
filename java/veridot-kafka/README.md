@@ -25,19 +25,19 @@ Kafka-based implementation of the [`MetadataBroker`](https://github.com/cyfko/ve
 <dependency>
     <groupId>io.github.cyfko</groupId>
     <artifactId>veridot-core</artifactId>
-    <version>2.1.3</version>
+    <version>3.0.0</version>
 </dependency>
 <dependency>
     <groupId>io.github.cyfko</groupId>
     <artifactId>veridot-kafka</artifactId>
-    <version>2.1.3</version>
+    <version>3.0.0</version>
 </dependency>
 ```
 
 **Gradle**:
 ```gradle
-implementation 'io.github.cyfko:veridot-core:2.1.3'
-implementation 'io.github.cyfko:veridot-kafka:2.1.3'
+implementation 'io.github.cyfko:veridot-core:3.0.0'
+implementation 'io.github.cyfko:veridot-kafka:3.0.0'
 ```
 
 > ⚠️ This project follows [Semantic Versioning](https://semver.org/).
@@ -89,10 +89,11 @@ String jwt = sv.sign("john@example.com",
         .build());
 
 // Verify from any service connected to the same Kafka cluster
-String email = sv.verify(jwt, String::toString);
+VerifiedData<String> result = sv.verify(jwt, String::toString);
+String email = result.data();
 
 // Revoke a specific session
-sv.revoke("user-123", "session-A");
+sv.revoke(result.groupId(), result.sequenceId());
 
 // Verify after revocation → throws BrokerExtractionException
 sv.verify(jwt, String::toString); // throws!

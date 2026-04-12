@@ -43,12 +43,12 @@ Veridot implements **Protocol V2**, a binary-safe canonical message format with 
 <dependency>
     <groupId>io.github.cyfko</groupId>
     <artifactId>veridot-core</artifactId>
-    <version>2.1.3</version>
+    <version>3.0.0</version>
 </dependency>
 <dependency>
     <groupId>io.github.cyfko</groupId>
     <artifactId>veridot-kafka</artifactId>
-    <version>2.1.3</version>
+    <version>3.0.0</version>
 </dependency>
 ```
 
@@ -57,12 +57,12 @@ Veridot implements **Protocol V2**, a binary-safe canonical message format with 
 <dependency>
     <groupId>io.github.cyfko</groupId>
     <artifactId>veridot-core</artifactId>
-    <version>2.1.3</version>
+    <version>3.0.0</version>
 </dependency>
 <dependency>
     <groupId>io.github.cyfko</groupId>
     <artifactId>veridot-databases</artifactId>
-    <version>2.1.3</version>
+    <version>3.0.0</version>
 </dependency>
 ```
 
@@ -85,11 +85,13 @@ String jwt = sv.sign("john@example.com",
         .validity(300)  // 5 minutes
         .build());
 
-// Verify token → extract original data
-String email = sv.verify(jwt, String::toString);
+// Verify token → extract payload and protocol identifiers
+VerifiedData<String> result = sv.verify(jwt, String::toString);
+String email = result.data();      // "john@example.com"
+String group = result.groupId();   // "user-123"
 
 // Revoke a specific session
-sv.revoke("user-123", "session-A");
+sv.revoke(result.groupId(), result.sequenceId());
 
 // Or revoke the entire group
 sv.revoke("user-123", null);

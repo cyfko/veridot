@@ -14,13 +14,13 @@ Core module for **Veridot** — defines the API contracts and provides the defau
 <dependency>
     <groupId>io.github.cyfko</groupId>
     <artifactId>veridot-core</artifactId>
-    <version>2.1.3</version>
+    <version>3.0.0</version>
 </dependency>
 ```
 
 **Gradle**:
 ```gradle
-implementation 'io.github.cyfko:veridot-core:2.1.3'
+implementation 'io.github.cyfko:veridot-core:3.0.0'
 ```
 
 ---
@@ -81,10 +81,12 @@ String messageId = sv.sign("payload-data",
 
 ```java
 // Works with both JWT (DIRECT) and messageId (INDIRECT)
-String data = sv.verify(token, String::toString);
+VerifiedData<String> result = sv.verify(token, String::toString);
+String payload = result.data();
 
 // With POJO deserialization
-MyPojo pojo = sv.verify(token, BasicConfigurer.deserializer(MyPojo.class));
+VerifiedData<MyPojo> pojoResult = sv.verify(token, BasicConfigurer.deserializer(MyPojo.class));
+MyPojo pojo = pojoResult.data();
 ```
 
 ### Revocation
