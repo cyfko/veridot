@@ -6,7 +6,7 @@
 
     <groupId>io.github.cyfko</groupId>
     <artifactId>veridot</artifactId>
-    <version>1.0.0</version>
+    <version>2.2.0</version>
     <packaging>pom</packaging>
 
     <name>Veridot - Distributed Token Verification</name>
