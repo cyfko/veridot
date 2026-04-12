@@ -3,6 +3,7 @@ package io.github.cyfko.veridot.core.impl;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.cyfko.veridot.core.DistributionMode;
 import io.github.cyfko.veridot.core.InMemoryMetadataBroker;
+import io.github.cyfko.veridot.core.VerifiedData;
 import io.github.cyfko.veridot.core.exceptions.BrokerExtractionException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -27,8 +28,10 @@ class VerificationTest {
         var cfg = BasicConfigurer.builder().groupId("u1").validity(600)
                 .distribution(DistributionMode.DIRECT).build();
         String jwt = sv.sign("hello world", cfg);
-        String result = sv.verify(jwt, s -> s);
-        assertEquals("hello world", result);
+        VerifiedData<String> result = sv.verify(jwt, s -> s);
+        assertEquals("hello world", result.data());
+        assertEquals("u1", result.groupId());
+        assertNotNull(result.sequenceId());
     }
 
     @Test
@@ -36,8 +39,10 @@ class VerificationTest {
         var cfg = BasicConfigurer.builder().groupId("u1").validity(600)
                 .distribution(DistributionMode.INDIRECT).build();
         String messageId = sv.sign("hello world", cfg);
-        String result = sv.verify(messageId, s -> s);
-        assertEquals("hello world", result);
+        VerifiedData<String> result = sv.verify(messageId, s -> s);
+        assertEquals("hello world", result.data());
+        assertEquals("u1", result.groupId());
+        assertNotNull(result.sequenceId());
     }
 
     @Test
@@ -50,15 +55,15 @@ class VerificationTest {
         String jwt = sv.sign(data, cfg);
 
         @SuppressWarnings("unchecked")
-        Map<String, String> result = sv.verify(jwt, s -> {
+        VerifiedData<Map<String, String>> result = sv.verify(jwt, s -> {
             try {
                 return mapper.readValue(s, Map.class);
             } catch (Exception e) {
                 throw new RuntimeException(e);
             }
         });
-        assertEquals("test@example.com", result.get("email"));
-        assertEquals("admin", result.get("role"));
+        assertEquals("test@example.com", result.data().get("email"));
+        assertEquals("admin", result.data().get("role"));
     }
 
     @Test
@@ -71,14 +76,14 @@ class VerificationTest {
         String messageId = sv.sign(data, cfg);
 
         @SuppressWarnings("unchecked")
-        Map<String, String> result = sv.verify(messageId, s -> {
+        VerifiedData<Map<String, String>> result = sv.verify(messageId, s -> {
             try {
                 return mapper.readValue(s, Map.class);
             } catch (Exception e) {
                 throw new RuntimeException(e);
             }
         });
-        assertEquals("42", result.get("userId"));
+        assertEquals("42", result.data().get("userId"));
     }
 
     @Test

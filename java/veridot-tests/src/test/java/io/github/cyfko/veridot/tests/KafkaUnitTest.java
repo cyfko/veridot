@@ -109,8 +109,8 @@ class KafkaUnitTest {
                 .build();
         String token = dataSigner.sign(data, cfg);
         Thread.sleep(5000); // allow Kafka→RocksDB propagation
-        String result = tokenVerifier.verify(token, s -> s);
-        assertEquals(data, result);
+        var result = tokenVerifier.verify(token, s -> s);
+        assertEquals(data, result.data());
     }
 
     @Test

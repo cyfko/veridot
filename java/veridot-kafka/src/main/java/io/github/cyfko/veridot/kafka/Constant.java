@@ -16,22 +16,55 @@ abstract class Env{
 }
 
 /**
- * A Placeholder for some constants.
+ * Runtime constants resolved from environment variables for the Kafka adapter,
+ * with sensible built-in defaults.
+ *
+ * <p>These constants are used by {@link KafkaMetadataBrokerAdapter} when no explicit
+ * configuration is provided. Override any value through the corresponding environment
+ * variable (set before the JVM starts):</p>
+ *
+ * <table border="1">
+ *   <caption>Environment variable overrides</caption>
+ *   <tr><th>Environment variable</th><th>Constant</th><th>Default value</th></tr>
+ *   <tr><td>{@code VDOT_KAFKA_BOOSTRAP_SERVERS}</td>
+ *       <td>{@link #KAFKA_BOOSTRAP_SERVERS}</td><td>{@code localhost:9092}</td></tr>
+ *   <tr><td>{@code VDOT_TOKEN_VERIFIER_TOPIC}</td>
+ *       <td>{@link #KAFKA_TOKEN_VERIFIER_TOPIC}</td><td>{@code token-verifier}</td></tr>
+ *   <tr><td>{@code VDOT_EMBEDDED_DATABASE_PATH}</td>
+ *       <td>{@link #EMBEDDED_DATABASE_PATH}</td><td>{@code veridot_db_data}</td></tr>
+ * </table>
+ *
+ * @author Frank KOSSI
+ * @since 2.0.0
+ * @see KafkaMetadataBrokerAdapter
  */
 public abstract class Constant {
 
     /**
-     * Comma-delimited list of host:port pairs to use for establishing the initial connections to the Kafka cluster.
+     * Comma-delimited list of {@code host:port} pairs used to establish the initial
+     * connection to the Kafka cluster (bootstrap servers).
+     *
+     * <p>Override with the {@code VDOT_KAFKA_BOOSTRAP_SERVERS} environment variable.
+     * Default: {@code localhost:9092}.</p>
      */
     public static final String KAFKA_BOOSTRAP_SERVERS;
 
     /**
-     * The Kafka topic used for producing/consuming asymmetric public keys.
+     * The Kafka topic on which verification metadata messages are produced and consumed.
+     *
+     * <p>All services sharing the same topic will receive and locally persist every
+     * metadata message, enabling cross-service token verification. Override with the
+     * {@code VDOT_TOKEN_VERIFIER_TOPIC} environment variable. Default: {@code token-verifier}.</p>
      */
     public static final String KAFKA_TOKEN_VERIFIER_TOPIC;
 
     /**
-     * The Path to the embedded database directory.
+     * The file-system path of the embedded RocksDB directory used to persist
+     * verification metadata locally.
+     *
+     * <p>The directory is created automatically if it does not exist.
+     * Override with the {@code VDOT_EMBEDDED_DATABASE_PATH} environment variable.
+     * Default: {@code veridot_db_data} (relative to the working directory).</p>
      */
     public static final String EMBEDDED_DATABASE_PATH;
 

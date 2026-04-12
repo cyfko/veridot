@@ -113,8 +113,8 @@ class KafkaSignerVerifierTest {
                 .build();
         String token = dataSigner.sign(data, cfg);
         Thread.sleep(5000); // allow Kafka→RocksDB propagation
-        String result = tokenVerifier.verify(token, s -> s);
-        assertEquals(data, result);
+        var result = tokenVerifier.verify(token, s -> s);
+        assertEquals(data, result.data());
     }
 
     @ParameterizedTest
@@ -128,9 +128,9 @@ class KafkaSignerVerifierTest {
                 .build();
         String token = dataSigner.sign(data, cfg);
         Thread.sleep(5000);
-        UserData result = tokenVerifier.verify(token, BasicConfigurer.deserializer(UserData.class));
-        assertNotNull(result);
-        assertEquals(data.getEmail(), result.getEmail());
+        var result = tokenVerifier.verify(token, BasicConfigurer.deserializer(UserData.class));
+        assertNotNull(result.data());
+        assertEquals(data.getEmail(), result.data().getEmail());
     }
 
     @Test

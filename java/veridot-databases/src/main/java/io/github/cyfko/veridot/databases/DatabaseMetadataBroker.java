@@ -63,6 +63,24 @@ public class DatabaseMetadataBroker implements MetadataBroker {
     private final DataSource dataSource;
     private final String tableName;
 
+    /**
+     * Constructs a {@code DatabaseMetadataBroker} backed by the given {@link DataSource}.
+     *
+     * <p>The broker table is created automatically if it does not already exist.  The table
+     * name is validated at construction time to prevent SQL injection.</p>
+     *
+     * <pre>{@code
+     * DataSource ds = ...; // e.g., HikariCP, Spring DataSource
+     * MetadataBroker broker = new DatabaseMetadataBroker(ds, "veridot_broker");
+     * }</pre>
+     *
+     * @param dataSource a JDBC {@link DataSource} connected to a supported database
+     *                   (PostgreSQL, MySQL, H2, Oracle, SQL Server); must not be {@code null}
+     * @param tableName  the name of the broker table; must start with a letter and contain
+     *                   only letters, digits, or underscores (validated against SQL injection)
+     * @throws IllegalArgumentException if {@code tableName} fails the naming validation
+     * @throws RuntimeException         if the table cannot be created (SQL error)
+     */
     public DatabaseMetadataBroker(DataSource dataSource, String tableName) {
         if (!isValidTableName(tableName)) {
             throw new IllegalArgumentException(String.format("Invalid table name: [%s]. Should start with a letter and only contains letters, digits or underscore.", tableName));
@@ -139,6 +157,20 @@ public class DatabaseMetadataBroker implements MetadataBroker {
         """, tableName, idDefinition, COLUMN_KEY, COLUMN_MESSAGE, createdAtDefinition);
     }
 
+    /**
+     * Asynchronously stores or deletes a verification metadata message.
+     *
+     * <p>If {@code message} is non-empty, any existing row for {@code keyId} is deleted
+     * first (upsert semantics), then the new row is inserted.</p>
+     *
+     * <p>If {@code message} is empty (or blank), the existing row for {@code keyId}
+     * is deleted — this is the revocation signal as defined by {@link MetadataBroker}.</p>
+     *
+     * @param keyId   the Protocol V2 {@code messageId} or reserved key; must not be {@code null}
+     * @param message the Protocol V2 metadata message to store; an empty string signals revocation
+     * @return a {@link java.util.concurrent.CompletableFuture} that completes when the
+     *         database operation finishes, or completes exceptionally on SQL error
+     */
     @Override
     public CompletableFuture<Void> send(String keyId, String message) {
         return CompletableFuture.runAsync(() -> {
@@ -182,6 +214,16 @@ public class DatabaseMetadataBroker implements MetadataBroker {
         }
     }
 
+    /**
+     * Retrieves the verification metadata message for the given key from the database.
+     *
+     * <p>Returns the first (oldest) matching row. If no row exists (key unknown or
+     * already revoked), a {@link BrokerExtractionException} is thrown.</p>
+     *
+     * @param keyId the Protocol V2 {@code messageId} or reserved key; must not be {@code null}
+     * @return the stored metadata message; never {@code null} or empty
+     * @throws BrokerExtractionException if no row is found, or if a SQL error occurs
+     */
     @Override
     public String get(String keyId) {
         try (Connection conn = dataSource.getConnection()) {
@@ -205,6 +247,16 @@ public class DatabaseMetadataBroker implements MetadataBroker {
         }
     }
 
+    /**
+     * Returns all keys stored in the database whose value starts with the given prefix.
+     *
+     * <p>Uses a SQL {@code LIKE} query ({@code prefix%}) to locate matching rows.
+     * The result set is not ordered.</p>
+     *
+     * @param prefix the key prefix to search for (e.g., {@code "2:user-123:"})
+     * @return a list of matching keys; empty if none found (never {@code null})
+     * @throws BrokerExtractionException if a SQL error occurs during the query
+     */
     @Override
     public List<String> getKeysByPrefix(String prefix) throws BrokerExtractionException {
         List<String> keys = new ArrayList<>();

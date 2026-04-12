@@ -5,7 +5,45 @@ All notable changes to the Veridot project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] - 2026-04-12
+
+### ⚠️ Breaking Changes
+
+- **`TokenVerifier.verify()` now returns `VerifiedData<T>`** instead of `T`.
+  - `VerifiedData<T>` is a new record carrying the deserialized payload (`.data()`)
+    alongside the Protocol V2 identifiers (`.groupId()`, `.sequenceId()`) that were
+    bound to the token at signing time.
+  - **Migration**: replace `T result = verifier.verify(token, fn)` with
+    `VerifiedData<T> result = verifier.verify(token, fn)` and access the payload via `result.data()`.
+  - **Benefit**: eliminates the need to re-parse the token or redundantly embed
+    `groupId`/`sequenceId` inside the payload to use them for revocation or correlation.
+
+### Added
+
+- **`VerifiedData<T>` record** (`veridot-core`) — immutable result of a successful
+  verification, providing typed access to `data()`, `groupId()` and `sequenceId()`.
+
+### Changed
+
+- **Comprehensive Javadoc overhaul** across all modules (`veridot-core`, `veridot-kafka`,
+  `veridot-databases`):
+  - All public interfaces (`DataSigner`, `TokenVerifier`, `TokenRevoker`, `TokenTracker`,
+    `MetadataBroker`, `DistributionMode`, `VerifiedData`, `DataTransformer`) now include
+    end-to-end code examples and precise `@param`/`@return`/`@throws` documentation.
+  - Interfaces are now strictly **format-agnostic**: no references to JWT, JWS, RSA, or
+    `sub` claim appear in public contracts. JWT/RSA is documented as an `@implNote` in
+    `GenericSignerVerifier` only.
+  - All 5 exception classes now have full Javadoc (causes, context, constructor `@param`).
+  - `GenericSignerVerifier.EvictionPolicy` enum constants are individually documented with
+    behaviour descriptions and use-case guidance.
+  - `KafkaMetadataBrokerAdapter`, `Constant`, `SignerConfig`, `VerifierConfig` updated with
+    architecture overview, env-var tables, and initialization examples.
+  - `DatabaseMetadataBroker` constructor and all `@Override` methods now documented.
+
+---
+
 ## [2.2.0] - 2026-04-12
+
 
 ### Changed
 

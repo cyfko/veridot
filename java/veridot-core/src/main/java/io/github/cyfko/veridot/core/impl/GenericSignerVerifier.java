@@ -18,40 +18,99 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * Default implementation of {@link DataSigner}, {@link TokenVerifier}, {@link TokenRevoker},
- * and {@link TokenTracker} conforming to Protocol Veridot V2.
+ * Reference implementation of {@link DataSigner}, {@link TokenVerifier}, {@link TokenRevoker},
+ * and {@link TokenTracker}, conforming to the Veridot Protocol V2.
  *
- * <p>This class handles:</p>
+ * <p>This class provides the complete token lifecycle — signing, verification, revocation,
+ * and active-state tracking — backed by a {@link MetadataBroker} that propagates
+ * verification metadata across services in a distributed system.</p>
+ *
+ * <p>Key capabilities include:</p>
  * <ul>
- *   <li>Signing objects into time-bound JWT tokens using ephemeral RSA key pairs</li>
- *   <li>Publishing V2-formatted metadata to a {@link MetadataBroker}</li>
- *   <li>Verifying tokens by fetching and parsing V2 metadata from the broker</li>
- *   <li>Revoking specific sequences or entire groups via structured __REVOKE__ messages (§5)</li>
- *   <li>Querying whether active tokens exist for a group, token, or messageId</li>
- *   <li>Enforcing session capacity limits with configurable eviction policies</li>
- *   <li>Resolving distributed configuration from broker hierarchy: local → site → global → default (§4)</li>
- *   <li>Validating clock drift ±5 minutes (§9.1)</li>
+ *   <li>Issuing cryptographically signed tokens and publishing Protocol V2 verification metadata
+ *       to a {@link MetadataBroker}</li>
+ *   <li>Verifying tokens by fetching, validating and parsing V2 metadata from the broker</li>
+ *   <li>Revoking specific sessions or entire groups via Protocol V2 structured revocation (§5)</li>
+ *   <li>Querying whether active tokens exist for a group, a token, or a Protocol V2 messageId</li>
+ *   <li>Enforcing per-group session capacity limits with configurable eviction policies</li>
+ *   <li>Resolving distributed configuration from the broker hierarchy:
+ *       local → site → global → constructor default (§4)</li>
+ *   <li>Detecting clock drift between issuer and verifier, tolerating up to ±5 minutes (§9.1)</li>
  * </ul>
+ *
+ * <h2>Usage example</h2>
+ * <pre>{@code
+ * MetadataBroker broker = new KafkaMetadataBrokerAdapter("localhost:9092");
+ * var sv = new GenericSignerVerifier(broker, "app-secret");
+ *
+ * // Sign
+ * String token = sv.sign("user@example.com",
+ *     BasicConfigurer.builder()
+ *         .groupId("user-123")
+ *         .sequenceId("session-A")
+ *         .validity(3600)
+ *         .build());
+ *
+ * // Verify
+ * VerifiedData<String> result = sv.verify(token, s -> s);
+ * String email   = result.data();       // "user@example.com"
+ * String group   = result.groupId();    // "user-123"
+ * String session = result.sequenceId(); // "session-A"
+ *
+ * // Revoke
+ * sv.revoke(group, session);
+ * }</pre>
+ *
+ * @implNote This implementation uses <strong>JWT (JWS Compact Serialization)</strong> as its
+ *           signed token format and <strong>ephemeral RSA key pairs</strong> rotated on a
+ *           configurable schedule (default: every 24 hours, overridable via the
+ *           {@code VDOT_KEYS_ROTATION_MINUTES} environment variable). These are implementation
+ *           details and are not part of the Veridot Protocol V2 specification.
  *
  * @author Frank KOSSI
  * @since 2.0.0
+ * @see MetadataBroker
+ * @see BasicConfigurer
+ * @see VerifiedData
  */
 public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRevoker, TokenTracker {
 
     // ── Eviction policy ───────────────────────────────────────────────────────
 
     /**
-     * Eviction policy for session capacity management.
-     * Applied when {@code maxSessions} is reached and a new sequence must be added.
+     * Determines the strategy applied when a new signing attempt would exceed the
+     * {@code maxSessions} limit configured for a group.
+     *
+     * <p>The policy is evaluated at signing time. Only {@link #REJECT} prevents a token
+     * from being issued; all other policies evict an existing session to make room.</p>
+     *
+     * @see GenericSignerVerifier#GenericSignerVerifier(MetadataBroker, String, int, EvictionPolicy)
      */
     public enum EvictionPolicy {
-        /** First In, First Out — evicts the oldest sequence (lowest timestamp). */
+        /**
+         * <strong>First In, First Out</strong> — evicts the session with the earliest
+         * publish timestamp, making room for the new one.
+         * Suitable when older sessions are considered less valuable.
+         */
         FIFO,
-        /** Last In, First Out — evicts the newest sequence (highest timestamp). */
+        /**
+         * <strong>Last In, First Out</strong> — evicts the session with the most recent
+         * publish timestamp, preserving older sessions.
+         * Suitable when older sessions represent more established connections.
+         */
         LIFO,
-        /** Least Recently Used — evicts the oldest sequence (same as FIFO in this implementation). */
+        /**
+         * <strong>Least Recently Used</strong> — in this implementation, evicts the session
+         * with the earliest timestamp (equivalent to {@link #FIFO}).
+         * Future versions may track actual access time.
+         */
         LRU,
-        /** Reject — refuses the signing attempt instead of evicting an existing session. */
+        /**
+         * <strong>Reject</strong> — refuses the signing attempt with a
+         * {@link io.github.cyfko.veridot.core.exceptions.SessionCapacityExceededException}
+         * instead of evicting any session.
+         * Use when you want strict enforcement without silent eviction.
+         */
         REJECT
     }
 
@@ -96,22 +155,51 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
     // ── Constructors ──────────────────────────────────────────────────────────
 
     /**
-     * Constructs a {@code GenericSignerVerifier} with no session limit.
+     * Constructs a {@code GenericSignerVerifier} with no per-group session limit.
      *
-     * @param metadataBroker broker for publishing/retrieving metadata; must not be {@code null}
-     * @param salt           static salt for additional unpredictability; must not be {@code null} or blank
+     * <p>This is the standard constructor for most applications where there is no need
+     * to restrict the number of concurrent sessions per group.</p>
+     *
+     * <pre>{@code
+     * MetadataBroker broker = new KafkaMetadataBrokerAdapter("localhost:9092");
+     * var sv = new GenericSignerVerifier(broker, "my-app-secret");
+     * }</pre>
+     *
+     * @param metadataBroker the broker used to publish and retrieve verification metadata;
+     *                       must not be {@code null}
+     * @param salt           a static application-level string mixed into the key derivation
+     *                       for additional unpredictability; must not be {@code null} or blank
+     * @throws IllegalArgumentException if {@code metadataBroker} is {@code null},
+     *                                  or {@code salt} is {@code null} or blank
      */
     public GenericSignerVerifier(MetadataBroker metadataBroker, String salt) {
         this(metadataBroker, salt, -1, EvictionPolicy.FIFO);
     }
 
     /**
-     * Constructs a {@code GenericSignerVerifier} with optional session capacity management.
+     * Constructs a {@code GenericSignerVerifier} with per-group session capacity management.
      *
-     * @param metadataBroker broker for publishing/retrieving metadata; must not be {@code null}
-     * @param salt           static salt for unpredictability; must not be {@code null} or blank
-     * @param maxSessions    maximum concurrent active sequences per group; {@code -1} means unlimited
-     * @param policy         eviction policy to apply when {@code maxSessions} is reached; must not be {@code null}
+     * <p>Use this constructor when the application must enforce a limit on the number of
+     * concurrent active tokens per group (e.g., maximum 3 simultaneous device sessions
+     * per user). The {@code policy} determines what happens when the limit is reached.</p>
+     *
+     * <pre>{@code
+     * // Allow at most 3 concurrent sessions per user; evict the oldest when exceeded
+     * var sv = new GenericSignerVerifier(broker, "my-secret", 3, EvictionPolicy.FIFO);
+     *
+     * // Allow at most 1 session per user; reject any additional attempt
+     * var sv = new GenericSignerVerifier(broker, "my-secret", 1, EvictionPolicy.REJECT);
+     * }</pre>
+     *
+     * @param metadataBroker the broker used to publish and retrieve verification metadata;
+     *                       must not be {@code null}
+     * @param salt           a static application-level string mixed into the key derivation;
+     *                       must not be {@code null} or blank
+     * @param maxSessions    maximum number of concurrent active sequences per group;
+     *                       use {@code -1} for no limit
+     * @param policy         the eviction strategy applied when {@code maxSessions} is exceeded;
+     *                       must not be {@code null}
+     * @throws IllegalArgumentException if any argument fails validation
      */
     public GenericSignerVerifier(MetadataBroker metadataBroker, String salt, int maxSessions, EvictionPolicy policy) {
         if (metadataBroker == null) throw new IllegalArgumentException("MetadataBroker cannot be null");
@@ -135,6 +223,18 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
 
     // ── DataSigner ────────────────────────────────────────────────────────────
 
+    /**
+     * {@inheritDoc}
+     *
+     * @implNote This implementation serializes the payload using the configurer's serializer,
+     *           embeds it in a <strong>JWT (JWS Compact Serialization)</strong> signed with an
+     *           ephemeral RSA private key, then publishes a Protocol V2 metadata message
+     *           (containing the corresponding RSA public key, TTL, and timestamp) to the broker
+     *           under the token's {@code messageId}.
+     *           <p>The ephemeral key pair is rotated automatically on the configured schedule
+     *           (default: every 24 hours). All tokens signed with the old key remain verifiable
+     *           until their TTL expires or they are revoked.</p>
+     */
     @Override
     public String sign(Object data, Configurer configurer) throws DataSerializationException {
         // 1. Validate inputs
@@ -223,8 +323,18 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
 
     // ── TokenVerifier ─────────────────────────────────────────────────────────
 
+    /**
+     * {@inheritDoc}
+     *
+     * @implNote This implementation accepts both a raw JWT (DIRECT mode) and a Protocol V2
+     *           {@code messageId} (INDIRECT mode). In DIRECT mode, the token's protocol subject
+     *           is extracted from the JWT's {@code sub} claim without signature verification;
+     *           the actual RSA signature is then verified in step 9 using the public key
+     *           fetched from the broker. In INDIRECT mode, the full JWT is retrieved from
+     *           the broker metadata before signature verification.
+     */
     @Override
-    public <T> T verify(String token, Function<String, T> deserializer) throws BrokerExtractionException {
+    public <T> VerifiedData<T> verify(String token, Function<String, T> deserializer) throws BrokerExtractionException {
         try {
             // 1. Resolve messageId and jwtToken
             final String messageId;
@@ -242,19 +352,24 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
                 throw new BrokerExtractionException("Unrecognized token format: " + token);
             }
 
-            // 2. Fetch V2 message from broker
+            // 2. Extract groupId and sequenceId from messageId
+            String[] parts = ProtocolV2.parseMessageId(messageId);
+            String groupId = parts[1];
+            String sequenceId = parts[2];
+
+            // 3. Fetch V2 message from broker
             String message = metadataBroker.get(messageId); // throws BrokerExtractionException if absent/revoked
 
-            // 3. Parse metadata
+            // 4. Parse metadata
             Map<String, String> meta = ProtocolV2.parseMetadata(message);
 
-            // 4. Validate clock drift (§9.1)
+            // 5. Validate clock drift (§9.1)
             validateClockDrift(meta);
 
-            // 5. Validate temporal validity (TTL)
+            // 6. Validate temporal validity (TTL)
             validateTtl(meta);
 
-            // 6. Resolve JWT for INDIRECT mode
+            // 7. Resolve JWT for INDIRECT mode
             String resolvedJwt = jwtToken;
             if (resolvedJwt == null) {
                 resolvedJwt = meta.get(ProtocolV2.PROP_TOKEN);
@@ -263,17 +378,18 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
                 }
             }
 
-            // 7. Rebuild public key
+            // 8. Rebuild public key
             String pubkeyEncoded = meta.get(ProtocolV2.PROP_PUBKEY);
             byte[] pubKeyBytes = Base64.getUrlDecoder().decode(pubkeyEncoded);
             PublicKey publicKey = keyFactory.generatePublic(new X509EncodedKeySpec(pubKeyBytes));
 
-            // 8. Verify JWT signature + expiration
+            // 9. Verify JWT signature + expiration
             Map<String, Object> claims = JwtVerifier.verifyWith(publicKey).parseSignedClaims(resolvedJwt);
 
-            // 9. Deserialize and return payload
+            // 10. Deserialize and return payload with protocol identifiers
             String data = (String) claims.get("data");
-            return deserializer.apply(data);
+            T deserialized = deserializer.apply(data);
+            return new VerifiedData<>(groupId, sequenceId, deserialized);
 
         } catch (BrokerExtractionException | DataDeserializationException e) {
             throw e;
@@ -284,6 +400,15 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
 
     // ── TokenRevoker ──────────────────────────────────────────────────────────
 
+    /**
+     * {@inheritDoc}
+     *
+     * @implNote This implementation publishes a Protocol V2 structured revocation message
+     *           (key: {@code <version>:<groupId>:__REVOKE__}) to the broker for
+     *           cross-service interoperability (§5.2), then immediately deletes the sequence
+     *           entry (or all entries for the group) by sending an empty-string message,
+     *           triggering the broker's revocation semantics.
+     */
     @Override
     public void revoke(String groupId, String sequenceId) {
         if (groupId == null || groupId.isBlank()) {
@@ -326,6 +451,21 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
 
     // ── TokenTracker ──────────────────────────────────────────────────────────
 
+    /**
+     * {@inheritDoc}
+     *
+     * @implNote The target type is resolved in this order:
+     *           <ol>
+     *             <li>If the string contains three {@code .}-separated parts, it is treated
+     *                 as a <strong>signed JWT</strong>: the protocol subject is extracted
+     *                 from the JWT payload (without signature verification) and then the
+     *                 corresponding broker entry is checked for liveness.</li>
+     *             <li>If the string matches the Protocol V2 {@code messageId} pattern
+     *                 (starts with {@code "<version>:"}), the broker entry is checked directly.</li>
+     *             <li>Otherwise, the string is treated as a <strong>groupId</strong> and all
+     *                 non-reserved broker entries with the matching prefix are scanned.</li>
+     *           </ol>
+     */
     @Override
     public boolean hasActiveToken(Object target) {
         if (!(target instanceof String s)) {

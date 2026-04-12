@@ -115,8 +115,8 @@ public abstract class DatabaseTest {
                 .build();
         String token = dataSigner.sign(data, cfg);
         Thread.sleep(2000); // allow async DB propagation
-        String result = tokenVerifier.verify(token, s -> s);
-        assertEquals(data, result);
+        var result = tokenVerifier.verify(token, s -> s);
+        assertEquals(data, result.data());
     }
 
     @ParameterizedTest
@@ -130,9 +130,9 @@ public abstract class DatabaseTest {
                 .build();
         String token = dataSigner.sign(data, cfg);
         Thread.sleep(2000);
-        UserData result = tokenVerifier.verify(token, BasicConfigurer.deserializer(UserData.class));
-        assertNotNull(result);
-        assertEquals(data.getEmail(), result.getEmail());
+        var result = tokenVerifier.verify(token, BasicConfigurer.deserializer(UserData.class));
+        assertNotNull(result.data());
+        assertEquals(data.getEmail(), result.data().getEmail());
     }
 
     @Test
@@ -197,9 +197,9 @@ public abstract class DatabaseTest {
         dataSigner.sign(data, BasicConfigurer.builder().groupId(groupId).sequenceId("s1").distribution(mode).validity(600).build());
         String token = dataSigner.sign(data, BasicConfigurer.builder().groupId(groupId).sequenceId("s1").distribution(mode).validity(600).build());
         Thread.sleep(2000);
-        UserData result = tokenVerifier.verify(token, BasicConfigurer.deserializer(UserData.class));
-        assertNotNull(result);
-        assertEquals(data.getEmail(), result.getEmail());
+        var result = tokenVerifier.verify(token, BasicConfigurer.deserializer(UserData.class));
+        assertNotNull(result.data());
+        assertEquals(data.getEmail(), result.data().getEmail());
     }
 
     // ── TokenTracker ──────────────────────────────────────────────────────────

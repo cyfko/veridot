@@ -10,11 +10,42 @@ import io.github.cyfko.veridot.core.exceptions.DataSerializationException;
 import java.util.function.Function;
 
 /**
- * A simple implementation of {@link DataSigner.Configurer} that uses a builder pattern to configure
- * token signing parameters such as distribution mode, groupId, sequenceId, validity duration,
- * and payload serializer.
+ * Fluent builder-based implementation of {@link DataSigner.Configurer} that covers the most
+ * common signing scenarios without requiring a custom {@link DataSigner.Configurer} implementation.
  *
+ * <p>Payload serialization defaults to Jackson's {@link com.fasterxml.jackson.databind.ObjectMapper};
+ * plain {@link String} payloads are passed through as-is without JSON encoding.</p>
+ *
+ * <h2>Usage — DIRECT mode (default)</h2>
+ * <pre>{@code
+ * String token = signer.sign("user@example.com",
+ *     BasicConfigurer.builder()
+ *         .groupId("user-123")
+ *         .sequenceId("session-A")   // optional — UUID generated if omitted
+ *         .validity(3600)            // 1 hour
+ *         .build());
+ * }</pre>
+ *
+ * <h2>Usage — INDIRECT mode with POJO payload</h2>
+ * <pre>{@code
+ * record UserClaims(String email, String role) {}
+ *
+ * String messageId = signer.sign(new UserClaims("user@example.com", "admin"),
+ *     BasicConfigurer.builder()
+ *         .groupId("user-123")
+ *         .distribution(DistributionMode.INDIRECT)
+ *         .validity(300)            // 5 minutes
+ *         .build());
+ *
+ * // Verify later
+ * VerifiedData<UserClaims> result = verifier.verify(messageId,
+ *     BasicConfigurer.deserializer(UserClaims.class));
+ * }</pre>
+ *
+ * @author Frank KOSSI
  * @since 2.0.0
+ * @see DataSigner.Configurer
+ * @see Builder
  */
 public class BasicConfigurer implements DataSigner.Configurer {
 
@@ -135,18 +166,40 @@ public class BasicConfigurer implements DataSigner.Configurer {
 
     /**
      * Returns a new {@link Builder} instance.
+     *
+     * <p>Required builder fields: {@code groupId} and {@code validity}.<br>
+     * Optional fields: {@code sequenceId} (auto-generated UUID if not set),
+     * {@code distribution} (defaults to {@link DistributionMode#DIRECT}),
+     * {@code serializer} (defaults to Jackson {@link com.fasterxml.jackson.databind.ObjectMapper}).</p>
+     *
+     * @return a fresh, empty {@link Builder}
      */
     public static Builder builder() {
         return new Builder();
     }
 
     /**
-     * Creates a deserialization function that converts a JSON string into an object of the specified class type,
-     * using Jackson's {@link ObjectMapper}.
+     * Returns a {@link java.util.function.Function} that deserializes a JSON string into
+     * an instance of the given class.
      *
-     * @param clazz the target class to deserialize into
-     * @param <T>   the type of the target object
-     * @return a function that takes a JSON string and returns a deserialized object of type T
+     * <p>If {@code clazz} is {@link String}, the value is returned as-is without JSON parsing.
+     * Otherwise, Jackson's {@link com.fasterxml.jackson.databind.ObjectMapper} is used.</p>
+     *
+     * <h4>Example</h4>
+     * <pre>{@code
+     * record UserData(String email, String role) {}
+     *
+     * VerifiedData<UserData> result = verifier.verify(token,
+     *     BasicConfigurer.deserializer(UserData.class));
+     * UserData user = result.data();
+     * System.out.println(user.email()); // "user@example.com"
+     * }</pre>
+     *
+     * @param <T>   the target type
+     * @param clazz the class to deserialize into; must not be {@code null}
+     * @return a non-null deserialization function
+     * @throws io.github.cyfko.veridot.core.exceptions.DataDeserializationException at call
+     *         time if the JSON cannot be mapped to {@code clazz}
      */
     public static <T> Function<String, T> deserializer(Class<T> clazz) {
         return data -> {
