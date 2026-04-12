@@ -1,472 +1,716 @@
-# Spécification Complète du Protocole Véridot v2
+# Veridot Protocol Specification — Version 2
 
-## 1. Principes Fondamentaux
-
-### 1.1 Séparation des Responsabilités
-- **Protocole Véridot** : définit la structure, la syntaxe et la sémantique des messages
-- **Transport/Broker** : assure la livraison, la persistance et la cohérence distribuée
-- **Implémentation** : applique les règles du protocole dans un contexte d'exécution spécifique
-
-### 1.2 Politique de Sécurité
-- **Refus implicite** : tout message non conforme ou ambigu est REJETÉ
-- **Autorisation explicite** : seuls les messages strictement conformes sont ACCEPTÉS
-- **Validation stricte** : aucune tolérance aux déviations du format
-
-## 2. Structure Générale des Messages
-
-### 2.1 Format Canonique
 ```
-[2]:[<groupId>:<sequenceId>]|[<metadata>]
+Title:        Veridot Protocol v2 — Distributed Token Verification
+Version:      2.0
+Status:       Standards Track
+Author:       Frank Cyrille KOSSI KOSSI
+Created:      2026-04-10
+Last Revised: 2026-04-12
 ```
 
-### 2.2 Contraintes Syntaxiques Strictes
+## Status of This Memo
 
-#### 2.2.1 Version
-- **Valeur** : exactement `2` (caractère ASCII)
-- **Validation** : DOIT être un entier positif égal à 2
+This document specifies the Veridot Protocol version 2 (V2), a canonical
+message format for distributing cryptographic verification metadata
+across nodes. It defines the syntax, semantics, and processing rules
+that all conforming implementations MUST follow.
 
-#### 2.2.2 Identifiants (groupId et sequenceId)
-- **Format** : toute chaîne de caractères imprimables excluant les délimiteurs du protocole
-- **Longueur** : 1 à 125 caractères UTF-8
-- **Interdictions** : 
-  - Caractères `:` (0x3A), `,` (0x2C) et `|` (0x7C) INTERDITS (délimiteurs du protocole)
-  - Espaces et caractères de contrôle INTERDITS
-  - Chaînes vides INTERDITES
-- **Regex** : `[^:,|\s]{1,125}`
+## Abstract
 
-#### 2.2.3 Séparateurs
-- **Entre version et PCI** : `:` (deux-points, sans espaces)
-- **Entre groupId et sequenceId** : `:` (deux-points, sans espaces)  
-- **Entre header et metadata** : `|` (pipe, sans espaces)
+The Veridot Protocol provides a self-describing, binary-safe message
+format enabling distributed verification of signed objects (JWTs, API
+keys, documents, etc.) without shared secrets. It separates
+cryptographic key distribution from business logic, supports hierarchical
+configuration, structured revocation, and session capacity management.
 
-### 2.3 Identifiant de Référence (messageId)
-L'identifiant unique d'un message suit la forme :
+---
+
+## 1. Introduction
+
+### 1.1 Purpose
+
+The Veridot Protocol defines a lightweight, transport-agnostic format
+for distributing public-key verification metadata. It enables any node
+with access to the broker to independently verify signed objects
+produced by any other node.
+
+### 1.2 Scope
+
+This specification covers:
+
+- The canonical message format and its three message types
+- Metadata encoding and property definitions
+- Configuration hierarchy and resolution
+- Revocation semantics
+- Session capacity management and eviction policies
+- Implementation requirements and broker capabilities
+
+This specification does NOT cover:
+
+- Transport-layer implementation details
+- Application-level authorization or business rules
+- Signed object formats (JWT structure, API key encoding, etc.)
+
+### 1.3 Design Principles
+
+- **Deny by default**: Any non-conforming or ambiguous message MUST be
+  rejected.
+- **Explicit authorization**: Only strictly conforming messages MUST be
+  accepted.
+- **Strict validation**: No tolerance for format deviations.
+- **Availability over consistency**: In distributed deployments,
+  availability is prioritized over strict consistency (§8.3).
+
+## 2. Terminology
+
+### 2.1 Key Words
+
+The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+"SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
+document are to be interpreted as described in [RFC 2119].
+
+### 2.2 Definitions
+
+**Broker**
+:   A transport and storage component that provides message persistence,
+    retrieval by key, and prefix-based listing. The broker is responsible
+    for delivery guarantees and distributed consistency.
+
+**Processor**
+:   A software component that implements this protocol. A processor
+    performs signing (creating messages) and/or verification (reading
+    and validating messages). A single application MAY contain multiple
+    processors.
+
+**Group** (groupId)
+:   A logical namespace that aggregates related sessions. A group
+    typically maps to a business entity such as a user account, a
+    service instance, an API client, or a device. A group is identified
+    by a `groupId` string conforming to §3.2.
+
+**Sequence** (sequenceId)
+:   A unique identifier for a single session within a group. Each
+    sequence corresponds to one signing key pair and its associated
+    metadata. A sequence is identified by a `sequenceId` string
+    conforming to §3.2.
+
+**Session**
+:   An active, non-expired, non-revoked (groupId, sequenceId) pair
+    stored in the broker. A session represents a currently valid
+    verification context.
+
+**Site** (siteId)
+:   A logical partition within a deployment. Sites enable shared
+    configuration across multiple groups (e.g., all groups in a
+    microservice cluster). A group declares its site membership via the
+    `site` metadata property. A group without a `site` property belongs
+    to no site.
+
+**Message**
+:   A complete Veridot protocol unit consisting of a header (version,
+    groupId, sequenceId) and metadata. There are three message types:
+    normal (§4), configuration (§5), and revocation (§6).
+
+**MessageId**
+:   The unique key identifying a message in the broker, formatted as
+    `2:<groupId>:<sequenceId>`. The messageId serves both as the broker
+    storage key and as the reference linking a signed object to its
+    verification metadata.
+
+**Reserved Sequence**
+:   A sequenceId matching the pattern `__<NAME>__` (double underscores).
+    Reserved sequences carry protocol-level semantics and MUST NOT be
+    used as regular session identifiers. See §7.
+
+**Eviction**
+:   The automatic revocation of an existing session to make room for a
+    new one when the session capacity limit (`maxSessions`) is reached.
+    Eviction is performed by the signing processor according to the
+    configured policy.
+
+**TTL** (Time To Live)
+:   The duration in seconds for which a session's public key remains
+    valid, starting from the session's `timestamp`. After `timestamp +
+    ttl`, the session is considered expired.
+
+---
+
+## 3. Message Format
+
+### 3.1 Canonical Form
+
+All Veridot V2 messages conform to the following canonical form:
+
 ```
-messageId = [2] : [<groupId> : <sequenceId>]
+message = version ":" groupId ":" sequenceId "|" metadata
 ```
 
-**Exemples valides** :
+Example:
+
+```
+2:user123:session001|mode:cnNh,pubkey:TUlJQ...,timestamp:MTcwNjcxMjAwMA,ttl:MzYwMA
+```
+
+### 3.2 Identifier Constraints
+
+GroupId and sequenceId MUST satisfy the following constraints:
+
+- **Allowed characters**: Any printable Unicode character EXCEPT the
+  protocol delimiters `:` (U+003A), `,` (U+002C), `|` (U+007C), and
+  whitespace characters.
+- **Length**: 1 to 125 UTF-8 characters.
+- **Empty strings**: MUST NOT be empty.
+- **Regex**: `[^:,|\s]{1,125}`
+
+### 3.3 Version Field
+
+- The version field MUST be the ASCII character `2`.
+- A processor receiving a message with any other version MUST reject it.
+
+### 3.4 Separators
+
+| Position | Character | Name |
+|----------|:---------:|------|
+| Between version and groupId | `:` | Colon |
+| Between groupId and sequenceId | `:` | Colon |
+| Between header and metadata | `\|` | Pipe |
+| Between metadata properties | `,` | Comma |
+| Between property name and value | `:` | Colon |
+
+No whitespace is permitted around separators.
+
+### 3.5 MessageId
+
+The messageId is the concatenation of version, groupId, and sequenceId:
+
+```
+messageId = "2:" groupId ":" sequenceId
+```
+
+The messageId serves as the broker key for storage and retrieval.
+
+**Examples**:
+
 - `2:user123:session001`
-- `2:API_SERVICE:conn_456`
-- `2:payment-sys:tx_789abc`
+- `2:payment.service:tx_789abc`
+- `2:192.168.1.1:conn_456`
 
-## 3. Messages Normaux
+---
 
-### 3.1 Structure
-```
-[2]:[<groupId>:<sequenceId>]|[<metadata>]
-```
+## 4. Normal Messages
 
-### 3.2 Rôle et Responsabilité
+### 4.1 Purpose
 
-Un message normal Véridot distribue les **éléments nécessaires à la validation cryptographique** d'objets signés (JWT, API keys, documents, etc.).
+A normal message distributes the cryptographic elements required to
+verify a signed object. It provides the public key, the algorithm, and
+the temporal validity window.
 
-**Responsabilités du message Véridot** :
-- Fournir la clé publique de vérification
-- Spécifier l'algorithme cryptographique à utiliser
-- Définir la fenêtre temporelle de validité de la clé publique
-- Associer optionnellement le groupe à un site
+A normal message is NOT responsible for:
 
-**Hors scope** : Le message Véridot ne gère PAS :
-- L'expiration métier de l'objet signé (ex: claim `exp` d'un JWT)
-- Les permissions ou rôles de l'utilisateur
-- La logique applicative de l'objet à vérifier
+- The business-level expiration of the signed object (e.g., JWT `exp`
+  claim)
+- User permissions or roles
+- Application-specific validation logic
 
-### 3.3 Contraintes Sémantiques
-- Un **groupe** peut contenir plusieurs **séquences** actives simultanément
-- Chaque **séquence** au sein d'un **groupe** DOIT être unique
-- L'unicité est garantie au niveau de l'implémentation, pas du protocole
-- Le message reste valide tant que `now < timestamp + ttl` (si ttl spécifié)
+### 4.2 Properties
 
-### 3.4 Processus de Vérification Standard
+| Property | Type | Required | Description |
+|----------|------|:--------:|-------------|
+| `mode` | string | REQUIRED | Signature algorithm (`rsa`, `ecdsa`) |
+| `pubkey` | string | REQUIRED | Public key (binary, Base64url-encoded) |
+| `timestamp` | number | REQUIRED | Unix timestamp of creation (seconds) |
+| `ttl` | number | OPTIONAL | Time to live in seconds |
+| `site` | string | OPTIONAL | Site identifier for group membership |
+| `token` | string | OPTIONAL | The signed object (used in indirect distribution mode) |
 
-1. **Récupération** : L'objet à vérifier référence un `messageId`
-2. **Extraction** : Récupérer le message Véridot correspondant via le broker
-3. **Validation temporelle** : Vérifier `timestamp + ttl > now`
-4. **Validation cryptographique** : Utiliser `pubkey` et `mode` pour vérifier la signature
-5. **Validation métier** : L'application vérifie ses propres règles (expiration JWT, permissions, etc.)
+> **Note on `token`**: When the signed object is not returned directly
+> to the caller but stored in the broker, the `token` property carries
+> the complete signed object. The verifier retrieves the token from the
+> metadata instead of receiving it from the caller.
 
-**Association objet signé ↔ messageId** : L'objet signé DOIT référencer le `messageId` complet (`2:<groupId>:<sequenceId>`) de la métadonnée Véridot correspondante. Le mécanisme d'association est défini par l'implémentation (ex : claim `sub` d'un JWT, header HTTP, champ d'un document signé), mais l'identifiant DOIT être transmis intégralement et intact.
+### 4.3 Temporal Validity
 
-### 3.5 Gestion de la Capacité de Sessions
+A normal message is considered **active** if and only if:
 
-Un groupe peut être soumis à une limite de séquences actives simultanées (`maxSessions`), définie via la configuration (§4).
+1. The message exists in the broker and is not empty.
+2. `timestamp` does not exceed `now + 300` seconds (clock drift
+   tolerance of ±5 minutes, see §9.1).
+3. If `ttl` is present: `now < timestamp + ttl`.
+4. If `ttl` is absent: the message does not expire (or a `defaultTTL`
+   from configuration applies).
 
-#### 3.5.1 Comptage des sessions
+### 4.4 Verification Process
 
-Le nombre de séquences actives d'un groupe est **dérivé de l'état du broker**, pas d'un compteur local. Avant de publier une nouvelle séquence, le processeur signataire DOIT interroger le broker pour obtenir la liste des séquences actives (non expirées, non révoquées) du groupe concerné.
+1. **Retrieval**: The signed object references a `messageId`.
+2. **Extraction**: Retrieve the message from the broker by `messageId`.
+3. **Temporal validation**: Verify that the message is active (§4.3).
+4. **Cryptographic validation**: Use `pubkey` and `mode` to verify the
+   object's signature.
+5. **Business validation**: The application applies its own rules (JWT
+   expiration, permissions, etc.).
 
-#### 3.5.2 Déclenchement de l'éviction
+The signed object MUST reference the complete `messageId`
+(`2:<groupId>:<sequenceId>`). The mechanism for carrying this reference
+is implementation-defined (e.g., JWT `sub` claim, HTTP header, document
+field), but the identifier MUST be transmitted in full and unmodified.
 
-L'éviction est déclenchée **au moment de la signature**, par le processeur signataire :
+### 4.5 Examples
 
-1. Le processeur obtient les séquences actives du groupe depuis le broker.
-2. Si `count >= maxSessions`, il émet un message `__REVOKE__` (§5) pour la séquence à évincer selon la politique configurée (`policy`), **avant** de publier la nouvelle séquence.
-3. Si `maxSessions` n'est pas défini, aucune vérification de capacité n'est effectuée.
-
-#### 3.5.3 Cohérence en contexte distribué
-
-La cohérence du comptage de sessions est **éventuelle**. Deux processeurs signant simultanément pour le même groupe peuvent temporairement dépasser `maxSessions`. Après convergence du broker, le nombre effectif se stabilisera. C'est un choix délibéré : **disponibilité > cohérence stricte**.
-
-### 3.6 Exemples
-
-#### Message pour validation JWT
-```
-2:user123:session001|mode:ZWNkc2E,pubkey:BKNPG59qjz0qfR5Va2N8hbKmWi6dOBA,timestamp:MTcwNjcxMjAwMA,ttl:MzYwMA
-```
-- Clé publique valide pendant 1h (`ttl=3600`)
-- Les JWT signés avec la clé privée correspondante sont vérifiables pendant cette période
-- Après 1h, même un JWT non expiré sera rejeté (clé publique Véridot expirée)
-
-#### Message pour API key sans expiration explicite
-```
-2:API_SERVICE:key_789|mode:cnNh,pubkey:TUlJQklqQU5CZ2txaGtpRzl3MEJBUUVGQUFPQkpRQXdnZ0V,timestamp:MTcwNjcxMjAwMA
-```
-- Pas de `ttl` : la clé reste valide selon `defaultTTL` de la configuration
-- L'API key elle-même peut avoir sa propre logique d'expiration
-
-#### Message avec appartenance de site
-```
-2:USER_123:session001|mode:ZWNkc2E,site:bXMtYXV0aC12MQ,pubkey:BKNPG59qjz0qfR5Va2N8hbKmWi6dOBA,timestamp:MTcwNjcxMjAwMA,ttl:MzYwMA
-```
-- `site` = `"ms-auth-v1"` : le groupe appartient au site ms-auth-v1
-- Les configurations du site ms-auth-v1 s'appliquent à ce groupe
-
-## 4. Messages de Configuration
-
-### 4.1 Hiérarchie des Configurations
-
-#### 4.1.1 Configuration Locale (Priorité : 1 - Maximale)
-```
-[2]:[<groupId>:__CONFIG__]|[<metadata>]
-```
-**Portée** : Spécifique au groupe `groupId`
-
-#### 4.1.2 Configuration de Site (Priorité : 2 - Intermédiaire)
-```
-[2]:[__CONFIG__:<siteId>]|[<metadata>]
-```
-**Portée** : Tous les groupes du site `siteId`
-
-#### 4.1.3 Configuration Globale (Priorité : 3 - Minimale)
-```
-[2]:[__CONFIG__:__ALL__]|[<metadata>]
-```
-**Portée** : Tous les groupes de tous les sites
-
-### 4.2 Résolution des Conflits
-
-#### 4.2.1 Règles de Priorité
-1. **Configuration locale** surcharge **configuration de site**
-2. **Configuration de site** surcharge **configuration globale**
-3. **Configuration globale** surcharge **configuration par défaut**
-
-#### 4.2.2 Résolution avec Appartenance de Site
-
-Un groupe peut déclarer son appartenance à un site via la propriété `site` dans ses messages normaux.
-
-**Règles de résolution** :
-1. **Configuration locale** : `2:groupId:__CONFIG__|metadata` (priorité maximale)
-2. **Configuration de site** : `2:__CONFIG__:siteId|metadata` (si le groupe déclare `site=siteId`)
-3. **Configuration globale** : `2:__CONFIG__:__ALL__|metadata`
-4. **Configuration par défaut** : valeurs d'implémentation
-
-**Appartenance de site** :
-- **Déclaration** : via propriété `site` dans les métadonnées des messages normaux
-- **Optionnelle** : un groupe sans propriété `site` n'appartient à aucun site
-- **Dynamique** : peut changer en cours d'exécution
-- **Cohérente** : tous les messages d'un même groupe doivent déclarer le même site (si déclaré)
-
-#### 4.2.3 Résolution Temporelle
-- Chaque configuration DOIT inclure un `timestamp` (Unix timestamp en secondes)
-- En cas de configurations multiples au même niveau : la plus récente fait foi
-- En cas de `timestamp` identiques : message REJETÉ (conflit non résolvable)
-- Messages sans `timestamp` valide : REJETÉS
-
-#### 4.2.4 Validation des Configurations
-Une configuration est **valide** si et seulement si :
-- Structure syntaxique correcte
-- `timestamp` présent et valide (entier positif Unix)
-- `validUntil` présent et supérieur au timestamp actuel
-- Métadonnées bien formées selon le format unifié
-
-## 5. Messages de Révocation
-
-### 5.1 Rôle
-
-Un message de révocation invalide explicitement une ou plusieurs séquences d'un groupe. Après traitement d'une révocation, toute vérification ultérieure sur les séquences ciblées DOIT échouer.
-
-### 5.2 Structure
+#### JWT verification message
 
 ```
-[2]:[<groupId>:__REVOKE__]|[<metadata>]
+2:user123:session001|mode:cnNh,pubkey:TUlJQ...,timestamp:MTcwNjcxMjAwMA,ttl:MzYwMA
 ```
 
-### 5.3 Propriétés
+- Public key valid for 1 hour (`ttl=3600`)
+- JWTs signed with the corresponding private key are verifiable during
+  this window
+- After 1 hour, even a non-expired JWT is rejected (Veridot key expired)
 
-| Propriété | Type | Obligatoire | Description |
-|-----------|------|-------------|-------------|
-| `target` | `string` | OUI | Le `sequenceId` à révoquer, ou `__ALL__` pour révoquer toutes les séquences du groupe |
-| `timestamp` | `number` | OUI | Unix timestamp de la demande de révocation |
+#### API key without explicit TTL
 
-### 5.4 Sémantique
-
-- La réception d'un message `__REVOKE__` par un processeur DOIT entraîner la suppression immédiate de la métadonnée ciblée dans son store.
-- **Révocation d'une séquence** : seule la séquence identifiée par `target` est invalidée.
-- **Révocation d'un groupe entier** : `target=__ALL__` invalide toutes les séquences actives du groupe.
-- La révocation est **irréversible** dans le scope du `sequenceId` concerné. Pour ré-autoriser, il faut créer une nouvelle séquence.
-- Un processeur DOIT traiter les révocations de manière **atomique** : la suppression DOIT être complète ou ne pas avoir lieu.
-
-### 5.5 Exemples
-
-#### Révocation d'une session spécifique
 ```
-2:user123:__REVOKE__|target:c2Vzc2lvbjAwMQ,timestamp:MTcwNjcxNTYwMA
-```
-- `target` = `"session001"` → révoque uniquement `2:user123:session001`
-
-#### Révocation de toutes les sessions d'un utilisateur
-```
-2:user123:__REVOKE__|target:X19BTExfXw,timestamp:MTcwNjcxNTYwMA
-```
-- `target` = `"__ALL__"` → révoque toutes les séquences actives du groupe `user123`
-
-## 6. Séquences Réservées
-
-### 6.1 Convention de Nommage
-**Pattern** : `__<NOM>__` (double underscore obligatoire de chaque côté)
-
-### 6.2 Séquences Définies
-
-| Séquence | Rôle | Spécification |
-|----------|------|---------------|
-| `__CONFIG__` | Messages de configuration | §4 |
-| `__REVOKE__` | Messages de révocation | §5 |
-| `__ALL__` | Identifiant universel (utilisé comme cible dans `__CONFIG__` et `__REVOKE__`) | §4.1.3, §5.4 |
-
-### 6.3 Registre des Séquences
-Toute nouvelle séquence réservée DOIT :
-- Suivre le pattern `__<NOM>__`
-- Être entièrement spécifiée (format, propriétés, sémantique) dans ce document
-- Éviter les collisions avec les séquences existantes
-
-## 7. Format Unifié des Métadonnées
-
-### 7.1 Structure Générale
-```
-<metadata> = <name>:<base64url_value>[,<name>:<base64url_value>...]
+2:API_SERVICE:key_789|mode:cnNh,pubkey:TUlJQ...,timestamp:MTcwNjcxMjAwMA
 ```
 
-### 7.2 Spécification de l'Encodage
+- No `ttl`: the key remains valid per `defaultTTL` from configuration
+- The API key itself MAY have its own expiration logic
 
-#### 7.2.1 Noms de Propriétés
-- **Format** : `[a-zA-Z][a-zA-Z0-9_]*` (commence par une lettre)
-- **Longueur** : 1 à 32 caractères
-- **Sensibilité** : sensible à la casse (`timestamp` ≠ `Timestamp`)
+#### Message with site membership
 
-#### 7.2.2 Valeurs
-- **Encodage** : Base64url (RFC 4648 §5) sans padding
-- **Contenu** : Représentation UTF-8 de la valeur. Pour les nombres : représentation décimale. Pour les chaînes : la chaîne brute. Pour les structures complexes : JSON sérialisé.
-- **Taille maximale** : 1024 octets par valeur (après décodage)
+```
+2:USER_123:session001|mode:cnNh,site:bXMtYXV0aC12MQ,pubkey:TUlJQ...,timestamp:MTcwNjcxMjAwMA,ttl:MzYwMA
+```
 
-### 7.3 Processus de Décodage Canonique
+- `site` = `"ms-auth-v1"`: the group belongs to site `ms-auth-v1`
+- Configuration from site `ms-auth-v1` applies to this group (§5)
 
-#### 7.3.1 Étapes de Validation
-1. **Parsing** : séparer par virgules (`name:value,name:value,...`)
-2. **Validation des noms** : conformité regex et unicité
-3. **Décodage Base64url** : validation format et décodage
-4. **Validation sémantique** : vérifier le type et la valeur selon la propriété
+---
 
-#### 7.3.2 Gestion des Erreurs
-- **Nom invalide** : REJETER le message entier
-- **Base64url invalide** : REJETER le message entier
-- **Valeur invalide** (type inattendu, hors bornes) : REJETER le message entier
-- **Propriété inconnue** : IGNORER la propriété (forward compatibility)
+## 5. Configuration Messages
 
-### 7.4 Propriétés Standard
+### 5.1 Hierarchy
 
-#### 7.4.1 Messages Normaux
-| Propriété | Type | Obligatoire | Description |
-|-----------|------|-------------|-------------|
-| `mode` | `string` | OUI | Algorithme de signature (`rsa`, `ecdsa`) |
-| `pubkey` | `string` | OUI | Clé publique encodée en base64url |
-| `timestamp` | `number` | OUI | Unix timestamp de création (secondes) |
-| `ttl` | `number` | NON | Durée de vie en secondes |
-| `site` | `string` | NON | Identifiant du site auquel le groupe appartient |
-| `token` | `string` | NON | L'objet signé complet (JWT, API key…) quand le mode de distribution ne transmet pas le token directement au client |
+Configuration follows a three-level hierarchy with strict precedence:
 
-> **Note sur `token`** : Cette propriété est utilisée lorsque le token n'est pas retourné au caller mais stocké côté broker (équivalent du mode `id` dans Véridot v1). Le vérificateur récupère le token depuis la métadonnée au lieu de le recevoir directement.
+#### 5.1.1 Local Configuration (Precedence: 1 — Highest)
 
-#### 7.4.2 Messages de Configuration
-| Propriété | Type | Obligatoire | Défaut | Description |
-|-----------|------|-------------|--------|-------------|
-| `timestamp` | `number` | OUI | — | Unix timestamp de la configuration |
-| `validUntil` | `number` | OUI | — | Timestamp d'expiration de la configuration |
-| `maxSessions` | `number` | NON | ∞ (pas de limite) | Nombre max de séquences actives par groupe |
-| `policy` | `string` | NON | `FIFO` | Politique d'éviction, appliquée uniquement si `maxSessions` est défini |
-| `defaultTTL` | `number` | NON | — | Durée de vie par défaut en secondes |
-| `name` | `string` | NON | — | Nom descriptif |
-| `description` | `string` | NON | — | Description de la configuration |
+```
+2:<groupId>:__CONFIG__|<metadata>
+```
 
-> **`policy` n'est pertinente que si `maxSessions` est défini.** Si `maxSessions` est absent, la politique d'éviction est ignorée par le processeur.
+Scope: Applies to the specific group `groupId` only.
 
-##### Politiques d'Éviction
+#### 5.1.2 Site Configuration (Precedence: 2 — Intermediate)
+
+```
+2:__CONFIG__:<siteId>|<metadata>
+```
+
+Scope: Applies to all groups declaring membership in site `siteId`.
+
+#### 5.1.3 Global Configuration (Precedence: 3 — Lowest)
+
+```
+2:__CONFIG__:__ALL__|<metadata>
+```
+
+Scope: Applies to all groups across all sites.
+
+### 5.2 Resolution Rules
+
+1. Local configuration overrides site configuration.
+2. Site configuration overrides global configuration.
+3. Global configuration overrides implementation defaults.
+
+A group declares its site membership via the `site` property in its
+normal messages. A group without a `site` property MUST NOT receive
+site-level configuration.
+
+### 5.3 Temporal Resolution
+
+- Each configuration message MUST include a `timestamp`.
+- When multiple configurations exist at the same level, the most recent
+  `timestamp` takes precedence.
+- If two configurations at the same level have identical timestamps, the
+  message MUST be rejected (unresolvable conflict).
+- Configuration messages without a valid `timestamp` MUST be rejected.
+
+### 5.4 Properties
+
+| Property | Type | Required | Default | Description |
+|----------|------|:--------:|---------|-------------|
+| `timestamp` | number | REQUIRED | — | Unix timestamp of configuration |
+| `validUntil` | number | REQUIRED | — | Expiration timestamp of this configuration |
+| `maxSessions` | number | OPTIONAL | ∞ | Maximum active sessions per group |
+| `policy` | string | OPTIONAL | `FIFO` | Eviction policy (only meaningful when `maxSessions` is set) |
+| `defaultTTL` | number | OPTIONAL | — | Default TTL in seconds for normal messages |
+| `name` | string | OPTIONAL | — | Descriptive name |
+| `description` | string | OPTIONAL | — | Description |
+
+### 5.5 Eviction Policies
+
+When `maxSessions` is defined and the session count for a group reaches
+the limit, the signing processor MUST apply the configured eviction
+policy before publishing a new session.
 
 | Policy | Description |
 |--------|-------------|
-| `FIFO` | First In, First Out — évince la séquence la plus ancienne (par `timestamp`) |
-| `LIFO` | Last In, First Out — évince la séquence la plus récente |
-| `LRU` | Least Recently Used — évince la séquence la moins utilisée récemment |
+| `FIFO` | First In, First Out — evicts the oldest session (by `timestamp`) |
+| `LIFO` | Last In, First Out — evicts the newest session |
+| `LRU` | Least Recently Used — evicts the least recently accessed session |
+| `REJECT` | Rejects the new session creation entirely; no existing session is evicted |
 
-##### Interaction des Paramètres
+> When `policy` is `REJECT` and `maxSessions` is reached, the processor
+> MUST throw an error and MUST NOT create the new session or evict any
+> existing session.
+
+### 5.6 Validation
+
+A configuration is **valid** if and only if:
+
+- Syntactically correct per §3.
+- `timestamp` is present and is a valid positive Unix timestamp.
+- `validUntil` is present and is greater than `now`.
+- All metadata properties are well-formed per §8.
+
+---
+
+## 6. Revocation Messages
+
+### 6.1 Purpose
+
+A revocation message explicitly invalidates one or more sessions within
+a group. After a processor processes a revocation, any subsequent
+verification against the targeted sessions MUST fail.
+
+### 6.2 Structure
 
 ```
-Scénario 1 - Limite atteinte :
-- Utilisateur avec maxSessions=5 et policy=FIFO
-- 5 sessions actives → création 6ème session
-- Résultat : session la plus ancienne révoquée automatiquement, puis nouvelle session publiée
-
-Scénario 2 - Expiration TTL :
-- Session créée sans TTL explicite
-- defaultTTL=7200 → session expire après 2h
-- Résultat : nettoyage automatique des ressources
-
-Scénario 3 - Combinaison :
-- maxSessions=10, policy=LRU, defaultTTL=3600
-- Protection : max 10 sessions, éviction intelligente, expiration 1h
+2:<groupId>:__REVOKE__|<metadata>
 ```
 
-#### 7.4.3 Messages de Révocation
-| Propriété | Type | Obligatoire | Description |
-|-----------|------|-------------|-------------|
-| `target` | `string` | OUI | Le `sequenceId` à révoquer, ou `__ALL__` |
-| `timestamp` | `number` | OUI | Unix timestamp de la révocation |
+### 6.3 Properties
 
-## 8. Règles d'Implémentation
+| Property | Type | Required | Description |
+|----------|------|:--------:|-------------|
+| `target` | string | REQUIRED | The `sequenceId` to revoke, or `__ALL__` to revoke all sessions |
+| `timestamp` | number | REQUIRED | Unix timestamp of the revocation request |
 
-### 8.1 Responsabilités du Processeur
+### 6.4 Semantics
 
-#### 8.1.1 Validation des Messages
-Un processeur DOIT :
-- Valider la syntaxe selon les contraintes strictes (§2.2)
-- Rejeter tout message non conforme
-- Loguer les rejets avec raison détaillée
-- Ne JAMAIS traiter un message partiellement valide
+- Upon receiving a `__REVOKE__` message, a processor MUST delete the
+  targeted metadata from its store.
+- **Single-sequence revocation**: Only the session identified by
+  `target` is invalidated.
+- **Group-wide revocation**: `target=__ALL__` invalidates all active
+  sessions of the group.
+- Revocation is **irreversible** within the scope of the targeted
+  `sequenceId`. To re-authorize, a new session MUST be created.
+- A processor MUST process revocations **atomically**: the deletion
+  MUST be complete or MUST NOT take place at all.
 
-#### 8.1.2 Gestion des Configurations
-Un processeur DOIT :
-- Appliquer la configuration valide la plus récente
-- Maintenir un cache des configurations actives
-- Nettoyer les configurations expirées (`validUntil` dépassé)
-- Garantir l'atomicité des changements de configuration
+### 6.5 Examples
 
-#### 8.1.3 Gestion des Messages Normaux
-Un processeur DOIT :
-- Vérifier la validité temporelle des messages : `now < timestamp + ttl`
-- Rejeter les messages dont le TTL est dépassé
-- Extraire la clé publique et l'algorithme pour la validation cryptographique
-- Séparer la validation Véridot (message) de la validation métier (objet signé)
+#### Single-session revocation
 
-#### 8.1.4 Gestion des Sessions
-Un processeur DOIT :
-- Dériver le comptage de sessions depuis l'état du broker (pas d'un compteur local)
-- Appliquer l'éviction selon la politique configurée au moment de la signature
-- Gérer les révocations de manière atomique
+```
+2:user123:__REVOKE__|target:c2Vzc2lvbjAwMQ,timestamp:MTcwNjcxNTYwMA
+```
 
-### 8.2 Exigences du Broker
+- `target` = `"session001"` → revokes only `2:user123:session001`
 
-Le transport (broker) DOIT fournir les capacités suivantes :
+#### Group-wide revocation
 
-| Capacité | Description |
-|----------|-------------|
-| **Envoi** | Publier un message associé à une clé (`messageId`) |
-| **Lecture par clé** | Récupérer un message par son `messageId` exact |
-| **Listing par groupe** | Récupérer la liste des `messageId` actifs pour un `groupId` donné |
+```
+2:user123:__REVOKE__|target:X19BTExfXw,timestamp:MTcwNjcxNTYwMA
+```
 
-La capacité de **listing par groupe** est nécessaire pour :
-- Le comptage de sessions (§3.5)
-- La révocation de groupe (`__ALL__`) (§5.4)
-- L'interrogation de l'état actif d'un groupe
+- `target` = `"__ALL__"` → revokes all active sessions of group
+  `user123`
 
-### 8.3 Propriétés de Cohérence
+---
 
-#### 8.3.1 Cohérence Locale
-- **Atomicité** : changements de configuration et révocations atomiques au niveau processeur
-- **Isolation** : les états intermédiaires ne sont pas visibles
-- **Durabilité** : les configurations validées survivent aux redémarrages
+## 7. Reserved Sequences
 
-#### 8.3.2 Cohérence Distribuée
-- **Éventuelle** : tous les processeurs convergent vers le même état
-- **Transport** : la cohérence forte relève du broker, pas du protocole
-- **Partition** : en cas de partition réseau, privilégier la disponibilité
+### 7.1 Naming Convention
 
-### 8.4 Gestion des Erreurs
+Reserved sequences follow the pattern `__<NAME>__` (double underscores
+on each side). The `<NAME>` portion MUST consist of uppercase ASCII
+letters only (`[A-Z]+`).
 
-#### 8.4.1 Classification des Erreurs
-- **Erreurs de protocole** : syntaxe, format, validation
-- **Erreurs de transport** : réseau, broker indisponible
-- **Erreurs d'implémentation** : mémoire, disque, corruption
+### 7.2 Registry
 
-#### 8.4.2 Stratégies de Récupération
-- **Retry** : erreurs transitoires de transport
-- **Fallback** : configurations par défaut si aucune configuration valide
-- **Circuit breaker** : isoler les composants défaillants
-- **Graceful degradation** : maintenir le service même en mode dégradé
+| Sequence | Purpose | Specification |
+|----------|---------|:-------------:|
+| `__CONFIG__` | Configuration messages | §5 |
+| `__REVOKE__` | Revocation messages | §6 |
+| `__ALL__` | Universal target (used in `__CONFIG__` and `__REVOKE__`) | §5.1.3, §6.4 |
 
-### 8.5 Observabilité
+### 7.3 Extension Rules
 
-#### 8.5.1 Métriques Obligatoires
-- Nombre de messages traités/rejetés par type
-- Latence de traitement des messages
-- Taux d'erreur par catégorie
-- Nombre de sessions actives par groupe
+Any new reserved sequence MUST:
 
-#### 8.5.2 Logs Obligatoires
-- Rejets de messages avec raison détaillée
-- Changements de configuration avec timestamp
-- Révocations de sessions avec identifiant
-- Erreurs de transport avec contexte
+- Follow the `__<NAME>__` naming pattern.
+- Be fully specified (format, properties, semantics) in this document.
+- Not collide with existing reserved sequences.
+- Be registered in the table above.
 
-## 9. Sécurité et Conformité
+Implementations MUST NOT treat unknown reserved sequences as normal
+sessions. Unknown reserved sequences MUST be ignored.
 
-### 9.1 Validation Cryptographique
-- **Signatures** : validation obligatoire selon `mode` spécifié
-- **Clés publiques** : validation format et algorithme
-- **Timestamps** : validation contre dérive d'horloge (±5 minutes)
-- **TTL** : respect strict des durées de vie
+---
 
-### 9.2 Protection contre les Attaques
-- **Replay** : utilisation des timestamps et TTL
-- **Injection** : validation stricte des formats
-- **DoS** : limites de taille et de fréquence (implémentation)
-- **Tampering** : signatures cryptographiques obligatoires
+## 8. Metadata Format
 
-### 9.3 Audit et Traçabilité
-- **Identifiants uniques** : chaque message a un identifiant unique
-- **Logs d'audit** : traçabilité complète des opérations
-- **Non-répudiation** : signatures cryptographiques
-- **Retention** : conservation des logs selon politiques de rétention
+### 8.1 Structure
 
-## 10. Évolution et Compatibilité
+Metadata is a comma-separated list of key-value pairs:
 
-### 10.1 Versioning du Protocole
-- **Version majeure** : changements incompatibles
-- **Version mineure** : extensions rétrocompatibles
-- **Version patch** : corrections et clarifications
+```
+metadata = property *("," property)
+property = prop-name ":" base64url-value
+```
 
-### 10.2 Extensibilité
-- **Nouvelles propriétés** : ajout dans les métadonnées sans casser l'existant
-- **Nouvelles séquences réservées** : enregistrement et spécification complète dans ce document
-- **Nouveaux types de messages** : via nouvelles versions du protocole
+### 8.2 Property Names
 
-### 10.3 Migration
-- **Coexistence** : plusieurs versions peuvent coexister
-- **Détection** : version détectée automatiquement via le premier champ
-- **Transition** : migration progressive possible
+- **Format**: `[a-zA-Z][a-zA-Z0-9_]*` (starts with a letter)
+- **Length**: 1 to 32 characters
+- **Case sensitivity**: Names are case-sensitive (`timestamp` ≠
+  `Timestamp`)
 
-## 11. Annexes
+### 8.3 Property Values
 
-### 11.1 Grammaire ABNF (RFC 5234)
+- **Encoding**: All values MUST be encoded using Base64url [RFC 4648 §5]
+  without padding.
+- **Content**: The UTF-8 representation of the value. Numbers MUST be
+  encoded as their decimal string representation. Strings MUST be
+  encoded as-is. Complex structures MUST be serialized as JSON.
+- **Maximum size**: 1024 octets per value (after decoding).
+
+### 8.4 Decoding Process
+
+A processor MUST decode metadata following these steps:
+
+1. **Parse**: Split by commas to obtain individual `name:value` pairs.
+2. **Validate names**: Verify regex conformance and uniqueness.
+3. **Decode values**: Validate Base64url encoding and decode.
+4. **Semantic validation**: Verify type and range for known properties.
+
+### 8.5 Error Handling
+
+- **Invalid name**: MUST reject the entire message.
+- **Invalid Base64url**: MUST reject the entire message.
+- **Invalid value** (unexpected type, out of range): MUST reject the
+  entire message.
+- **Unknown property**: MUST ignore the property (forward
+  compatibility).
+
+---
+
+## 9. Session Capacity Management
+
+### 9.1 Counting
+
+The number of active sessions for a group is derived from the broker
+state, not from a local counter. Before publishing a new session, the
+signing processor MUST query the broker for the list of active (non-
+expired, non-revoked) sessions of the target group.
+
+Expired sessions detected during counting SHOULD be garbage-collected
+(deleted from the broker) to prevent stale accumulation.
+
+### 9.2 Eviction Trigger
+
+Eviction is triggered **at signing time** by the signing processor:
+
+1. The processor retrieves active sessions for the group from the
+   broker.
+2. If `count >= maxSessions`:
+   - If `policy` is `REJECT`: the processor MUST throw an error and
+     MUST NOT create the new session.
+   - Otherwise: the processor MUST emit a `__REVOKE__` message (§6)
+     for the session selected per the configured `policy`, **before**
+     publishing the new session.
+3. If `maxSessions` is not defined, no capacity check is performed.
+
+### 9.3 Distributed Consistency
+
+Session counting consistency is **eventual**. Two processors signing
+simultaneously for the same group MAY temporarily exceed `maxSessions`.
+After broker convergence, the effective count will stabilize. This is a
+deliberate design choice: **availability over strict consistency**.
+
+---
+
+## 10. Implementation Requirements
+
+### 10.1 Processor Responsibilities
+
+#### 10.1.1 Message Validation
+
+A processor MUST:
+
+- Validate syntax per the constraints in §3.
+- Reject any non-conforming message.
+- Log rejections with a detailed reason.
+- NEVER process a partially valid message.
+
+#### 10.1.2 Configuration Management
+
+A processor MUST:
+
+- Apply the most recent valid configuration.
+- Maintain a cache of active configurations.
+- Clean up expired configurations (`validUntil` exceeded).
+- Guarantee atomicity of configuration changes.
+
+#### 10.1.3 Normal Message Handling
+
+A processor MUST:
+
+- Check temporal validity: `now < timestamp + ttl`.
+- Reject messages whose TTL has elapsed.
+- Extract the public key and algorithm for cryptographic validation.
+- Separate Veridot validation (message) from business validation
+  (signed object).
+
+#### 10.1.4 Session Management
+
+A processor MUST:
+
+- Derive session counts from broker state (not from a local counter).
+- Apply eviction per the configured policy at signing time.
+- Process revocations atomically.
+
+### 10.2 Broker Requirements
+
+The broker MUST provide the following capabilities:
+
+| Capability | Description |
+|------------|-------------|
+| **Send** | Publish a message associated with a key (`messageId`) |
+| **Get by key** | Retrieve a message by its exact `messageId` |
+| **List by prefix** | Retrieve the list of active `messageId`s for a given `groupId` prefix |
+
+The **list by prefix** capability is necessary for:
+
+- Session counting (§9.1)
+- Group-wide revocation (`__ALL__`) (§6.4)
+- Active group state inspection
+
+### 10.3 Consistency Properties
+
+#### 10.3.1 Local Consistency
+
+- **Atomicity**: Configuration changes and revocations MUST be atomic
+  at the processor level.
+- **Isolation**: Intermediate states MUST NOT be visible.
+- **Durability**: Validated configurations MUST survive restarts.
+
+#### 10.3.2 Distributed Consistency
+
+- **Eventual**: All processors MUST converge to the same state.
+- **Transport**: Strong consistency is the broker's responsibility, not
+  the protocol's.
+- **Partition**: In case of network partition, availability SHOULD be
+  prioritized.
+
+### 10.4 Error Handling
+
+#### 10.4.1 Error Classification
+
+| Category | Examples |
+|----------|---------|
+| Protocol errors | Syntax, format, validation failures |
+| Transport errors | Network issues, broker unavailability |
+| Implementation errors | Memory, disk, data corruption |
+
+#### 10.4.2 Recovery Strategies
+
+- **Retry**: For transient transport errors.
+- **Fallback**: Use default configuration when no valid configuration
+  exists.
+- **Circuit breaker**: Isolate failing components.
+- **Graceful degradation**: Maintain service in degraded mode.
+
+### 10.5 Observability
+
+#### 10.5.1 Metrics
+
+A conforming implementation SHOULD expose:
+
+- Number of messages processed/rejected by type.
+- Message processing latency.
+- Error rate by category.
+- Active session count per group.
+
+#### 10.5.2 Logging
+
+A conforming implementation MUST log:
+
+- Message rejections with detailed reason.
+- Configuration changes with timestamp.
+- Session revocations with identifier.
+- Transport errors with context.
+
+---
+
+## 11. Security Considerations
+
+### 11.1 Cryptographic Validation
+
+- Signatures MUST be validated according to the `mode` specified.
+- Public keys MUST be validated for format and algorithm compatibility.
+- Timestamps MUST be validated against clock drift (tolerance: ±5
+  minutes). A message with `timestamp > now + 300` MUST be rejected.
+- TTL values MUST be strictly enforced.
+
+### 11.2 Threat Mitigation
+
+| Threat | Mitigation |
+|--------|-----------|
+| Replay attacks | Timestamps and TTL enforcement |
+| Injection attacks | Strict format validation (§3.2, §8) |
+| Denial of Service | Size limits and rate limiting (implementation-specific) |
+| Tampering | Mandatory cryptographic signatures |
+
+### 11.3 Audit and Traceability
+
+- Each message has a unique, deterministic identifier (`messageId`).
+- Audit logs MUST provide complete traceability of operations.
+- Cryptographic signatures provide non-repudiation.
+- Log retention policies SHOULD be defined by the deployment.
+
+---
+
+## 12. Evolution and Compatibility
+
+### 12.1 Protocol Versioning
+
+- **Major version**: Incompatible changes to the canonical format.
+- **Minor version**: Backward-compatible extensions (new properties, new
+  reserved sequences).
+- **Patch version**: Clarifications and corrections.
+
+### 12.2 Extensibility
+
+- **New properties**: MAY be added to metadata without breaking existing
+  implementations (unknown properties are ignored per §8.5).
+- **New reserved sequences**: MUST be registered and fully specified in
+  this document.
+- **New message types**: Require a new major protocol version.
+
+### 12.3 Migration
+
+- Multiple protocol versions MAY coexist in the same broker.
+- Version detection is automatic via the first field of the message.
+- Progressive migration is supported.
+
+---
+
+## Appendix A. ABNF Grammar (RFC 5234)
 
 ```abnf
 message           = version ":" pci "|" metadata
@@ -474,7 +718,7 @@ version           = "2"
 pci               = groupId ":" sequenceId
 groupId           = identifier
 sequenceId        = identifier / reserved-sequence
-identifier        = 1*64(ALPHA / DIGIT / "_" / "-")
+identifier        = 1*125(VCHAR) ; excluding ":" / "," / "|" / WSP
 reserved-sequence = "__" 1*28(ALPHA) "__"
 metadata          = property *("," property)
 property          = prop-name ":" base64url-value
@@ -482,28 +726,37 @@ prop-name         = ALPHA 0*31(ALPHA / DIGIT / "_")
 base64url-value   = 1*(ALPHA / DIGIT / "-" / "_")
 ```
 
-### 11.2 Codes d'Erreur Standardisés
+> Note: `VCHAR` is defined in RFC 5234 as any visible (printable) ASCII
+> character (0x21-0x7E). The `identifier` rule further excludes `:`
+> (0x3A), `,` (0x2C), and `|` (0x7C) from `VCHAR`.
 
-| Code | Nom | Description |
-|------|-----|-------------|
-| `V2001` | `INVALID_SYNTAX` | Structure syntaxique invalide |
-| `V2002` | `INVALID_VERSION` | Version non supportée |
-| `V2003` | `INVALID_IDENTIFIER` | GroupId ou sequenceId invalide |
-| `V2004` | `INVALID_METADATA` | Format des métadonnées invalide |
-| `V2005` | `MISSING_REQUIRED_PROPERTY` | Propriété obligatoire manquante |
-| `V2006` | `INVALID_TIMESTAMP` | Timestamp invalide ou expiré |
-| `V2007` | `INVALID_SIGNATURE` | Signature cryptographique invalide |
-| `V2008` | `CONFIGURATION_CONFLICT` | Conflit de configuration non résolvable |
-| `V2009` | `SESSION_LIMIT_EXCEEDED` | Limite de sessions atteinte (après échec d'éviction) |
-| `V2010` | `REVOCATION_FAILED` | La révocation n'a pas pu être traitée |
+## Appendix B. Error Codes
 
-### 11.3 Références Normatives
-- **RFC 4648 §5** : Base64url Encoding
-- **RFC 8259** : The JavaScript Object Notation (JSON) Data Interchange Format
-- **RFC 5234** : Augmented BNF for Syntax Specifications
-- **ISO 8601** : Date and time format (pour timestamps)
+| Code | Name | Description |
+|------|------|-------------|
+| `V2001` | `INVALID_SYNTAX` | Invalid syntactic structure |
+| `V2002` | `INVALID_VERSION` | Unsupported version |
+| `V2003` | `INVALID_IDENTIFIER` | Invalid groupId or sequenceId |
+| `V2004` | `INVALID_METADATA` | Invalid metadata format |
+| `V2005` | `MISSING_REQUIRED_PROPERTY` | Missing required property |
+| `V2006` | `INVALID_TIMESTAMP` | Invalid or expired timestamp |
+| `V2007` | `INVALID_SIGNATURE` | Invalid cryptographic signature |
+| `V2008` | `CONFIGURATION_CONFLICT` | Unresolvable configuration conflict |
+| `V2009` | `SESSION_CAPACITY_EXCEEDED` | Session limit reached (REJECT policy) |
+| `V2010` | `REVOCATION_FAILED` | Revocation could not be processed |
+
+## Appendix C. Normative References
+
+- **[RFC 2119]** Bradner, S., "Key words for use in RFCs to Indicate
+  Requirement Levels", BCP 14, RFC 2119, March 1997.
+- **[RFC 4648]** Josefsson, S., "The Base16, Base32, and Base64 Data
+  Encodings", RFC 4648, October 2006. (§5: Base64url)
+- **[RFC 5234]** Crocker, D., Ed. and P. Overell, "Augmented BNF for
+  Syntax Specifications: ABNF", STD 68, RFC 5234, January 2008.
+- **[RFC 8259]** Bray, T., Ed., "The JavaScript Object Notation (JSON)
+  Data Interchange Format", STD 90, RFC 8259, December 2017.
 
 ---
 
-*Cette spécification définit le protocole Véridot version 2.0*  
-*Dernière révision : 2026-04-10*
+*Veridot Protocol Specification — Version 2.0*
+*Last revised: 2026-04-12*
