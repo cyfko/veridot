@@ -81,7 +81,10 @@ class ProtocolV2Test {
     void validateIdentifier_valid() {
         assertDoesNotThrow(() -> ProtocolV2.validateIdentifier("abc-123_XYZ", "test"));
         assertDoesNotThrow(() -> ProtocolV2.validateIdentifier("a", "test"));
-        assertDoesNotThrow(() -> ProtocolV2.validateIdentifier("a".repeat(64), "test"));
+        assertDoesNotThrow(() -> ProtocolV2.validateIdentifier("a".repeat(125), "test"));
+        assertDoesNotThrow(() -> ProtocolV2.validateIdentifier("user@mail.com", "test"));
+        assertDoesNotThrow(() -> ProtocolV2.validateIdentifier("tenant.service.region", "test"));
+        assertDoesNotThrow(() -> ProtocolV2.validateIdentifier("192.168.1.1", "test"));
     }
 
     @Test
@@ -97,6 +100,18 @@ class ProtocolV2Test {
     }
 
     @Test
+    void validateIdentifier_rejects_comma() {
+        assertThrows(IllegalArgumentException.class,
+                () -> ProtocolV2.validateIdentifier("abc,def", "field"));
+    }
+
+    @Test
+    void validateIdentifier_rejects_whitespace() {
+        assertThrows(IllegalArgumentException.class,
+                () -> ProtocolV2.validateIdentifier("abc def", "field"));
+    }
+
+    @Test
     void validateIdentifier_rejects_empty() {
         assertThrows(IllegalArgumentException.class,
                 () -> ProtocolV2.validateIdentifier("", "field"));
@@ -105,7 +120,7 @@ class ProtocolV2Test {
     @Test
     void validateIdentifier_rejects_tooLong() {
         assertThrows(IllegalArgumentException.class,
-                () -> ProtocolV2.validateIdentifier("a".repeat(65), "field"));
+                () -> ProtocolV2.validateIdentifier("a".repeat(126), "field"));
     }
 
     @Test

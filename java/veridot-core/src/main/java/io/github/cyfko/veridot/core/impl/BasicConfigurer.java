@@ -40,7 +40,7 @@ public class BasicConfigurer implements DataSigner.Configurer {
         /**
          * Sets the group identifier.
          *
-         * @param groupId non-null, non-blank string matching {@code [A-Za-z0-9_-]{1,64}}
+         * @param groupId non-null, non-blank string of 1-125 printable characters (excluding {@code :,|} and whitespace)
          * @return this builder
          * @throws IllegalArgumentException if {@code groupId} is null or blank
          */
@@ -56,7 +56,7 @@ public class BasicConfigurer implements DataSigner.Configurer {
          * Sets the optional sequence identifier within the group.
          * If not set (or set to {@code null}), a UUID will be auto-generated at signing time.
          *
-         * @param sequenceId a string matching {@code [A-Za-z0-9_-]{1,64}}, or {@code null}
+         * @param sequenceId a string of 1-125 printable characters (excluding {@code :,|} and whitespace), or {@code null}
          * @return this builder
          */
         public Builder sequenceId(String sequenceId) {

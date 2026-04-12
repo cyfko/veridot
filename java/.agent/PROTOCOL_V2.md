@@ -26,12 +26,13 @@
 - **Validation** : DOIT être un entier positif égal à 2
 
 #### 2.2.2 Identifiants (groupId et sequenceId)
-- **Format** : `[A-Za-z0-9_-]+` (expression régulière)
-- **Longueur** : 1 à 64 caractères UTF-8
+- **Format** : toute chaîne de caractères imprimables excluant les délimiteurs du protocole
+- **Longueur** : 1 à 125 caractères UTF-8
 - **Interdictions** : 
-  - Caractères `:` (0x3A) et `|` (0x7C) INTERDITS
+  - Caractères `:` (0x3A), `,` (0x2C) et `|` (0x7C) INTERDITS (délimiteurs du protocole)
   - Espaces et caractères de contrôle INTERDITS
   - Chaînes vides INTERDITES
+- **Regex** : `[^:,|\s]{1,125}`
 
 #### 2.2.3 Séparateurs
 - **Entre version et PCI** : `:` (deux-points, sans espaces)

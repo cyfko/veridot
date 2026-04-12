@@ -5,6 +5,15 @@ All notable changes to the Veridot project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.3] - 2026-04-12
+
+### Changed
+
+- **Identifier validation relaxed** — GroupId and sequenceId now accept any printable characters except protocol delimiters (`:`, `,`, `|`) and whitespace. Pattern changed from `[A-Za-z0-9_-]{1,64}` to `[^:,|\s]{1,125}`, allowing emails, IPs, dot-separated namespaces, etc.
+- **Protocol V2 spec updated** (§2.2.2) to reflect the new identifier rules
+
+---
+
 ## [2.1.2] - 2026-04-12
 
 ### Fixed
@@ -39,7 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Protocol V2** — Canonical message format with strict syntax validation (`[A-Za-z0-9_-]{1,64}` identifiers)
+- **Protocol V2** — Canonical message format with permissive identifier validation (`[^:,|\s]{1,125}`)
 - **DistributionMode** — `DIRECT` (return JWT to caller) and `INDIRECT` (return messageId, store JWT in broker)
 - **Structured `__REVOKE__` messages (§5)** — Formal revocation messages `2:grp:__REVOKE__|target:<b64>,timestamp:<b64>` for cross-processor interoperability
 - **Distributed `__CONFIG__` (§4)** — Dynamic configuration resolution from broker: local (`2:grp:__CONFIG__`) → site (`2:__CONFIG__:siteId`) → global (`2:__CONFIG__:__ALL__`) → constructor defaults

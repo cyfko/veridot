@@ -35,7 +35,7 @@ class ProtocolV2 {
     static final String SEQ_ALL = "__ALL__";
 
     // ── Identifier validation ─────────────────────────────────────────────────
-    private static final Pattern IDENTIFIER_PATTERN = Pattern.compile("^[A-Za-z0-9_-]{1,64}$");
+    private static final Pattern IDENTIFIER_PATTERN = Pattern.compile("^[^:,|\\s]{1,125}$");
 
     // ── Standard property names (§7.4.1 Normal) ──────────────────────────────
     static final String PROP_MODE = "mode";
@@ -234,7 +234,9 @@ class ProtocolV2 {
     // ── Identifier validation ─────────────────────────────────────────────────
 
     /**
-     * Validates that the given identifier matches {@code [A-Za-z0-9_-]{1,64}}.
+     * Validates that the given identifier contains only printable characters
+     * excluding protocol delimiters ({@code :}, {@code ,}, {@code |}) and whitespace,
+     * with a maximum length of 125 characters.
      *
      * @param id        identifier to validate
      * @param fieldName name of the field (for error messages)
@@ -243,7 +245,7 @@ class ProtocolV2 {
     static void validateIdentifier(String id, String fieldName) {
         if (id == null || !IDENTIFIER_PATTERN.matcher(id).matches()) {
             throw new IllegalArgumentException(
-                    fieldName + " must match [A-Za-z0-9_-]{1,64}, got: " + id);
+                    fieldName + " must be 1-125 printable characters excluding :,| and whitespace, got: " + id);
         }
     }
 
