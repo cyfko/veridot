@@ -10,8 +10,8 @@ import io.github.cyfko.veridot.core.exceptions.DataSerializationException;
  * <p>Implementations define the serialization format (JSON, XML, binary-safe text, etc.)
  * and are responsible for both directions of the conversion. This interface is provided
  * as a convenience extension point; most users will prefer the {@code Function}-based
- * approach available via {@link BasicConfigurer#deserializer(Class)} and the default
- * Jackson serializer built into {@link BasicConfigurer}.</p>
+ * approach available via {@link io.github.cyfko.veridot.core.impl.BasicConfigurer#deserializer(Class)} and the default
+ * Jackson serializer built into {@link io.github.cyfko.veridot.core.impl.BasicConfigurer}.</p>
  *
  * <h2>Custom implementation example (JSON via Jackson)</h2>
  * <pre>{@code
@@ -40,7 +40,7 @@ import io.github.cyfko.veridot.core.exceptions.DataSerializationException;
  *
  * @author Frank KOSSI
  * @since 1.0.0
- * @see BasicConfigurer#deserializer(Class)
+ * @see io.github.cyfko.veridot.core.impl.BasicConfigurer#deserializer(Class)
  */
 public interface DataTransformer {
 

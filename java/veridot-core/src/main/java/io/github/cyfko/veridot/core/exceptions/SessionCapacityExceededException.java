@@ -28,7 +28,9 @@ package io.github.cyfko.veridot.core.exceptions;
  */
 public class SessionCapacityExceededException extends VeridotException {
 
+    /** The group that exceeded its active sequence limit. */
     private final String groupId;
+    /** The configured maximum number of concurrent sessions for this group. */
     private final int maxSessions;
 
     /**

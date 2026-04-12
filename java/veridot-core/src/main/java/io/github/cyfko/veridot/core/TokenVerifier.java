@@ -45,7 +45,7 @@ import java.util.function.Function;
  * @since 1.0.0
  * @see DataSigner
  * @see VerifiedData
- * @see BasicConfigurer#deserializer(Class)
+ * @see io.github.cyfko.veridot.core.impl.BasicConfigurer#deserializer(Class)
  */
 @FunctionalInterface
 public interface TokenVerifier {

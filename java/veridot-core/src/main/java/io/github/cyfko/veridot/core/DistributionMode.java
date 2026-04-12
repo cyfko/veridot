@@ -15,7 +15,7 @@ package io.github.cyfko.veridot.core;
  * @author Frank KOSSI
  * @since 2.0.0
  * @see DataSigner.Configurer#getDistribution()
- * @see BasicConfigurer.Builder#distribution(DistributionMode)
+ * @see io.github.cyfko.veridot.core.impl.BasicConfigurer.Builder#distribution(DistributionMode)
  */
 public enum DistributionMode {
 

@@ -31,6 +31,10 @@ abstract class Env {
  */
 public abstract class Config {
 
+    private Config() {
+        // Prevent instantiation of config constants holder
+    }
+
     /**
      * Protocol version implemented by this library.
      *

@@ -43,7 +43,7 @@ import java.util.function.Function;
  * @author Frank KOSSI
  * @since 1.0.0
  * @see TokenVerifier
- * @see BasicConfigurer
+ * @see io.github.cyfko.veridot.core.impl.BasicConfigurer
  */
 @FunctionalInterface
 public interface DataSigner {
@@ -52,7 +52,7 @@ public interface DataSigner {
      * Configuration contract for a signing request.
      *
      * <p>Describes the target group, optional sequence, distribution mode, validity duration,
-     * and the serialization strategy for the payload. Use {@link BasicConfigurer#builder()} to
+     * and the serialization strategy for the payload. Use {@link io.github.cyfko.veridot.core.impl.BasicConfigurer#builder()} to
      * obtain a ready-to-use implementation.</p>
      */
     interface Configurer {

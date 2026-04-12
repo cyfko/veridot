@@ -62,6 +62,10 @@ public class BasicConfigurer implements DataSigner.Configurer {
      * {@code serializer} (defaults to Jackson {@link ObjectMapper}).</p>
      */
     public static class Builder {
+
+        /** Sets up a new Builder. */
+        public Builder() {
+        }
         private String groupId;
         private String sequenceId;
         private DistributionMode distribution = DistributionMode.DIRECT;
