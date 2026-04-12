@@ -99,8 +99,8 @@ Veridot is available across multiple environments. Choose your tech stack to acc
 | **Java (JDK 17+)** | ✅ Production Ready | [📁 `veridot-core`](java/veridot-core) | Core Protocol V2 API & Generic Impl. |
 | **Java (JDK 17+)** | ✅ Production Ready | [📁 `veridot-kafka`](java/veridot-kafka) | Kafka + RocksDB Broker integration |
 | **Java (JDK 17+)** | ✅ Production Ready | [📁 `veridot-databases`](java/veridot-databases) | SQL Database Broker integration |
-| **Node.js (TS)** | ✅ Production Ready | [📁 `nodejs`](nodejs) | `dverify` - Native JS Implementation |
-| **Python** | 🚧 In Development | `veridot-python` | Coming Soon |
+| **Node.js (TS)** | ⚠️ Protocole V1 (Legacy) | [📁 `nodejs`](nodejs) | `dverify` - Native JS Implementation |
+| **Python** | 📋 Planned | `veridot-python` | Coming Soon |
 | **Go** | 📋 Planned | `veridot-go` | Coming Soon |
 | **Rust** | 📋 Planned | `veridot-rs` | Coming Soon |
 
