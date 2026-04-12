@@ -14,26 +14,15 @@ package io.github.cyfko.veridot.core;
 public interface TokenRevoker {
 
     /**
-     * Revokes a specific token or sequence identified by the given target.
+     * Revokes a specific sequence or an entire group.
      *
-     * <p>The {@code target} can be:</p>
-     * <ul>
-     *   <li>A JWT token string (contains {@code .}) — the messageId is extracted from the {@code sub} claim</li>
-     *   <li>A Protocol V2 messageId (starts with {@code 2:}) — used directly as the broker key</li>
-     * </ul>
+     * <p>If {@code sequenceId} is provided, only that specific sequence is revoked.
+     * If {@code sequenceId} is {@code null}, all active sequences belonging to the 
+     * given {@code groupId} are revoked.</p>
      *
-     * @param target the token or messageId to revoke; must not be {@code null}
-     * @throws IllegalArgumentException if the target format is not recognized
+     * @param groupId the group identifier; must not be {@code null} or blank
+     * @param sequenceId the specific sequence to revoke, or {@code null} to revoke the entire group
+     * @throws IllegalArgumentException if {@code groupId} is null or blank
      */
-    void revoke(Object target);
-
-    /**
-     * Revokes all active tokens for the given group.
-     *
-     * <p>After this call, all sequences belonging to {@code groupId} are invalidated.
-     * Any subsequent verification of tokens from this group will fail.</p>
-     *
-     * @param groupId the group identifier whose tokens should all be revoked; must not be {@code null} or blank
-     */
-    void revokeGroup(String groupId);
+    void revoke(String groupId, String sequenceId);
 }

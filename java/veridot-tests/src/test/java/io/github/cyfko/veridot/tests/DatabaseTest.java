@@ -159,14 +159,16 @@ public abstract class DatabaseTest {
     @ParameterizedTest
     @EnumSource(value = DistributionMode.class)
     void verify_revoked_token_throws(DistributionMode mode) throws InterruptedException {
+        String groupId = "revoke-tok-" + mode.name();
         var cfg = BasicConfigurer.builder()
-                .groupId("revoke-tok-" + mode.name())
+                .groupId(groupId)
+                .sequenceId("seq1")
                 .distribution(mode)
                 .validity(3600)
                 .build();
         String token = dataSigner.sign("john.doe@example.com", cfg);
         Thread.sleep(2000);
-        tokenRevoker.revoke(token);
+        tokenRevoker.revoke(groupId, "seq1");
         Thread.sleep(2000);
         assertThrows(BrokerExtractionException.class, () -> tokenVerifier.verify(token, s -> s));
     }
@@ -178,7 +180,7 @@ public abstract class DatabaseTest {
         String t1 = dataSigner.sign("d1", BasicConfigurer.builder().groupId(groupId).distribution(mode).validity(3600).build());
         String t2 = dataSigner.sign("d2", BasicConfigurer.builder().groupId(groupId).distribution(mode).validity(3600).build());
         Thread.sleep(2000);
-        tokenRevoker.revokeGroup(groupId);
+        tokenRevoker.revoke(groupId, null);
         Thread.sleep(2000);
         assertThrows(BrokerExtractionException.class, () -> tokenVerifier.verify(t1, s -> s));
         assertThrows(BrokerExtractionException.class, () -> tokenVerifier.verify(t2, s -> s));
@@ -218,7 +220,7 @@ public abstract class DatabaseTest {
         dataSigner.sign("d1", BasicConfigurer.builder().groupId(groupId).distribution(mode).validity(3600).build());
         dataSigner.sign("d2", BasicConfigurer.builder().groupId(groupId).distribution(mode).validity(3600).build());
         Thread.sleep(2000);
-        tokenRevoker.revokeGroup(groupId);
+        tokenRevoker.revoke(groupId, null);
         Thread.sleep(2000);
         assertFalse(tokenTracker.hasActiveToken(groupId));
     }
@@ -239,7 +241,7 @@ public abstract class DatabaseTest {
         assertTrue(existsInDb(keyA), "Sequence A must exist in DB before revokeGroup");
         assertTrue(existsInDb(keyB), "Sequence B must exist in DB before revokeGroup");
 
-        tokenRevoker.revokeGroup(groupId);
+        tokenRevoker.revoke(groupId, null);
         Thread.sleep(2000);
 
         // Post-condition: entries are physically absent from the SQL table

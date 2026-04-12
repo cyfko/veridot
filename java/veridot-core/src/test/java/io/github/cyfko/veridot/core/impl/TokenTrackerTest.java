@@ -32,9 +32,9 @@ class TokenTrackerTest {
 
     @Test
     void hasActiveToken_after_revoke_by_token_returns_false() {
-        var cfg = BasicConfigurer.builder().groupId("u1").validity(600).build();
-        String token = sv.sign("data", cfg);
-        sv.revoke(token);
+        var cfg = BasicConfigurer.builder().groupId("u1").sequenceId("seq1").validity(600).build();
+        sv.sign("data", cfg);
+        sv.revoke("u1", "seq1");
         assertFalse(sv.hasActiveToken("u1"), "Must return false after revoking the only session");
     }
 
@@ -43,7 +43,7 @@ class TokenTrackerTest {
         sv.sign("d1", BasicConfigurer.builder().groupId("u1").validity(600).build());
         sv.sign("d2", BasicConfigurer.builder().groupId("u1").validity(600).build());
         sv.sign("d3", BasicConfigurer.builder().groupId("u1").validity(600).build());
-        sv.revokeGroup("u1");
+        sv.revoke("u1", null);
         assertFalse(sv.hasActiveToken("u1"), "Must return false after revoking the entire group");
     }
 
@@ -73,8 +73,8 @@ class TokenTrackerTest {
     @Test
     void hasActiveToken_partial_revoke_still_returns_true() {
         sv.sign("d1", BasicConfigurer.builder().groupId("u1").sequenceId("s1").validity(600).build());
-        String t2 = sv.sign("d2", BasicConfigurer.builder().groupId("u1").sequenceId("s2").validity(600).build());
-        sv.revoke(t2);  // revoke only s2
+        sv.sign("d2", BasicConfigurer.builder().groupId("u1").sequenceId("s2").validity(600).build());
+        sv.revoke("u1", "s2");  // revoke only s2
         assertTrue(sv.hasActiveToken("u1"),
                 "Must return true if at least one session remains active in the group");
     }

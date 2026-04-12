@@ -21,20 +21,20 @@ class RevocationTest {
 
     @Test
     void revoke_by_direct_token_then_verify_fails() {
-        var cfg = BasicConfigurer.builder().groupId("u1").validity(600)
+        var cfg = BasicConfigurer.builder().groupId("u1").sequenceId("s1").validity(600)
                 .distribution(DistributionMode.DIRECT).build();
         String jwt = sv.sign("data", cfg);
-        sv.revoke(jwt);
+        sv.revoke("u1", "s1");
         assertThrows(BrokerExtractionException.class, () -> sv.verify(jwt, s -> s),
                 "Verify must fail after revoking via JWT token");
     }
 
     @Test
     void revoke_by_indirect_messageId_then_verify_fails() {
-        var cfg = BasicConfigurer.builder().groupId("u1").validity(600)
+        var cfg = BasicConfigurer.builder().groupId("u1").sequenceId("s2").validity(600)
                 .distribution(DistributionMode.INDIRECT).build();
         String messageId = sv.sign("data", cfg);
-        sv.revoke(messageId);
+        sv.revoke("u1", "s2");
         assertThrows(BrokerExtractionException.class, () -> sv.verify(messageId, s -> s),
                 "Verify must fail after revoking via messageId");
     }
@@ -42,9 +42,9 @@ class RevocationTest {
     @Test
     void revoke_removes_broker_entry() {
         var cfg = BasicConfigurer.builder().groupId("u1").sequenceId("s1").validity(600).build();
-        String jwt = sv.sign("data", cfg);
+        sv.sign("data", cfg);
         assertTrue(broker.containsKey("2:u1:s1"), "Entry must exist before revocation");
-        sv.revoke(jwt);
+        sv.revoke("u1", "s1");
         assertFalse(broker.containsKey("2:u1:s1"), "Entry must be removed after revocation");
     }
 
@@ -57,7 +57,7 @@ class RevocationTest {
         long normalCountBefore = broker.getKeysByPrefix("2:u1:").stream()
                 .filter(k -> !ProtocolV2.isReservedSequence(k)).count();
         assertEquals(3, normalCountBefore, "Must have 3 active sessions before revokeGroup");
-        sv.revokeGroup("u1");
+        sv.revoke("u1", null);
         long normalCountAfter = broker.getKeysByPrefix("2:u1:").stream()
                 .filter(k -> !ProtocolV2.isReservedSequence(k)).count();
         assertEquals(0, normalCountAfter, "Must have 0 normal sessions after revokeGroup");
@@ -74,7 +74,7 @@ class RevocationTest {
         sv.sign("d1", BasicConfigurer.builder().groupId("u1").validity(600).build());
         String t2 = sv.sign("d2", BasicConfigurer.builder().groupId("u2").validity(600).build());
 
-        sv.revokeGroup("u1");
+        sv.revoke("u1", null);
 
         // u2 must still be verifiable
         assertDoesNotThrow(() -> sv.verify(t2, s -> s),
@@ -83,21 +83,15 @@ class RevocationTest {
 
     @Test
     void revokeGroup_unknown_group_no_error() {
-        assertDoesNotThrow(() -> sv.revokeGroup("nonexistent-group"),
+        assertDoesNotThrow(() -> sv.revoke("nonexistent-group", null),
                 "Revoking a nonexistent group must not throw");
-    }
-
-    @Test
-    void revoke_unsupported_type_throws() {
-        assertThrows(IllegalArgumentException.class, () -> sv.revoke(42L),
-                "Non-String targets must throw IllegalArgumentException");
     }
 
     @Test
     void revoke_publishes_structured_revocation_message() {
         var cfg = BasicConfigurer.builder().groupId("u1").sequenceId("s1").validity(600).build();
-        String jwt = sv.sign("data", cfg);
-        sv.revoke(jwt);
+        sv.sign("data", cfg);
+        sv.revoke("u1", "s1");
 
         // The __REVOKE__ message must exist in the broker
         String revokeKey = "2:u1:__REVOKE__";
@@ -120,7 +114,7 @@ class RevocationTest {
         assertTrue(broker.containsKey("2:g1:ses-B"), "ses-B must exist before revokeGroup");
         assertTrue(broker.containsKey("2:g1:ses-C"), "ses-C must exist before revokeGroup");
 
-        sv.revokeGroup("g1");
+        sv.revoke("g1", null);
 
         // Post-conditions: each entry is physically removed (not just logically expired)
         assertFalse(broker.containsKey("2:g1:ses-A"), "ses-A must be physically deleted after revokeGroup");
@@ -140,7 +134,7 @@ class RevocationTest {
     void revokeGroup_publishes_revocation_with_target_all() {
         sv.sign("d1", BasicConfigurer.builder().groupId("u1").validity(600).build());
         sv.sign("d2", BasicConfigurer.builder().groupId("u1").validity(600).build());
-        sv.revokeGroup("u1");
+        sv.revoke("u1", null);
 
         String revokeKey = "2:u1:__REVOKE__";
         assertTrue(broker.containsKey(revokeKey), "Revocation key must exist after revokeGroup");

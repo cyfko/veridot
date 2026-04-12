@@ -285,66 +285,42 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
     // ── TokenRevoker ──────────────────────────────────────────────────────────
 
     @Override
-    public void revoke(Object target) {
-        if (!(target instanceof String s)) {
-            throw new IllegalArgumentException("revoke target must be a String (JWT or messageId), got: "
-                    + (target == null ? "null" : target.getClass().getName()));
-        }
-
-        final String messageId;
-        try {
-            if (ProtocolV2.isJwt(s)) {
-                messageId = extractSubFromJwt(s);
-            } else if (ProtocolV2.isMessageId(s)) {
-                messageId = s;
-            } else {
-                throw new IllegalArgumentException("Unrecognized revocation target format: " + s);
-            }
-
-            String[] parts = ProtocolV2.parseMessageId(messageId);
-            String groupId = parts[1];
-            String sequenceId = parts[2];
-
-            // 1. Publish formal V2 __REVOKE__ message (§5.2 — interoperability)
-            String revokeKey = ProtocolV2.buildRevocationKey(groupId);
-            String revokeMsg = ProtocolV2.buildRevocationMessage(groupId, sequenceId);
-            metadataBroker.send(revokeKey, revokeMsg);
-
-            // 2. Delete the actual sequence entry (immediate local effect)
-            metadataBroker.send(messageId, "");
-        } catch (IllegalArgumentException e) {
-            throw e;
-        } catch (Exception e) {
-            logger.severe("Failed to revoke target: " + e.getMessage());
-            throw new RuntimeException("Revocation failed: " + e.getMessage(), e);
-        }
-    }
-
-    @Override
-    public void revokeGroup(String groupId) {
+    public void revoke(String groupId, String sequenceId) {
         if (groupId == null || groupId.isBlank()) {
             throw new IllegalArgumentException("groupId must not be null or blank");
         }
         try {
-            // 1. Publish formal V2 __REVOKE__ message with target=__ALL__ (§5.4)
-            String revokeKey = ProtocolV2.buildRevocationKey(groupId);
-            String revokeMsg = ProtocolV2.buildRevocationMessage(groupId, ProtocolV2.SEQ_ALL);
-            metadataBroker.send(revokeKey, revokeMsg);
+            if (sequenceId == null) {
+                // 1. Publish formal V2 __REVOKE__ message with target=__ALL__ (§5.4)
+                String revokeKey = ProtocolV2.buildRevocationKey(groupId);
+                String revokeMsg = ProtocolV2.buildRevocationMessage(groupId, ProtocolV2.SEQ_ALL);
+                metadataBroker.send(revokeKey, revokeMsg);
 
-            // 2. Delete all individual sequence entries
-            String prefix = ProtocolV2.groupPrefix(groupId);
-            List<String> keys = metadataBroker.getKeysByPrefix(prefix);
-            for (String key : keys) {
-                // Skip reserved keys (__REVOKE__, __CONFIG__)
-                if (ProtocolV2.isReservedSequence(key)) continue;
-                try {
-                    metadataBroker.send(key, "");
-                } catch (Exception e) {
-                    logger.severe("Failed to revoke key " + key + " during group revocation: " + e.getMessage());
+                // 2. Delete all individual sequence entries
+                String prefix = ProtocolV2.groupPrefix(groupId);
+                List<String> keys = metadataBroker.getKeysByPrefix(prefix);
+                for (String key : keys) {
+                    // Skip reserved keys (__REVOKE__, __CONFIG__)
+                    if (ProtocolV2.isReservedSequence(key)) continue;
+                    try {
+                        metadataBroker.send(key, "");
+                    } catch (Exception e) {
+                        logger.severe("Failed to revoke key " + key + " during group revocation: " + e.getMessage());
+                    }
                 }
+            } else {
+                // 1. Publish formal V2 __REVOKE__ message (§5.2 — interoperability)
+                String revokeKey = ProtocolV2.buildRevocationKey(groupId);
+                String revokeMsg = ProtocolV2.buildRevocationMessage(groupId, sequenceId);
+                metadataBroker.send(revokeKey, revokeMsg);
+
+                // 2. Delete the actual sequence entry (immediate local effect)
+                String messageId = ProtocolV2.buildMessageId(groupId, sequenceId);
+                metadataBroker.send(messageId, "");
             }
         } catch (Exception e) {
-            logger.severe("Failed to enumerate keys for group revocation [" + groupId + "]: " + e.getMessage());
+            logger.severe("Failed to revoke target/group: " + e.getMessage());
+            throw new RuntimeException("Revocation failed: " + e.getMessage(), e);
         }
     }
 

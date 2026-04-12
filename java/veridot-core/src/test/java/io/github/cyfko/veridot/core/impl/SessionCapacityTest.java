@@ -75,7 +75,7 @@ class SessionCapacityTest {
         sv.sign("d2", BasicConfigurer.builder().groupId("u1").sequenceId("s2").validity(600).build());
 
         // After revocation, count = 1 (below maxSessions)
-        sv.revoke(t1);
+        sv.revoke("u1", "s1");
 
         // This 3rd sign should NOT trigger eviction (count < maxSessions)
         sv.sign("d3", BasicConfigurer.builder().groupId("u1").sequenceId("s3").validity(600).build());
@@ -192,7 +192,7 @@ class SessionCapacityTest {
                 () -> sv.sign("d2", BasicConfigurer.builder().groupId("rej2").sequenceId("s2").validity(600).build()));
 
         // Manually revoke → slot freed
-        sv.revoke(jwt);
+        sv.revoke("rej2", "s1");
 
         // Now signing works again
         assertDoesNotThrow(
