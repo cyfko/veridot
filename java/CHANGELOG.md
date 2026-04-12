@@ -5,6 +5,16 @@ All notable changes to the Veridot project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **⚠️ BREAKING CHANGE**: Refactored `TokenRevoker` API to use a unified `revoke(groupId, sequenceId)` method instead of `revoke(Object)` and `revokeGroup(String)`.
+  - To revoke a specific session: `revoke("user-123", "session-A")`
+  - To revoke an entire group: `revoke("user-123", null)`
+
+---
+
 ## [2.1.3] - 2026-04-12
 
 ### Changed

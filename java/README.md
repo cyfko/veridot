@@ -88,8 +88,11 @@ String jwt = sv.sign("john@example.com",
 // Verify token → extract original data
 String email = sv.verify(jwt, String::toString);
 
-// Revoke when needed
-sv.revoke(jwt);
+// Revoke a specific session
+sv.revoke("user-123", "session-A");
+
+// Or revoke the entire group
+sv.revoke("user-123", null);
 
 // Check if group has active tokens
 boolean active = sv.hasActiveToken("user-123");

@@ -91,8 +91,8 @@ String jwt = sv.sign("john@example.com",
 // Verify from any service connected to the same Kafka cluster
 String email = sv.verify(jwt, String::toString);
 
-// Revoke
-sv.revoke(jwt);
+// Revoke a specific session
+sv.revoke("user-123", "session-A");
 
 // Verify after revocation → throws BrokerExtractionException
 sv.verify(jwt, String::toString); // throws!
@@ -108,7 +108,7 @@ var sv = new GenericSignerVerifier(broker, "salt", 3, GenericSignerVerifier.Evic
 boolean hasActive = sv.hasActiveToken("user-123");
 
 // Revoke all sessions for a user
-sv.revokeGroup("user-123");
+sv.revoke("user-123", null);
 ```
 
 ---

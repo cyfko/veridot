@@ -90,12 +90,11 @@ MyPojo pojo = sv.verify(token, BasicConfigurer.deserializer(MyPojo.class));
 ### Revocation
 
 ```java
-// Revoke a specific token (accepts JWT or messageId)
-sv.revoke(jwt);
-sv.revoke("2:user-123:session-A");
+// Revoke a specific session
+sv.revoke("user-123", "session-A");
 
-// Revoke ALL tokens for a group
-sv.revokeGroup("user-123");
+// Revoke ALL sessions for a group
+sv.revoke("user-123", null);
 ```
 
 ### Tracking
