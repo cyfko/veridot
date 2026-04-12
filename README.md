@@ -45,35 +45,35 @@ Veridot operates on asymmetric signing combined with distributed metadata propag
 
 ```mermaid
 sequenceDiagram
-    title Veridot Token Validation Lifecycle
+    title Veridot Protocol: Distributed Token Verification
 
-    participant ServiceA as Service A (Signer)
-    participant Broker as Metadata Broker<br/>(Kafka/Database)
-    participant ServiceB as Service B (Verifier)
     participant Client as Client Application
+    participant Signer as Signer Service (Issuer)
+    participant Network as Verification Network<br/>(Broker Transport)
+    participant Verifier as Verifier Service (Consumer)
 
-    %% Key Generation & Registration
-    Note over ServiceA: Generate ephemeral<br/>RSA/ECDSA key pair
-    ServiceA->>Broker: Publish public key metadata<br/>(keyId, publicKey, expiration)
+    %% Initialization & Key Distribution
+    Note over Signer: Generate ephemeral<br/>asymmetric key pair
+    Signer->>Network: Broadcast public key metadata<br/>(Key ID, value, TTL window)
 
-    %% Token Signing
-    Client->>ServiceA: Request with data
-    ServiceA->>ServiceA: Sign data with private key
-    ServiceA->>Broker: Publish token sequence metadata
-    ServiceA-->>Client: Return signed token
+    %% Signing & Session Initialization
+    Client->>Signer: Authenticated Action
+    Signer->>Signer: Cryptographically sign payload
+    Signer->>Network: Broadcast sequence state<br/>(Session tracking)
+    Signer-->>Client: Issue verifiable token
 
-    %% Token Verification
-    Client->>ServiceB: Request with token
-    ServiceB->>ServiceB: Extract sequence identifiers
-    ServiceB->>Broker: Fetch public key & sequence
-    Broker-->>ServiceB: Return metadata (from local cache)
-    ServiceB->>ServiceB: Verify token signature<br/>& check TTL
-    ServiceB-->>Client: Process verified request
+    %% Autonomous Verification
+    Client->>Verifier: Request resource + Token
+    Verifier->>Network: Query public key & sequence
+    Note right of Verifier: Sub-millisecond read<br/>via local node cache
+    Network-->>Verifier: Return validation metadata
+    Verifier->>Verifier: Validate cryptographically<br/>& enforce TTL policies
+    Verifier-->>Client: Grant access / Return resource
 
-    %% Revocation (Cross-Cluster)
-    Note over ServiceA: Emergency Session<br/>Revocation
-    ServiceA->>Broker: Publish __REVOKE__ message
-    Broker-->>ServiceB: Consumer deletes sequence from local cache
+    %% Global Structural Revocation
+    Note over Signer: Security Event:<br/>Instant Protocol Revocation
+    Signer->>Network: Broadcast __REVOKE__ command
+    Network-->>Verifier: Invalidate local sequence state
 ```
 
 ---
