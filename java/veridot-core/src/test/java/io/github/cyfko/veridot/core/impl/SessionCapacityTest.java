@@ -200,6 +200,70 @@ class SessionCapacityTest {
                 "Signing must succeed after manually revoking a session");
     }
 
+    /**
+     * Regression test for the revoke() async race condition.
+     *
+     * <p>This test proves that {@link GenericSignerVerifier#revoke(String, String)} is
+     * fully synchronous: a {@code sign()} call issued <em>immediately</em> after
+     * {@code revoke()} — with zero sleep — must succeed because the broker deletion
+     * is guaranteed to be committed before {@code enforceSessionLimit} runs.</p>
+     *
+     * <p>Before the fix, the deletion inside {@code revoke()} was fire-and-forget
+     * ({@code send(key, "")} without {@code .get()}), so a concurrent
+     * {@code enforceSessionLimit} could still observe the deleted entry as active,
+     * causing a spurious {@link SessionCapacityExceededException}.</p>
+     */
+    @Test
+    void revoke_then_sign_immediately_no_race_condition() {
+        // maxSessions=1, REJECT: strictly one session at a time
+        var sv = new GenericSignerVerifier(broker, "salt", 1, GenericSignerVerifier.EvictionPolicy.REJECT);
+        String groupId = "race-condition-regression";
+
+        // ── Step 1: fill the slot ────────────────────────────────────────────
+        String oldToken = sv.sign("data",
+                BasicConfigurer.builder()
+                        .groupId(groupId)
+                        .sequenceId("old-session")
+                        .validity(3600)
+                        .build());
+
+        // ── Step 2: confirm slot is full ─────────────────────────────────────
+        assertThrows(SessionCapacityExceededException.class,
+                () -> sv.sign("data",
+                        BasicConfigurer.builder()
+                                .groupId(groupId)
+                                .sequenceId("should-fail")
+                                .validity(3600)
+                                .build()),
+                "Slot must be full before revoke");
+
+        // ── Step 3: revoke + immediate sign with NO Thread.sleep() ───────────
+        //    Before the fix: revoke() was async → enforceSessionLimit could still
+        //    see the old entry → SessionCapacityExceededException was thrown here.
+        //    After the fix:  revoke() is synchronous → slot is guaranteed free.
+        sv.revoke(groupId, "old-session");
+
+        String newToken = assertDoesNotThrow(
+                () -> sv.sign("data",
+                        BasicConfigurer.builder()
+                                .groupId(groupId)
+                                .sequenceId("new-session")
+                                .validity(3600)
+                                .build()),
+                "sign() immediately after revoke() must not throw — no race condition");
+
+        // ── Step 4: old token is gone, new token is verifiable ───────────────
+        assertThrows(Exception.class,
+                () -> sv.verify(oldToken, s -> s),
+                "Revoked token must not be verifiable");
+
+        assertDoesNotThrow(
+                () -> sv.verify(newToken, s -> s),
+                "New token issued after revoke must be verifiable");
+    }
+
+
+
     @Test
     void reject_policy_does_not_evict_existing_sessions() {
         var sv = new GenericSignerVerifier(broker, "salt", 2, GenericSignerVerifier.EvictionPolicy.REJECT);

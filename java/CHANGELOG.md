@@ -5,7 +5,28 @@ All notable changes to the Veridot project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.1] - 2026-04-14
+
+### 🐛 Bug Fixes
+
+- **`GenericSignerVerifier.revoke()` race condition** — The sequence deletion send inside
+  `revoke(groupId, sequenceId)` and the `__REVOKE__` broadcast were previously fire-and-forget
+  (no `.get()` on the returned `CompletableFuture`). This caused a race condition where a
+  `sign()` call issued immediately after `revoke()` could still observe the deleted entry as
+  active in the broker, triggering a spurious `SessionCapacityExceededException` in REJECT
+  mode with `maxSessions=1`. Both sends are now awaited (`.get(3, TimeUnit.MINUTES)`),
+  consistent with the eviction behavior already implemented in `enforceSessionLimit`.
+
+### ✅ Tests
+
+- Added regression test `revoke_then_sign_immediately_no_race_condition` in
+  `SessionCapacityTest` that validates the fix without any `Thread.sleep()`, proving that
+  `revoke()` is fully synchronous before `enforceSessionLimit` runs.
+
+---
+
 ## [3.0.0] - 2026-04-12
+
 
 ### ⚠️ Breaking Changes
 

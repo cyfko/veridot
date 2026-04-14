@@ -419,16 +419,16 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
                 // 1. Publish formal V2 __REVOKE__ message with target=__ALL__ (§5.4)
                 String revokeKey = ProtocolV2.buildRevocationKey(groupId);
                 String revokeMsg = ProtocolV2.buildRevocationMessage(groupId, ProtocolV2.SEQ_ALL);
-                metadataBroker.send(revokeKey, revokeMsg);
+                metadataBroker.send(revokeKey, revokeMsg).get(3, TimeUnit.MINUTES);
 
-                // 2. Delete all individual sequence entries
+                // 2. Delete all individual sequence entries (awaited for consistency)
                 String prefix = ProtocolV2.groupPrefix(groupId);
                 List<String> keys = metadataBroker.getKeysByPrefix(prefix);
                 for (String key : keys) {
                     // Skip reserved keys (__REVOKE__, __CONFIG__)
                     if (ProtocolV2.isReservedSequence(key)) continue;
                     try {
-                        metadataBroker.send(key, "");
+                        metadataBroker.send(key, "").get(3, TimeUnit.MINUTES);
                     } catch (Exception e) {
                         logger.severe("Failed to revoke key " + key + " during group revocation: " + e.getMessage());
                     }
@@ -437,11 +437,12 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
                 // 1. Publish formal V2 __REVOKE__ message (§5.2 — interoperability)
                 String revokeKey = ProtocolV2.buildRevocationKey(groupId);
                 String revokeMsg = ProtocolV2.buildRevocationMessage(groupId, sequenceId);
-                metadataBroker.send(revokeKey, revokeMsg);
+                metadataBroker.send(revokeKey, revokeMsg).get(3, TimeUnit.MINUTES);
 
-                // 2. Delete the actual sequence entry (immediate local effect)
+                // 2. Delete the actual sequence entry — awaited so that an immediate sign()
+                //    on the same group sees the slot as free (no race condition).
                 String messageId = ProtocolV2.buildMessageId(groupId, sequenceId);
-                metadataBroker.send(messageId, "");
+                metadataBroker.send(messageId, "").get(3, TimeUnit.MINUTES);
             }
         } catch (Exception e) {
             logger.severe("Failed to revoke target/group: " + e.getMessage());
