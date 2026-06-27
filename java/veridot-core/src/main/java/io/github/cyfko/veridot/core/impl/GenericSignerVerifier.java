@@ -162,7 +162,10 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
     private final EffectiveConfig defaultConfig;
     private final ScheduledExecutorService scheduler;
     private volatile KeyPair keyPair;
-    private long lastExecutionTime = 0;
+    private volatile long lastExecutionTime = 0;
+
+    /** Locks for concurrent session validation on sign per groupId */
+    private final ConcurrentHashMap<String, Object> groupLocks = new ConcurrentHashMap<>();
 
     /** Config cache: groupId → resolved config with timestamp. */
     private final ConcurrentHashMap<String, CachedConfig> configCache = new ConcurrentHashMap<>();
@@ -365,24 +368,27 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         }
 
         // 8. Resolve effective config from broker hierarchy (§4) and enforce maxSessions
-        EffectiveConfig effectiveConfig = resolveConfig(groupId);
-        if (effectiveConfig.maxSessions() > 0) {
-            enforceSessionLimit(groupId, effectiveConfig);
-        }
+        Object groupLock = groupLocks.computeIfAbsent(groupId, k -> new Object());
+        synchronized (groupLock) {
+            EffectiveConfig effectiveConfig = resolveConfig(groupId);
+            if (effectiveConfig.maxSessions() > 0) {
+                enforceSessionLimit(groupId, effectiveConfig);
+            }
 
-        // 9. Build V2 message
-        String v2Message = ProtocolV2.buildMessage(groupId, sequenceId, props);
+            // 9. Build V2 message
+            String v2Message = ProtocolV2.buildMessage(groupId, sequenceId, props);
 
-        // F5 fix: Pre-populate the local cache synchronously, before Kafka publication.
-        // This eliminates the read-after-write race on the signing node itself.
-        metadataBroker.sendLocal(messageId, v2Message);
+            // F5 fix: Pre-populate the local cache synchronously, before Kafka publication.
+            // This eliminates the read-after-write race on the signing node itself.
+            metadataBroker.sendLocal(messageId, v2Message);
 
-        // 10. Publish V2 message to broker (F8 fix: short timeout, not 3 minutes)
-        try {
-            metadataBroker.send(messageId, v2Message).get(30, TimeUnit.SECONDS);
-        } catch (ExecutionException | InterruptedException | TimeoutException e) {
-            logger.severe("Failed to send metadata for messageId " + messageId + " to broker: " + e.getMessage());
-            throw new RuntimeException("Broker publication failed", e);
+            // 10. Publish V2 message to broker (F8 fix: short timeout, not 3 minutes)
+            try {
+                metadataBroker.send(messageId, v2Message).get(30, TimeUnit.SECONDS);
+            } catch (ExecutionException | InterruptedException | TimeoutException e) {
+                logger.severe("Failed to send metadata for messageId " + messageId + " to broker: " + e.getMessage());
+                throw new RuntimeException("Broker publication failed", e);
+            }
         }
 
         // 11. Return token based on distribution mode
@@ -443,7 +449,7 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             // 6b. F7 — Check tombstone: if a signed revocation exists with a newer timestamp,
             //     reject the token even if the session entry is present in the broker.
             //     This is the "latest-timestamp-wins" rule that prevents broker-level replay.
-            validateNotRevoked(groupId, meta);
+            validateNotRevoked(groupId, sequenceId, meta);
 
             // 7. Validate key announcement via TrustAnchor (F1 — broker is NOT a root of trust)
             validateTrustAnchor(meta, messageId);
@@ -692,10 +698,11 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
      * timestamp, signed by the long-term key, always prevails.</strong></p>
      *
      * @param groupId the group to check for revocation
+     * @param sequenceId the sequence ID of the announcement being checked
      * @param announcementMeta the metadata of the announcement being verified
      * @throws BrokerExtractionException if a newer tombstone exists
      */
-    private void validateNotRevoked(String groupId, Map<String, String> announcementMeta)
+    private void validateNotRevoked(String groupId, String sequenceId, Map<String, String> announcementMeta)
             throws BrokerExtractionException {
         String revokeKey = ProtocolV2.buildRevocationKey(groupId);
         String tombstoneMsg;
@@ -732,9 +739,12 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
                     throw new BrokerExtractionException(
                             "Session revoked: group-wide tombstone (ts=" + tombstoneTs + ") supersedes announcement");
                 }
-                // For targeted revocation, check if this specific sequence was revoked
-                // (The tombstone target field matches the sequenceId from the messageId)
-                // Note: targeted tombstones may be overwritten by newer ones, so __ALL__ is checked first
+                if (sequenceId.equals(tombstoneTarget)) {
+                    logger.info("F7: Rejecting token — targeted tombstone (ts=" + tombstoneTs
+                            + ") is newer than announcement (ts=" + announcementTs + ") for sequence=" + sequenceId);
+                    throw new BrokerExtractionException(
+                            "Session revoked: targeted tombstone (ts=" + tombstoneTs + ") supersedes announcement");
+                }
             }
 
             // Verify tombstone signature using TrustAnchor (prevents forged tombstones)
@@ -757,9 +767,11 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
                     // Tombstone signature verified — if we reach here and tombstoneTs > announcementTs,
                     // the revocation is cryptographically proven
                     if (tombstoneTs > announcementTs) {
-                        throw new BrokerExtractionException(
-                                "Session revoked: verified tombstone (ts=" + tombstoneTs
-                                        + ") supersedes announcement (ts=" + announcementTs + ")");
+                        if (ProtocolV2.SEQ_ALL.equals(tombstoneTarget) || sequenceId.equals(tombstoneTarget)) {
+                            throw new BrokerExtractionException(
+                                    "Session revoked: verified tombstone (ts=" + tombstoneTs
+                                            + ") supersedes announcement (ts=" + announcementTs + ")");
+                        }
                     }
                 } catch (BrokerExtractionException e) {
                     throw e;

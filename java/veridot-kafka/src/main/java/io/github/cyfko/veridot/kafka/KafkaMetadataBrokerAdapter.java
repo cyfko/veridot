@@ -92,7 +92,7 @@ import java.util.logging.Logger;
  * @see VerifierConfig
  * @see Constant
  */
-public class KafkaMetadataBrokerAdapter implements MetadataBroker {
+public class KafkaMetadataBrokerAdapter implements MetadataBroker, AutoCloseable {
     private static final Logger logger = Logger.getLogger(KafkaMetadataBrokerAdapter.class.getName());
 
     /**
@@ -124,6 +124,7 @@ public class KafkaMetadataBrokerAdapter implements MetadataBroker {
     private final Options options;
     private final ScheduledExecutorService scheduler;
     private Properties properties;
+    private volatile boolean closed = false;
 
     static {
         try {
@@ -184,11 +185,8 @@ public class KafkaMetadataBrokerAdapter implements MetadataBroker {
             this.consumer = new KafkaConsumer<>(properties);
             this.consumer.subscribe(List.of(props.getProperty(VerifierConfig.BROKER_TOPIC_CONFIG, Constant.KAFKA_TOKEN_VERIFIER_TOPIC)));
 
-            // Add a shutdown hook to gracefully close the embedded database
-            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                logger.info("Closing RocksDB...");
-                closeDB();
-            }));
+            // Add a shutdown hook to gracefully close resources (H5)
+            Runtime.getRuntime().addShutdownHook(new Thread(this::close));
 
             // Initialize async work.
             this.scheduler = Executors.newScheduledThreadPool(2); // 2 threads: data consumer + compaction
@@ -288,6 +286,7 @@ public class KafkaMetadataBrokerAdapter implements MetadataBroker {
             }
         } catch (RocksDBException e) {
             logger.severe("sendLocal failed for key=" + key + ": " + e.getMessage());
+            throw new RuntimeException("Embedded Database local write failed", e);
         }
     }
 
@@ -333,6 +332,7 @@ public class KafkaMetadataBrokerAdapter implements MetadataBroker {
     private void scheduleAsyncWork() {
         // Data + control consumer (F4: revocation keys detected and processed with priority inside)
         scheduler.scheduleAtFixedRate(() -> {
+            if (closed) return;
             try {
                 saveKafkaMessagesOnEmbeddedDatabase(consumer, db);
             } catch (Throwable t) {
@@ -342,6 +342,7 @@ public class KafkaMetadataBrokerAdapter implements MetadataBroker {
 
         // Compaction task: purge TTL-expired entries from RocksDB (F6)
         scheduler.scheduleAtFixedRate(() -> {
+            if (closed) return;
             try {
                 compactExpiredEntries();
             } catch (Throwable t) {
@@ -405,8 +406,55 @@ public class KafkaMetadataBrokerAdapter implements MetadataBroker {
     }
 
     /**
-     * Releases RocksDB and RocksDB Options resources gracefully.
+     * Releases scheduler, consumer, producer, and RocksDB resources gracefully (H5).
      */
+    @Override
+    public void close() {
+        if (closed) return;
+        synchronized (this) {
+            if (closed) return;
+            closed = true;
+        }
+        logger.info("Closing KafkaMetadataBrokerAdapter...");
+        try {
+            if (scheduler != null) {
+                scheduler.shutdown();
+                try {
+                    if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+                        scheduler.shutdownNow();
+                    }
+                } catch (InterruptedException ie) {
+                    scheduler.shutdownNow();
+                    Thread.currentThread().interrupt();
+                }
+            }
+        } catch (Exception e) {
+            logger.warning("Error shutting down scheduler: " + e.getMessage());
+        }
+
+        try {
+            if (consumer != null) {
+                consumer.close(Duration.ofSeconds(5));
+            }
+        } catch (Exception e) {
+            logger.warning("Error closing Kafka consumer: " + e.getMessage());
+        }
+
+        try {
+            if (producer != null) {
+                producer.close(Duration.ofSeconds(5));
+            }
+        } catch (Exception e) {
+            logger.warning("Error closing Kafka producer: " + e.getMessage());
+        }
+
+        try {
+            closeDB();
+        } catch (Exception e) {
+            logger.warning("Error closing RocksDB: " + e.getMessage());
+        }
+    }
+
     private void closeDB() {
         if (db != null) {
             db.close(); // Closes database connection

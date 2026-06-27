@@ -180,18 +180,27 @@ public class DatabaseMetadataBroker implements MetadataBroker {
                 if (message.isBlank()) { // Delete the record with keyId
                     removeEntry(keyId, conn);
                 } else { // save a new records with that keyId
+                    // Transactional upsert: delete then insert in a single transaction block to prevent concurrent duplicates (H8)
+                    conn.setAutoCommit(false);
+                    try {
+                        removeEntry(keyId, conn);
 
-                    removeEntry(keyId, conn);
+                        String sql = String.format(
+                                "INSERT INTO %s (%s, %s) VALUES (?, ?)",
+                                tableName, COLUMN_KEY, COLUMN_MESSAGE
+                        );
 
-                    String sql = String.format(
-                            "INSERT INTO %s (%s, %s) VALUES (?, ?)",
-                            tableName, COLUMN_KEY, COLUMN_MESSAGE
-                    );
-
-                    try (PreparedStatement stmt = conn.prepareStatement(sql)) {
-                        stmt.setString(1, keyId);
-                        stmt.setString(2, message);
-                        stmt.executeUpdate();
+                        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+                            stmt.setString(1, keyId);
+                            stmt.setString(2, message);
+                            stmt.executeUpdate();
+                        }
+                        conn.commit();
+                    } catch (SQLException e) {
+                        conn.rollback();
+                        throw e;
+                    } finally {
+                        conn.setAutoCommit(true);
                     }
                 }
 
@@ -262,11 +271,11 @@ public class DatabaseMetadataBroker implements MetadataBroker {
         List<String> keys = new ArrayList<>();
         try (Connection conn = dataSource.getConnection()) {
             String sql = String.format(
-                    "SELECT %s FROM %s WHERE %s LIKE ?",
+                    "SELECT %s FROM %s WHERE %s LIKE ? ESCAPE '!'",
                     COLUMN_KEY, tableName, COLUMN_KEY
             );
             try (PreparedStatement stmt = conn.prepareStatement(sql)) {
-                stmt.setString(1, prefix + "%");
+                stmt.setString(1, escapeLikePattern(prefix) + "%");
                 ResultSet rs = stmt.executeQuery();
                 while (rs.next()) {
                     keys.add(rs.getString(COLUMN_KEY));
@@ -278,5 +287,14 @@ public class DatabaseMetadataBroker implements MetadataBroker {
                     "Failed to retrieve keys by prefix from DB: " + prefix);
         }
         return keys;
+    }
+
+    private String escapeLikePattern(String prefix) {
+        if (prefix == null) {
+            return "";
+        }
+        return prefix.replace("!", "!!")
+                     .replace("%", "!%")
+                     .replace("_", "!_");
     }
 }
