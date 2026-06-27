@@ -10,7 +10,7 @@ import java.util.concurrent.CompletableFuture;
  * Abstraction of the distributed store used to propagate and retrieve token
  * <em>verification metadata</em> across services.
  *
- * <p>When a token is signed, the issuing service publishes a Protocol V2 metadata message
+ * <p>When a token is signed, the issuing service publishes a Protocol V3 metadata message
  * (containing cryptographic material and expiry information) under a unique key
  * (the {@code messageId}) via {@link #send}. Any service that later needs to verify the
  * token calls {@link #get} with the same key to retrieve and validate that metadata.</p>
@@ -24,7 +24,7 @@ import java.util.concurrent.CompletableFuture;
  *   <li>{@code KafkaMetadataBrokerAdapter} — Kafka + embedded RocksDB (veridot-kafka)</li>
  *   <li>{@code DatabaseMetadataBroker} — JDBC-compatible RDBMS (veridot-databases)</li>
  *   <li>{@code InMemoryMetadataBroker} — in-process map, for testing only</li>
- * </ul>
+ *   </ul>
  *
  * <h2>Revocation semantics</h2>
  * <p>Sending an <em>empty string</em> as the {@code message} signals revocation for that key.
@@ -41,9 +41,9 @@ public interface MetadataBroker {
     /**
      * Asynchronously publishes a verification metadata message under the given key.
      *
-     * <p>The {@code key} is the Protocol V2 {@code messageId} (format:
+     * <p>The {@code key} is the Protocol V3 {@code messageId} (format:
      * {@code <version>:<groupId>:<sequenceId>}) or a reserved key (e.g., revocation or
-     * configuration keys). The {@code message} is a Protocol V2-formatted string containing
+     * configuration keys). The {@code message} is a Protocol V3-formatted string containing
      * encoded cryptographic and expiry metadata.</p>
      *
      * <p><strong>Revocation signal:</strong> sending an empty string for {@code message}
@@ -52,7 +52,7 @@ public interface MetadataBroker {
      * {@link BrokerExtractionException}.</p>
      *
      * @param key     the unique key under which the message is published (e.g., a
-     *                Protocol V2 {@code messageId}); must not be {@code null} or blank
+     *                Protocol V3 {@code messageId}); must not be {@code null} or blank
      * @param message the verification metadata message to store; an empty string signals
      *                revocation and MUST cause the entry to be deleted
      * @return a {@link CompletableFuture} that completes normally when the message has been
@@ -68,7 +68,7 @@ public interface MetadataBroker {
      * <p>This method is called during token verification to fetch the cryptographic
      * material needed to validate a token's signature and expiry.</p>
      *
-     * @param key the Protocol V2 {@code messageId} or reserved key for which metadata
+     * @param key the Protocol V3 {@code messageId} or reserved key for which metadata
      *            is requested; must not be {@code null}
      * @return the metadata message previously stored via {@link #send(String, String)};
      *         never {@code null} or empty
@@ -81,7 +81,7 @@ public interface MetadataBroker {
      * Synchronously stores the metadata message in the local (in-process) cache,
      * without propagating it to remote peers.
      *
-     * <p>This method is called by the signer immediately after building a V2 metadata
+     * <p>This method is called by the signer immediately after building a V3 metadata
      * message, <em>before</em> the asynchronous {@link #send} call. It eliminates the
      * read-after-write race on the signing node itself: a {@link TokenVerifier#verify}
      * call on the same JVM process immediately after {@link DataSigner#sign} will find
@@ -95,8 +95,8 @@ public interface MetadataBroker {
      * The default implementation is a no-op, preserving backwards compatibility for
      * implementations that do not distinguish local from remote writes.</p>
      *
-     * @param key     the Protocol V2 {@code messageId}; must not be {@code null}
-     * @param message the V2 metadata message to cache locally; must not be {@code null}
+     * @param key     the Protocol V3 {@code messageId}; must not be {@code null}
+     * @param message the V3 metadata message to cache locally; must not be {@code null}
      */
     default void sendLocal(String key, String message) {
         // No-op by default — implementations may override for local-cache pre-population.

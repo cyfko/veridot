@@ -39,8 +39,8 @@ public abstract class Config {
     /**
      * Protocol version implemented by this library.
      *
-     * <p>This value corresponds to the version prefix embedded in every Protocol V2
-     * {@code messageId} (e.g., {@code "2:user-123:session-A"}).</p>
+     * <p>This value corresponds to the version prefix embedded in every Protocol V3
+     * {@code messageId} (e.g., {@code "3:user-123:session-A"}).</p>
      */
     public static final int PROTOCOL_VERSION = ProtocolV2.VERSION;
 
@@ -74,9 +74,9 @@ public abstract class Config {
     public static final int ASYMMETRIC_KEY_SIZE = ConstantDefault.ASYMMETRIC_KEY_SIZE;
 
     /**
-     * The default cryptographic mode identifier embedded in Protocol V2 metadata messages.
+     * The default cryptographic mode identifier embedded in Protocol V3 metadata messages.
      *
-     * <p>This value is stored in the {@code mode} property of each V2 metadata message so
+     * <p>This value is stored in the {@code alg} property of each V3 metadata message so
      * that verifiers know which algorithm was used to sign the token.</p>
      *
      * @implNote Currently {@code "rsa"}.
@@ -84,9 +84,26 @@ public abstract class Config {
     public static final String DEFAULT_CRYPTO_MODE = "rsa";
 
     static {
+        long parsedRotation = ConstantDefault.KEYS_ROTATION_MINUTES;
         final var rotationRate = System.getenv(Env.KEYS_ROTATION_MINUTES);
-        KEYS_ROTATION_MINUTES = rotationRate != null
-                ? Long.parseLong(rotationRate)
-                : ConstantDefault.KEYS_ROTATION_MINUTES;
+        if (rotationRate != null) {
+            try {
+                long parsed = Long.parseLong(rotationRate);
+                if (parsed >= 1) {
+                    parsedRotation = parsed;
+                } else {
+                    System.getLogger(Config.class.getName()).log(
+                            System.Logger.Level.WARNING,
+                            "Ignoring invalid " + Env.KEYS_ROTATION_MINUTES + "=" + parsed
+                                    + " (must be >= 1). Using default: " + ConstantDefault.KEYS_ROTATION_MINUTES);
+                }
+            } catch (NumberFormatException e) {
+                System.getLogger(Config.class.getName()).log(
+                        System.Logger.Level.WARNING,
+                        "Ignoring non-numeric " + Env.KEYS_ROTATION_MINUTES + "='" + rotationRate
+                                + "'. Using default: " + ConstantDefault.KEYS_ROTATION_MINUTES);
+            }
+        }
+        KEYS_ROTATION_MINUTES = parsedRotation;
     }
 }

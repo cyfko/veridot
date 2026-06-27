@@ -6,6 +6,6 @@ import org.testcontainers.utility.DockerImageName;
 
 public class MySQLTest extends DatabaseTest {
     public MySQLTest() {
-        super(new MySQLContainer<>(DockerImageName.parse("mysql:lts")));
+        super(new MySQLContainer<>(DockerImageName.parse("mysql:8.4")));
     }
 }

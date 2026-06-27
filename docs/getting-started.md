@@ -246,4 +246,4 @@ boolean isValid2 = sv.hasActiveToken("2:user-42:device-iphone");
 - **[Modèle de sécurité]({{ '/docs/security' | relative_url }})** — Modèle de menaces, durcissement production, checklist
 - **[Référence API]({{ '/docs/api-reference' | relative_url }})** — Toutes les interfaces, exceptions, variables d'environnement
 - **[ADR-001 TrustAnchor]({{ '/docs/adr/001-trust-anchor' | relative_url }})** — Pourquoi et comment le TrustAnchor a été conçu
-- **[Protocol V2]({{ '/PROTOCOL_V2' | relative_url }})** — Spécification complète du format de message
+- **[Protocol V3]({{ '/PROTOCOL_V3' | relative_url }})** — Spécification complète du format de message

@@ -6,7 +6,7 @@
 
     <groupId>io.github.cyfko</groupId>
     <artifactId>veridot-tests</artifactId>
-    <version>3.0.1</version>
+    <version>3.0.2</version>
 
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
@@ -37,17 +37,17 @@
         <dependency>
             <groupId>io.github.cyfko</groupId>
             <artifactId>veridot-core</artifactId>
-            <version>3.0.1</version>
+            <version>3.0.2</version>
         </dependency>
         <dependency>
             <groupId>io.github.cyfko</groupId>
             <artifactId>veridot-kafka</artifactId>
-            <version>3.0.1</version>
+            <version>3.0.2</version>
         </dependency>
         <dependency>
             <groupId>io.github.cyfko</groupId>
             <artifactId>veridot-databases</artifactId>
-            <version>3.0.1</version>
+            <version>3.0.2</version>
         </dependency>
 
         <dependency>

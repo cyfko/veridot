@@ -13,7 +13,6 @@ package io.github.cyfko.veridot.core.exceptions;
  *       signature does not match the claimed identity. This is a potential security event
  *       and must be logged/alerted separately from {@code Unavailable}.</li>
  * </ul>
- * </p>
  *
  * <p>This exception is checked so that callers are forced by the compiler to handle both
  * failure paths explicitly — the whole point of the sealed hierarchy is to make it

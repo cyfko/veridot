@@ -2,7 +2,7 @@ package io.github.cyfko.veridot.core;
 
 /**
  * Immutable result of a successful token verification, carrying the deserialized payload
- * together with the Protocol V2 identifiers that were bound to the token at signing time.
+ * together with the Protocol V3 identifiers that were bound to the token at signing time.
  *
  * <p>This record eliminates the need to re-parse the token string or redundantly embed
  * protocol identifiers ({@code groupId}, {@code sequenceId}) inside the payload itself.

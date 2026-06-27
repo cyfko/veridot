@@ -14,7 +14,7 @@ package io.github.cyfko.veridot.core.exceptions;
  * <h2>Example</h2>
  * <pre>{@code
  * // Allow at most 2 concurrent sessions; reject any 3rd attempt
- * var sv = new GenericSignerVerifier(broker, "salt", 2, EvictionPolicy.REJECT);
+ * var sv = new GenericSignerVerifier(broker, trustAnchor, "my-signer", longTermKey, 2, EvictionPolicy.REJECT);
  *
  * sv.sign("payload", BasicConfigurer.builder().groupId("user-1").validity(3600).build());
  * sv.sign("payload", BasicConfigurer.builder().groupId("user-1").validity(3600).build());

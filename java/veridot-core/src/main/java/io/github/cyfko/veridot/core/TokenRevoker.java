@@ -3,7 +3,7 @@ package io.github.cyfko.veridot.core;
 /**
  * Contract for invalidating previously issued tokens.
  *
- * <p>Revocation is expressed in terms of Protocol V2 identifiers ({@code groupId} and
+ * <p>Revocation is expressed in terms of Protocol V3 identifiers ({@code groupId} and
  * {@code sequenceId}) rather than opaque token strings, ensuring that the revocation is
  * broker-centric — any service sharing the same {@link MetadataBroker} will immediately
  * stop accepting the revoked token, regardless of which service issued it.</p>
@@ -17,7 +17,7 @@ package io.github.cyfko.veridot.core;
  *
  * <h2>Typical usage</h2>
  * <pre>{@code
- * TokenRevoker revoker = new GenericSignerVerifier(broker, "my-salt");
+ * TokenRevoker revoker = new GenericSignerVerifier(broker, trustAnchor, "my-signer", longTermKey);
  *
  * // Revoke a specific session (obtained from VerifiedData after verification)
  * revoker.revoke("user-123", "session-A");

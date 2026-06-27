@@ -46,7 +46,7 @@ class KafkaUnitTest {
         tempDir = Files.createTempDirectory("veridot_unit_test_").toFile();
         props.setProperty(VerifierConfig.EMBEDDED_DB_PATH_CONFIG, tempDir.getAbsolutePath());
 
-        GenericSignerVerifier gsv = new GenericSignerVerifier(KafkaMetadataBrokerAdapter.of(props), "test-salt");
+        GenericSignerVerifier gsv = TestTrustSetup.create().newSignerVerifier(KafkaMetadataBrokerAdapter.of(props));
         dataSigner    = gsv;
         tokenVerifier = gsv;
     }

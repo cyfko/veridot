@@ -49,7 +49,7 @@ public abstract class DatabaseTest {
     void setUpClass() {
         dataSource = createDataSource();
         MetadataBroker metadataBroker = new DatabaseMetadataBroker(dataSource, "broker_messages");
-        GenericSignerVerifier gsv = new GenericSignerVerifier(metadataBroker, "test-salt");
+        GenericSignerVerifier gsv = TestTrustSetup.create().newSignerVerifier(metadataBroker);
         dataSigner    = gsv;
         tokenVerifier = gsv;
         tokenRevoker  = gsv;
@@ -236,8 +236,8 @@ public abstract class DatabaseTest {
         Thread.sleep(2000);
 
         // Pre-condition: verify entries exist in the raw SQL table
-        String keyA = "2:" + groupId + ":" + seqA;
-        String keyB = "2:" + groupId + ":" + seqB;
+        String keyA = "3:" + groupId + ":" + seqA;
+        String keyB = "3:" + groupId + ":" + seqB;
         assertTrue(existsInDb(keyA), "Sequence A must exist in DB before revokeGroup");
         assertTrue(existsInDb(keyB), "Sequence B must exist in DB before revokeGroup");
 
@@ -249,7 +249,7 @@ public abstract class DatabaseTest {
         assertFalse(existsInDb(keyB), "Sequence B must be physically deleted from DB after revokeGroup");
 
         // The __REVOKE__ entry persists for interoperability
-        String revokeKey = "2:" + groupId + ":__REVOKE__";
+        String revokeKey = "3:" + groupId + ":__REVOKE__";
         assertTrue(existsInDb(revokeKey), "__REVOKE__ entry must persist in DB for interoperability");
     }
 

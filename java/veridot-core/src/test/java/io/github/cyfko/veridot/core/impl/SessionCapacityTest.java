@@ -29,12 +29,12 @@ class SessionCapacityTest {
         Thread.sleep(1100);
         sv.sign("d3", BasicConfigurer.builder().groupId("u1").sequenceId("s3").validity(600).build());
 
-        var activeKeys = broker.getKeysByPrefix("2:u1:").stream()
+        var activeKeys = broker.getKeysByPrefix("3:u1:").stream()
                 .filter(k -> !ProtocolV2.isReservedSequence(k)).toList();
         assertEquals(2, activeKeys.size(), "Only 2 sessions must remain after FIFO eviction");
-        assertFalse(broker.containsKey("2:u1:s1"), "s1 must be evicted (oldest, FIFO)");
-        assertTrue(broker.containsKey("2:u1:s2"), "s2 must still be active");
-        assertTrue(broker.containsKey("2:u1:s3"), "s3 must be active (newest)");
+        assertFalse(broker.containsKey("3:u1:s1"), "s1 must be evicted (oldest, FIFO)");
+        assertTrue(broker.containsKey("3:u1:s2"), "s2 must still be active");
+        assertTrue(broker.containsKey("3:u1:s3"), "s3 must be active (newest)");
     }
 
     @Test
@@ -47,12 +47,12 @@ class SessionCapacityTest {
         Thread.sleep(1100);
         sv.sign("d3", BasicConfigurer.builder().groupId("u1").sequenceId("s3").validity(600).build());
 
-        var activeKeys = broker.getKeysByPrefix("2:u1:").stream()
+        var activeKeys = broker.getKeysByPrefix("3:u1:").stream()
                 .filter(k -> !ProtocolV2.isReservedSequence(k)).toList();
         assertEquals(2, activeKeys.size(), "Only 2 sessions must remain after LIFO eviction");
-        assertTrue(broker.containsKey("2:u1:s1"), "s1 must still be active (oldest)");
-        assertFalse(broker.containsKey("2:u1:s2"), "s2 must be evicted (newest at time of 3rd sign, LIFO)");
-        assertTrue(broker.containsKey("2:u1:s3"), "s3 must be active (just signed)");
+        assertTrue(broker.containsKey("3:u1:s1"), "s1 must still be active (oldest)");
+        assertFalse(broker.containsKey("3:u1:s2"), "s2 must be evicted (newest at time of 3rd sign, LIFO)");
+        assertTrue(broker.containsKey("3:u1:s3"), "s3 must be active (just signed)");
     }
 
     @Test
@@ -65,7 +65,7 @@ class SessionCapacityTest {
         sv.sign("d4", BasicConfigurer.builder().groupId("u1").validity(600).build());
         sv.sign("d5", BasicConfigurer.builder().groupId("u1").validity(600).build());
 
-        var activeKeys = broker.getKeysByPrefix("2:u1:");
+        var activeKeys = broker.getKeysByPrefix("3:u1:");
         assertEquals(5, activeKeys.size(), "All 5 sessions must be retained when no maxSessions limit is set");
     }
 
@@ -82,9 +82,9 @@ class SessionCapacityTest {
         // This 3rd sign should NOT trigger eviction (count < maxSessions)
         sv.sign("d3", BasicConfigurer.builder().groupId("u1").sequenceId("s3").validity(600).build());
 
-        assertTrue(broker.containsKey("2:u1:s2"), "s2 must still be active");
-        assertTrue(broker.containsKey("2:u1:s3"), "s3 must be active");
-        assertFalse(broker.containsKey("2:u1:s1"), "s1 must remain revoked");
+        assertTrue(broker.containsKey("3:u1:s2"), "s2 must still be active");
+        assertTrue(broker.containsKey("3:u1:s3"), "s3 must be active");
+        assertFalse(broker.containsKey("3:u1:s1"), "s1 must remain revoked");
     }
 
     @Test
@@ -96,9 +96,9 @@ class SessionCapacityTest {
         sv.sign("d3", BasicConfigurer.builder().groupId("u2").sequenceId("s3").validity(600).build());
 
         // u1 should still have its 1 session
-        assertTrue(broker.containsKey("2:u1:s1"), "u1:s1 must not be affected by u2 eviction");
+        assertTrue(broker.containsKey("3:u1:s1"), "u1:s1 must not be affected by u2 eviction");
         // u2 should have exactly 1 session (s3 evicted s2)
-        long normalCount = broker.getKeysByPrefix("2:u2:").stream()
+        long normalCount = broker.getKeysByPrefix("3:u2:").stream()
                 .filter(k -> !ProtocolV2.isReservedSequence(k)).count();
         assertEquals(1, normalCount, "u2 must have exactly 1 active session");
     }
@@ -125,12 +125,12 @@ class SessionCapacityTest {
         // Publish a local config with maxSessions=1
         long now = java.time.Instant.now().getEpochSecond();
         var cfgProps = new java.util.LinkedHashMap<String, String>();
-        cfgProps.put("timestamp", String.valueOf(now));
-        cfgProps.put("validUntil", String.valueOf(now + 3600));
-        cfgProps.put("maxSessions", "1");
-        cfgProps.put("policy", "FIFO");
+        cfgProps.put("ts", String.valueOf(now));
+        cfgProps.put("exp", String.valueOf(now + 3600));
+        cfgProps.put("max", "1");
+        cfgProps.put("pol", "FIFO");
         String configMsg = ProtocolV2.buildMessage("u1", "__CONFIG__", cfgProps);
-        broker.send("2:u1:__CONFIG__", configMsg);
+        broker.send("3:u1:__CONFIG__", configMsg);
 
         // Sign 2 sessions — config should enforce maxSessions=1
         sv.sign("d1", BasicConfigurer.builder().groupId("u1").sequenceId("s1").validity(600).build());
@@ -138,8 +138,8 @@ class SessionCapacityTest {
         sv.sign("d2", BasicConfigurer.builder().groupId("u1").sequenceId("s2").validity(600).build());
 
         // s1 should be evicted (FIFO), only s2 remains
-        assertFalse(broker.containsKey("2:u1:s1"), "s1 must be evicted per local config");
-        assertTrue(broker.containsKey("2:u1:s2"), "s2 must be active");
+        assertFalse(broker.containsKey("3:u1:s1"), "s1 must be evicted per local config");
+        assertTrue(broker.containsKey("3:u1:s2"), "s2 must be active");
     }
 
     @Test
@@ -149,12 +149,12 @@ class SessionCapacityTest {
         // Publish a global config with maxSessions=1
         long now = java.time.Instant.now().getEpochSecond();
         var cfgProps = new java.util.LinkedHashMap<String, String>();
-        cfgProps.put("timestamp", String.valueOf(now));
-        cfgProps.put("validUntil", String.valueOf(now + 3600));
-        cfgProps.put("maxSessions", "1");
-        cfgProps.put("policy", "FIFO");
+        cfgProps.put("ts", String.valueOf(now));
+        cfgProps.put("exp", String.valueOf(now + 3600));
+        cfgProps.put("max", "1");
+        cfgProps.put("pol", "FIFO");
         String configMsg = ProtocolV2.buildMessage("__CONFIG__", "__ALL__", cfgProps);
-        broker.send("2:__CONFIG__:__ALL__", configMsg);
+        broker.send("3:__CONFIG__:__ALL__", configMsg);
 
         // Sign 2 sessions for a group that has NO local config
         sv.sign("d1", BasicConfigurer.builder().groupId("u2").sequenceId("s1").validity(600).build());
@@ -162,8 +162,8 @@ class SessionCapacityTest {
         sv.sign("d2", BasicConfigurer.builder().groupId("u2").sequenceId("s2").validity(600).build());
 
         // Global config should apply: s1 evicted
-        assertFalse(broker.containsKey("2:u2:s1"), "s1 must be evicted per global config");
-        assertTrue(broker.containsKey("2:u2:s2"), "s2 must remain active");
+        assertFalse(broker.containsKey("3:u2:s1"), "s1 must be evicted per global config");
+        assertTrue(broker.containsKey("3:u2:s2"), "s2 must remain active");
     }
 
     // ── REJECT policy ────────────────────────────────────────────────────────
@@ -297,8 +297,8 @@ class SessionCapacityTest {
         sv.sign("d2", BasicConfigurer.builder().groupId("gc").sequenceId("s2").validity(1).build());
 
         // Both entries exist in broker
-        assertTrue(broker.containsKey("2:gc:s1"), "s1 must exist before expiry");
-        assertTrue(broker.containsKey("2:gc:s2"), "s2 must exist before expiry");
+        assertTrue(broker.containsKey("3:gc:s1"), "s1 must exist before expiry");
+        assertTrue(broker.containsKey("3:gc:s2"), "s2 must exist before expiry");
 
         // Wait for expiration
         Thread.sleep(2500);
@@ -307,8 +307,8 @@ class SessionCapacityTest {
         sv.sign("d3", BasicConfigurer.builder().groupId("gc").sequenceId("s3").validity(600).build());
 
         // Expired entries must be physically deleted from the broker (lazy GC)
-        assertFalse(broker.containsKey("2:gc:s1"), "Expired s1 must be GC'd after next sign");
-        assertFalse(broker.containsKey("2:gc:s2"), "Expired s2 must be GC'd after next sign");
-        assertTrue(broker.containsKey("2:gc:s3"), "New s3 must exist");
+        assertFalse(broker.containsKey("3:gc:s1"), "Expired s1 must be GC'd after next sign");
+        assertFalse(broker.containsKey("3:gc:s2"), "Expired s2 must be GC'd after next sign");
+        assertTrue(broker.containsKey("3:gc:s3"), "New s3 must exist");
     }
 }

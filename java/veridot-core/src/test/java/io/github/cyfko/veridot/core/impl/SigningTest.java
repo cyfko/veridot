@@ -24,7 +24,7 @@ class SigningTest {
                 .distribution(DistributionMode.DIRECT).build();
         String result = signer.sign("data", cfg);
         assertTrue(result.contains("."), "DIRECT mode must return a JWT (contains dots)");
-        assertFalse(result.startsWith("2:"), "DIRECT mode must NOT return a messageId");
+        assertFalse(result.startsWith("3:"), "DIRECT mode must NOT return a messageId");
     }
 
     @Test
@@ -32,28 +32,28 @@ class SigningTest {
         var cfg = BasicConfigurer.builder().groupId("user1").validity(60)
                 .distribution(DistributionMode.INDIRECT).build();
         String result = signer.sign("data", cfg);
-        assertTrue(result.startsWith("2:"), "INDIRECT mode must return a messageId starting with '2:'");
+        assertTrue(result.startsWith("3:"), "INDIRECT mode must return a messageId starting with '3:'");
         assertFalse(result.contains("."), "INDIRECT mode must NOT return a JWT");
     }
 
     @Test
-    void sign_stores_v2_message_in_broker() {
+    void sign_stores_v3_message_in_broker() {
         var cfg = BasicConfigurer.builder().groupId("user1").validity(60).build();
         signer.sign("data", cfg);
 
-        var keys = broker.getKeysByPrefix("2:user1:");
+        var keys = broker.getKeysByPrefix("3:user1:");
         assertEquals(1, keys.size(), "Exactly one broker entry must be created");
 
         String stored = broker.getRaw(keys.get(0));
         assertNotNull(stored);
-        assertTrue(stored.contains("|"), "Stored message must contain V2 metadata separator '|'");
-        assertTrue(stored.contains("mode:"), "Stored message must contain 'mode' property");
-        assertTrue(stored.contains("pubkey:"), "Stored message must contain 'pubkey' property");
-        assertTrue(stored.contains("timestamp:"), "Stored message must contain 'timestamp' property");
+        assertTrue(stored.contains("|"), "Stored message must contain V3 metadata separator '|'");
+        assertTrue(stored.contains("alg:"), "Stored message must contain 'alg' property");
+        assertTrue(stored.contains("pk:"), "Stored message must contain 'pk' property");
+        assertTrue(stored.contains("ts:"), "Stored message must contain 'ts' property");
         assertTrue(stored.contains("ttl:"), "Stored message must contain 'ttl' property");
         // v3.0 — trust-anchor fields must be present
-        assertTrue(stored.contains("signerId:"), "Stored message must contain 'signerId' property (F1)");
-        assertTrue(stored.contains("announcementSig:"), "Stored message must contain 'announcementSig' property (F1)");
+        assertTrue(stored.contains("sid:"), "Stored message must contain 'sid' property (F1)");
+        assertTrue(stored.contains("sig:"), "Stored message must contain 'sig' property (F1)");
     }
 
     @Test
@@ -62,7 +62,7 @@ class SigningTest {
                 .distribution(DistributionMode.INDIRECT).build();
         signer.sign("data", cfg);
 
-        var keys = broker.getKeysByPrefix("2:user1:");
+        var keys = broker.getKeysByPrefix("3:user1:");
         String stored = broker.getRaw(keys.get(0));
         assertTrue(stored.contains("token:"), "INDIRECT mode must store 'token' property in metadata");
     }
@@ -73,7 +73,7 @@ class SigningTest {
                 .distribution(DistributionMode.DIRECT).build();
         signer.sign("data", cfg);
 
-        var keys = broker.getKeysByPrefix("2:user1:");
+        var keys = broker.getKeysByPrefix("3:user1:");
         String stored = broker.getRaw(keys.get(0));
         assertFalse(stored.contains("token:"), "DIRECT mode must NOT store 'token' property in metadata");
     }
@@ -94,7 +94,7 @@ class SigningTest {
     void sign_custom_sequenceId_used_as_broker_key() {
         var cfg = BasicConfigurer.builder().groupId("user1").sequenceId("my-session").validity(60).build();
         signer.sign("data", cfg);
-        assertTrue(broker.containsKey("2:user1:my-session"),
+        assertTrue(broker.containsKey("3:user1:my-session"),
                 "Broker must contain key with custom sequenceId");
     }
 
@@ -105,7 +105,7 @@ class SigningTest {
         signer.sign("data1", cfg1);
         signer.sign("data2", cfg2);
 
-        var keys = broker.getKeysByPrefix("2:user1:");
+        var keys = broker.getKeysByPrefix("3:user1:");
         assertEquals(2, keys.size(), "Two signs with auto-sequenceId must create 2 distinct broker entries");
         assertNotEquals(keys.get(0), keys.get(1), "Auto-generated sequenceIds must be unique");
     }

@@ -43,9 +43,9 @@ class RevocationTest {
     void revoke_removes_broker_entry() {
         var cfg = BasicConfigurer.builder().groupId("u1").sequenceId("s1").validity(600).build();
         sv.sign("data", cfg);
-        assertTrue(broker.containsKey("2:u1:s1"), "Entry must exist before revocation");
+        assertTrue(broker.containsKey("3:u1:s1"), "Entry must exist before revocation");
         sv.revoke("u1", "s1");
-        assertFalse(broker.containsKey("2:u1:s1"), "Entry must be removed after revocation");
+        assertFalse(broker.containsKey("3:u1:s1"), "Entry must be removed after revocation");
     }
 
     @Test
@@ -54,15 +54,15 @@ class RevocationTest {
         String t2 = sv.sign("d2", BasicConfigurer.builder().groupId("u1").validity(600).build());
         String t3 = sv.sign("d3", BasicConfigurer.builder().groupId("u1").validity(600).build());
 
-        long normalCountBefore = broker.getKeysByPrefix("2:u1:").stream()
+        long normalCountBefore = broker.getKeysByPrefix("3:u1:").stream()
                 .filter(k -> !ProtocolV2.isReservedSequence(k)).count();
         assertEquals(3, normalCountBefore, "Must have 3 active sessions before revokeGroup");
         sv.revoke("u1", null);
-        long normalCountAfter = broker.getKeysByPrefix("2:u1:").stream()
+        long normalCountAfter = broker.getKeysByPrefix("3:u1:").stream()
                 .filter(k -> !ProtocolV2.isReservedSequence(k)).count();
         assertEquals(0, normalCountAfter, "Must have 0 normal sessions after revokeGroup");
         // The __REVOKE__ message itself persists (for interoperability)
-        assertTrue(broker.containsKey("2:u1:__REVOKE__"), "Revocation message must persist in broker");
+        assertTrue(broker.containsKey("3:u1:__REVOKE__"), "Revocation message must persist in broker");
 
         assertThrows(BrokerExtractionException.class, () -> sv.verify(t1, s -> s));
         assertThrows(BrokerExtractionException.class, () -> sv.verify(t2, s -> s));
@@ -94,14 +94,14 @@ class RevocationTest {
         sv.revoke("u1", "s1");
 
         // The __REVOKE__ message must exist in the broker
-        String revokeKey = "2:u1:__REVOKE__";
+        String revokeKey = "3:u1:__REVOKE__";
         assertTrue(broker.containsKey(revokeKey), "Revocation key must exist in broker");
         String revokeMsg = broker.getRaw(revokeKey);
-        assertTrue(revokeMsg.startsWith("2:u1:__REVOKE__|"), "Must be a structured V2 __REVOKE__ message");
+        assertTrue(revokeMsg.startsWith("3:u1:__REVOKE__|"), "Must be a structured V3 __REVOKE__ message");
         assertTrue(revokeMsg.contains("target:"), "Must contain 'target' property");
-        assertTrue(revokeMsg.contains("timestamp:"), "Must contain 'timestamp' property");
+        assertTrue(revokeMsg.contains("ts:"), "Must contain 'ts' property");
         // v3.0 — tombstone must be signed (F7)
-        assertTrue(revokeMsg.contains("tombstoneSig:"), "Must contain 'tombstoneSig' property (F7)");
+        assertTrue(revokeMsg.contains("sig:"), "Must contain 'sig' property (F7)");
     }
 
     @Test
@@ -112,24 +112,24 @@ class RevocationTest {
         sv.sign("d3", BasicConfigurer.builder().groupId("g1").sequenceId("ses-C").validity(600).build());
 
         // Pre-conditions: all 3 entries exist physically in the store
-        assertTrue(broker.containsKey("2:g1:ses-A"), "ses-A must exist before revokeGroup");
-        assertTrue(broker.containsKey("2:g1:ses-B"), "ses-B must exist before revokeGroup");
-        assertTrue(broker.containsKey("2:g1:ses-C"), "ses-C must exist before revokeGroup");
+        assertTrue(broker.containsKey("3:g1:ses-A"), "ses-A must exist before revokeGroup");
+        assertTrue(broker.containsKey("3:g1:ses-B"), "ses-B must exist before revokeGroup");
+        assertTrue(broker.containsKey("3:g1:ses-C"), "ses-C must exist before revokeGroup");
 
         sv.revoke("g1", null);
 
         // Post-conditions: each entry is physically removed (not just logically expired)
-        assertFalse(broker.containsKey("2:g1:ses-A"), "ses-A must be physically deleted after revokeGroup");
-        assertFalse(broker.containsKey("2:g1:ses-B"), "ses-B must be physically deleted after revokeGroup");
-        assertFalse(broker.containsKey("2:g1:ses-C"), "ses-C must be physically deleted after revokeGroup");
+        assertFalse(broker.containsKey("3:g1:ses-A"), "ses-A must be physically deleted after revokeGroup");
+        assertFalse(broker.containsKey("3:g1:ses-B"), "ses-B must be physically deleted after revokeGroup");
+        assertFalse(broker.containsKey("3:g1:ses-C"), "ses-C must be physically deleted after revokeGroup");
 
         // Only the __REVOKE__ entry remains
-        assertTrue(broker.containsKey("2:g1:__REVOKE__"), "__REVOKE__ entry must persist for interoperability");
+        assertTrue(broker.containsKey("3:g1:__REVOKE__"), "__REVOKE__ entry must persist for interoperability");
 
         // Total keys for the group = exactly 1 (__REVOKE__ only)
-        var remainingKeys = broker.getKeysByPrefix("2:g1:");
+        var remainingKeys = broker.getKeysByPrefix("3:g1:");
         assertEquals(1, remainingKeys.size(), "Only __REVOKE__ key should remain in broker");
-        assertEquals("2:g1:__REVOKE__", remainingKeys.get(0));
+        assertEquals("3:g1:__REVOKE__", remainingKeys.get(0));
     }
 
     @Test
@@ -138,7 +138,7 @@ class RevocationTest {
         sv.sign("d2", BasicConfigurer.builder().groupId("u1").validity(600).build());
         sv.revoke("u1", null);
 
-        String revokeKey = "2:u1:__REVOKE__";
+        String revokeKey = "3:u1:__REVOKE__";
         assertTrue(broker.containsKey(revokeKey), "Revocation key must exist after revokeGroup");
         String revokeMsg = broker.getRaw(revokeKey);
 
@@ -161,15 +161,15 @@ class RevocationTest {
         sv.revoke("replay-grp", "s1");
 
         // The tombstone must be present
-        assertTrue(broker.containsKey("2:replay-grp:__REVOKE__"),
+        assertTrue(broker.containsKey("3:replay-grp:__REVOKE__"),
                 "Tombstone must be present after revocation");
-        String tombstone = broker.getRaw("2:replay-grp:__REVOKE__");
+        String tombstone = broker.getRaw("3:replay-grp:__REVOKE__");
         var meta = ProtocolV2.parseMetadata(tombstone);
-        assertNotNull(meta.get("timestamp"), "Tombstone must carry a timestamp (F7)");
-        assertNotNull(meta.get("tombstoneSig"), "Tombstone must carry a long-term signature (F7)");
+        assertNotNull(meta.get("ts"), "Tombstone must carry a ts (F7)");
+        assertNotNull(meta.get("sig"), "Tombstone must carry a long-term signature (F7)");
 
         // The original session entry must be gone
-        assertFalse(broker.containsKey("2:replay-grp:s1"),
+        assertFalse(broker.containsKey("3:replay-grp:s1"),
                 "Revoked session entry must be deleted — replay cannot resurrect it");
     }
 }

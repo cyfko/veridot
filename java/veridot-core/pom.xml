@@ -6,7 +6,7 @@
 
     <groupId>io.github.cyfko</groupId>
     <artifactId>veridot-core</artifactId>
-    <version>3.0.1</version>
+    <version>3.0.2</version>
     <packaging>jar</packaging>
 
     <name>Veridot Core - Distributed Token Verification</name>
@@ -125,9 +125,25 @@
                 <artifactId>maven-javadoc-plugin</artifactId>
                 <version>3.6.3</version>
                 <configuration>
-                    <additionalJOption>-tag apiNote:a:"API Note:"</additionalJOption>
-                    <additionalJOption>-tag implSpec:a:"Implementation Requirements:"</additionalJOption>
-                    <additionalJOption>-tag implNote:a:"Implementation Note:"</additionalJOption>
+                    <doclint>none</doclint>
+                    <failOnWarnings>false</failOnWarnings>
+                    <tags>
+                        <tag>
+                            <name>apiNote</name>
+                            <placement>a</placement>
+                            <head>API Note:</head>
+                        </tag>
+                        <tag>
+                            <name>implSpec</name>
+                            <placement>a</placement>
+                            <head>Implementation Requirements:</head>
+                        </tag>
+                        <tag>
+                            <name>implNote</name>
+                            <placement>a</placement>
+                            <head>Implementation Note:</head>
+                        </tag>
+                    </tags>
                 </configuration>
                 <executions>
                     <execution>

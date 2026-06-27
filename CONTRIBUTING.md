@@ -1,4 +1,4 @@
-# Contributing to DVerify
+# Contributing to Veridot
 
 ## Code of Conduct
 The code of conduct is described in [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)
