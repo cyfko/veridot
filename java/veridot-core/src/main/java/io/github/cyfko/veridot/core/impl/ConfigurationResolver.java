@@ -84,11 +84,11 @@ class ConfigurationResolver {
             try {
                 TrustedAnnouncement.verify(configKey, meta, trustAnchor);
             } catch (TrustResolutionException.SignatureRejected e) {
-                logger.warning("F9: Rejected unsigned/forged config at " + configKey
+                logger.warning("Rejected unsigned/forged config at " + configKey
                         + " — falling back to next priority level: " + e.getMessage());
                 return null;
             } catch (TrustResolutionException.Unavailable e) {
-                logger.warning("F9: TrustAnchor unavailable for config at " + configKey
+                logger.warning("TrustAnchor unavailable for config at " + configKey
                         + ", falling back to next priority level: " + e.getMessage());
                 return null;
             }

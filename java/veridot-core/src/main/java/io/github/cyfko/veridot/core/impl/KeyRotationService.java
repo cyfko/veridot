@@ -29,7 +29,7 @@ class KeyRotationService {
             KeyPairGenerator gen = KeyPairGenerator.getInstance("RSA");
             gen.initialize(Config.ASYMMETRIC_KEY_SIZE, new SecureRandom());
             this.currentKeyPair = gen.generateKeyPair();
-            logger.info("F3: Ephemeral RSA-" + Config.ASYMMETRIC_KEY_SIZE 
+            logger.info("Ephemeral RSA-" + Config.ASYMMETRIC_KEY_SIZE 
                     + " key pair rotated successfully on thread: " + Thread.currentThread().getName());
         } catch (NoSuchAlgorithmException e) {
             logger.severe("CRITICAL: Failed to generate ephemeral key pair: " + e.getMessage());

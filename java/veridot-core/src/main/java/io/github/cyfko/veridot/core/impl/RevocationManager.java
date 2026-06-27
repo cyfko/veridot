@@ -56,7 +56,7 @@ class RevocationManager {
             String tombstoneSignerId = tombstoneMeta.get(Protocol.PROP_SID);
             if (tombstoneSigB64 == null || tombstoneSigB64.isEmpty()
                     || tombstoneSignerId == null || tombstoneTarget == null) {
-                logger.warning("F7: Ignoring unsigned/incomplete tombstone for group=" + groupId);
+                logger.warning("Ignoring unsigned/incomplete tombstone for group=" + groupId);
                 return;
             }
 
@@ -66,7 +66,7 @@ class RevocationManager {
                 // the revocation is cryptographically proven
                 if (tombstoneTs > announcementTs) {
                     if (Protocol.SEQ_ALL.equals(tombstoneTarget) || sequenceId.equals(tombstoneTarget)) {
-                        logger.info("F7: Rejecting token — verified tombstone (ts=" + tombstoneTs
+                        logger.info("Rejecting token — verified tombstone (ts=" + tombstoneTs
                                 + ") supersedes announcement (ts=" + announcementTs + ")");
                         throw new BrokerExtractionException(
                                 "Session revoked: verified tombstone (ts=" + tombstoneTs
@@ -77,13 +77,13 @@ class RevocationManager {
                 throw e;
             } catch (TrustResolutionException e) {
                 // Tombstone signature invalid — ignore the tombstone (could be forged)
-                logger.warning("F7: Ignoring tombstone with invalid signature for group=" + groupId + ": " + e.getMessage());
+                logger.warning("Ignoring tombstone with invalid signature for group=" + groupId + ": " + e.getMessage());
             }
         } catch (BrokerExtractionException e) {
             throw e;
         } catch (Exception e) {
             // Malformed tombstone — log and proceed (don't block verification on bad tombstones)
-            logger.warning("F7: Failed to parse tombstone for group=" + groupId + ": " + e.getMessage());
+            logger.warning("Failed to parse tombstone for group=" + groupId + ": " + e.getMessage());
         }
     }
 }
