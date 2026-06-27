@@ -1,6 +1,10 @@
 package io.github.cyfko.veridot.kafka;
 
 import io.github.cyfko.veridot.core.MetadataBroker;
+import io.github.cyfko.veridot.core.TrustAnchor;
+import io.github.cyfko.veridot.core.impl.TrustedAnnouncement;
+import io.github.cyfko.veridot.core.impl.ProtocolV2;
+import java.util.Map;
 import io.github.cyfko.veridot.core.exceptions.BrokerExtractionException;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -125,6 +129,12 @@ public class KafkaMetadataBrokerAdapter implements MetadataBroker, AutoCloseable
     private final ScheduledExecutorService scheduler;
     private Properties properties;
     private volatile boolean closed = false;
+    private volatile TrustAnchor trustAnchor;
+
+    @Override
+    public void setTrustAnchor(TrustAnchor trustAnchor) {
+        this.trustAnchor = trustAnchor;
+    }
 
     static {
         try {
@@ -555,6 +565,21 @@ public class KafkaMetadataBrokerAdapter implements MetadataBroker, AutoCloseable
                 }
             }
             if (target == null) return;
+
+            if (trustAnchor != null) {
+                try {
+                    Map<String, String> tombstoneMeta = ProtocolV2.parseMetadata(message);
+                    TrustedAnnouncement.verify(key, tombstoneMeta, trustAnchor);
+                } catch (Exception e) {
+                    logger.severe("SECURITY: Rejecting invalid/forged background revocation tombstone for group=" 
+                            + groupId + " — announcement deletion aborted! Details: " + e.getMessage());
+                    return; // Abort deleting any announcement keys from RocksDB!
+                }
+            } else {
+                logger.warning("No TrustAnchor set on broker adapter — skipping background announcement deletion for group=" 
+                        + groupId + " to prevent unauthenticated DoS");
+                return; // Abort deleting to prevent unauthenticated DoS!
+            }
 
             if ("__ALL__".equals(target)) {
                 // Delete all normal sequences for this group

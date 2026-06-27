@@ -121,4 +121,17 @@ public interface MetadataBroker {
      * @throws BrokerExtractionException if the prefix lookup fails due to a broker error
      */
     List<String> getKeysByPrefix(String prefix) throws BrokerExtractionException;
+
+    /**
+     * Injects the TrustAnchor into the broker implementation to verify signatures of
+     * control messages (e.g. configuration or revocations) in background/consumer tasks.
+     *
+     * <p>The default implementation is a no-op.</p>
+     *
+     * @param trustAnchor the trust anchor to use; must not be null
+     * @since 3.1.0
+     */
+    default void setTrustAnchor(TrustAnchor trustAnchor) {
+        // No-op by default
+    }
 }
