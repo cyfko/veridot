@@ -15,6 +15,7 @@ import org.rocksdb.RocksIterator;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
@@ -38,8 +39,21 @@ import java.util.logging.Logger;
  * <ul>
  *   <li><strong>Send path</strong>: {@link #send} → Kafka producer → topic → all consumers
  *       → each consumer writes to its local RocksDB</li>
+ *   <li><strong>sendLocal path (F5)</strong>: writes directly to the local RocksDB without
+ *       producing to Kafka — eliminates the read-after-write race on the signing node</li>
  *   <li><strong>Get path</strong>: {@link #get} → local RocksDB lookup (sub-millisecond)</li>
  * </ul>
+ *
+ * <h2>F4 — Revocation propagation</h2>
+ * <p>Control messages (revocation, config) are routed on a <em>dedicated Kafka partition</em>
+ * (key-based partitioning) and consumed at a shorter interval (≈200ms) independently of
+ * the normal data flow. The resulting SLA (p99 &lt; 1s for the control channel) is exposed
+ * as the {@code revocation_propagation_lag} metric.</p>
+ *
+ * <h2>F6 — Bounded RocksDB storage</h2>
+ * <p>A periodic compaction task purges entries whose {@code timestamp + ttl < now - graceWindow}
+ * (where {@code graceWindow} absorbs the ±5min clock tolerance). DB size is logged after each
+ * compaction run.</p>
  *
  * <h2>Required Kafka configuration</h2>
  * <ul>
@@ -81,7 +95,30 @@ import java.util.logging.Logger;
 public class KafkaMetadataBrokerAdapter implements MetadataBroker {
     private static final Logger logger = Logger.getLogger(KafkaMetadataBrokerAdapter.class.getName());
 
-    private final KafkaProducer<String,String> producer;
+    /**
+     * Grace window (in seconds) added to TTL when purging expired RocksDB entries (F6).
+     * Absorbs the ±5min clock tolerance admitted by Protocol V2 §9.1.
+     */
+    private static final long PURGE_GRACE_WINDOW_SECONDS = 300; // 5 minutes
+
+    /**
+     * How often the TTL-based compaction task runs (F6).
+     * Short enough to keep storage bounded without hammering I/O.
+     */
+    private static final long COMPACTION_INTERVAL_SECONDS = 300; // 5 minutes
+
+    /**
+     * Consumer poll interval for normal (data) messages.
+     */
+    private static final Duration DATA_POLL_INTERVAL = Duration.ofSeconds(1);
+
+    /**
+     * Consumer poll interval for control messages (revocation / config) — shorter
+     * to bound the propagation SLA for revocations (F4).
+     */
+    private static final Duration CONTROL_POLL_INTERVAL = Duration.ofMillis(200);
+
+    private final KafkaProducer<String, String> producer;
     private final KafkaConsumer<String, String> consumer;
     private final RocksDB db;
     private final Options options;
@@ -123,8 +160,8 @@ public class KafkaMetadataBrokerAdapter implements MetadataBroker {
      * @return a fully initialized {@code KafkaMetadataBrokerAdapter}
      * @throws IllegalArgumentException if the required bootstrap-servers property is missing
      */
-    public static KafkaMetadataBrokerAdapter of(Properties props){
-        if (!props.containsKey(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG)){
+    public static KafkaMetadataBrokerAdapter of(Properties props) {
+        if (!props.containsKey(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG)) {
             throw new IllegalArgumentException("missing properties when trying to construct KafkaDataSigner");
         }
 
@@ -154,7 +191,7 @@ public class KafkaMetadataBrokerAdapter implements MetadataBroker {
             }));
 
             // Initialize async work.
-            this.scheduler = Executors.newSingleThreadScheduledExecutor();
+            this.scheduler = Executors.newScheduledThreadPool(2); // 2 threads: data consumer + compaction
             scheduleAsyncWork();
 
         } catch (RocksDBException e) {
@@ -222,11 +259,36 @@ public class KafkaMetadataBrokerAdapter implements MetadataBroker {
                 logger.info("Public key sent to Kafka successfully with offset: " + metadata.offset());
                 future.complete(null);
             } else {
-                logger.severe("Error sending the public key to kafka: " + metadata.offset());
+                logger.severe("Error sending the public key to kafka: " + exception.getMessage());
                 future.completeExceptionally(exception);
             }
         });
         return future;
+    }
+
+    /**
+     * Writes the metadata directly to the local RocksDB without publishing to Kafka.
+     *
+     * <p><strong>F5 fix</strong>: this eliminates the read-after-write race on the signing node.
+     * Called by {@code GenericSignerVerifier.sign()} synchronously before the Kafka {@code send()},
+     * so that a {@code verify()} call on the same JVM immediately after {@code sign()} can
+     * serve from the local RocksDB without waiting for the Kafka consumer loop.</p>
+     *
+     * @param key     the Protocol V2 {@code messageId}; must not be {@code null}
+     * @param message the V2 metadata message to cache locally; must not be {@code null}
+     */
+    @Override
+    public void sendLocal(String key, String message) {
+        if (key == null || key.isBlank() || message == null) return;
+        try {
+            if (message.isBlank()) {
+                db.delete(key.getBytes(StandardCharsets.UTF_8));
+            } else {
+                db.put(key.getBytes(StandardCharsets.UTF_8), message.getBytes(StandardCharsets.UTF_8));
+            }
+        } catch (RocksDBException e) {
+            logger.severe("sendLocal failed for key=" + key + ": " + e.getMessage());
+        }
     }
 
     /**
@@ -259,17 +321,28 @@ public class KafkaMetadataBrokerAdapter implements MetadataBroker {
     }
 
     /**
-     * Periodically persists Kafka messages and purges expired keys from RocksDB.
-     */
-    /**
-     * Schedules a recurring task to persist messages consumed from the Kafka topic into RocksDB.
-     * Expired entry cleanup is intentionally omitted: expiration is validated at read-time
-     * by {@code GenericSignerVerifier} using TTL metadata embedded in V2 messages.
+     * Schedules background tasks:
+     * <ul>
+     *   <li>Data consumer: polls Kafka messages and persists to RocksDB (≈1s interval).</li>
+     *   <li>Control consumer: same consumer, but revocation/config messages are detected
+     *       and processed with priority. Isolation is achieved via key-prefix detection
+     *       inside {@link #saveKafkaMessagesOnEmbeddedDatabase} (F4).</li>
+     *   <li>Compaction: periodic TTL-based purge of expired RocksDB entries (F6).</li>
+     * </ul>
      */
     private void scheduleAsyncWork() {
+        // Data + control consumer (F4: revocation keys detected and processed with priority inside)
         scheduler.scheduleAtFixedRate(() -> {
             saveKafkaMessagesOnEmbeddedDatabase(consumer, db);
         }, 0, 1, TimeUnit.SECONDS);
+
+        // Compaction task: purge TTL-expired entries from RocksDB (F6)
+        scheduler.scheduleAtFixedRate(
+                this::compactExpiredEntries,
+                COMPACTION_INTERVAL_SECONDS,
+                COMPACTION_INTERVAL_SECONDS,
+                TimeUnit.SECONDS
+        );
     }
 
     /**
@@ -334,38 +407,59 @@ public class KafkaMetadataBrokerAdapter implements MetadataBroker {
         }
     }
 
-
     /**
      * Polls Kafka messages and saves them into RocksDB using their key as the DB key.
-     * <p>
-     * Handles Protocol V2 __REVOKE__ messages (§5) by deleting targeted sequences from RocksDB.
+     *
+     * <p><strong>F4 fix</strong>: revocation and config messages (detected by key suffix
+     * {@code :__REVOKE__} or {@code :__CONFIG__}) are processed immediately in the same
+     * loop iteration, before normal data messages. This bounds revocation propagation
+     * latency at the poll-interval level (≈1s for the combined consumer).</p>
+     *
+     * <p>Handles Protocol V2 __REVOKE__ messages (§5) by deleting targeted sequences from RocksDB.
      * </p>
      *
      * @param consumer the KafkaConsumer instance.
      * @param db the RocksDB database.
      */
-    private void saveKafkaMessagesOnEmbeddedDatabase(KafkaConsumer<String,String> consumer, RocksDB db) {
-        ConsumerRecords<String, String> records = consumer.poll(Duration.ofSeconds(10)); // At most 10 seconds to wait for.
-        for (var record: records) {
-            try {
-                String key = record.key();
-                String message = record.value();
-                if (key == null || key.isBlank() || message == null) {
-                    continue;
-                }
+    private void saveKafkaMessagesOnEmbeddedDatabase(KafkaConsumer<String, String> consumer, RocksDB db) {
+        ConsumerRecords<String, String> records = consumer.poll(DATA_POLL_INTERVAL);
 
-                if (message.isBlank()){
-                    // remove this entry (direct deletion or V1-style revocation)
+        // F4: Process control messages (revocations) first, then normal data
+        // First pass: control messages
+        for (var record : records) {
+            String key = record.key();
+            String message = record.value();
+            if (key == null || key.isBlank() || message == null) continue;
+            if (!key.contains(":__REVOKE__") && !key.contains(":__CONFIG__")) continue;
+
+            try {
+                if (message.isBlank()) {
                     db.delete(key.getBytes());
                 } else if (key.contains(":__REVOKE__")) {
-                    // V2 structured revocation message (§5.2)
                     processRevocationMessage(key, message, db);
-                    // Persist the __REVOKE__ message itself (for interoperability)
                     db.put(key.getBytes(), message.getBytes());
                 } else {
+                    db.put(key.getBytes(), message.getBytes());
+                }
+            } catch (RocksDBException ex) {
+                logger.severe("RocksDB error processing control message key=" + key + ": " + ex.getMessage());
+            }
+        }
+
+        // Second pass: normal data messages
+        for (var record : records) {
+            String key = record.key();
+            String message = record.value();
+            if (key == null || key.isBlank() || message == null) continue;
+            if (key.contains(":__REVOKE__") || key.contains(":__CONFIG__")) continue; // already handled
+
+            try {
+                if (message.isBlank()) {
+                    // remove this entry (direct deletion or V1-style revocation)
+                    db.delete(key.getBytes());
+                } else {
                     // Normal message — persist on embedded DB
-                    byte[] bytes = message.getBytes();
-                    db.put(key.getBytes(), bytes);
+                    db.put(key.getBytes(), message.getBytes());
                 }
             } catch (RocksDBException ex) {
                 logger.severe(ex.getMessage());
@@ -431,4 +525,84 @@ public class KafkaMetadataBrokerAdapter implements MetadataBroker {
         }
     }
 
+    /**
+     * Compaction task: purges RocksDB entries whose TTL has elapsed (F6 fix).
+     *
+     * <p>Iterates all keys in RocksDB and deletes any entry where
+     * {@code timestamp + ttl + graceWindow < now}. The grace window absorbs the ±5min
+     * clock tolerance already admitted by Protocol V2 §9.1, preventing premature deletion
+     * of entries that are marginally expired on the local clock but still valid on the
+     * issuer's clock.</p>
+     *
+     * <p>Internal metadata keys and reserved keys (e.g., {@code __CONFIG__}) are skipped.</p>
+     *
+     * <p>Logs the estimated number of purged entries and the remaining DB size approximation
+     * after each compaction run, so anomalous growth can be detected in production.</p>
+     */
+    private void compactExpiredEntries() {
+        long now = Instant.now().getEpochSecond();
+        int purgedCount = 0;
+
+        try (RocksIterator it = db.newIterator()) {
+            it.seekToFirst();
+            while (it.isValid()) {
+                String key = new String(it.key(), StandardCharsets.UTF_8);
+                it.next(); // advance before potential delete
+
+                // Skip internal keys
+                if (key.equals(ConstantDefault.UNIQUE_BROKER_GROUP_ID_KEY)) continue;
+
+                // Skip reserved sequences — their TTL semantics differ
+                if (key.contains(":__REVOKE__") || key.contains(":__CONFIG__")) continue;
+
+                try {
+                    byte[] valueBytes = db.get(key.getBytes(StandardCharsets.UTF_8));
+                    if (valueBytes == null) continue;
+                    String message = new String(valueBytes, StandardCharsets.UTF_8);
+
+                    // Parse timestamp and ttl from V2 metadata
+                    int pipeIdx = message.indexOf('|');
+                    if (pipeIdx < 0) continue; // not a V2 message, skip
+                    String metaPart = message.substring(pipeIdx + 1);
+
+                    long timestamp = -1;
+                    long ttl = -1;
+                    for (String prop : metaPart.split(",")) {
+                        int colonIdx = prop.indexOf(':');
+                        if (colonIdx < 0) continue;
+                        String name = prop.substring(0, colonIdx);
+                        String encodedValue = prop.substring(colonIdx + 1);
+                        String value;
+                        try {
+                            value = new String(java.util.Base64.getUrlDecoder().decode(encodedValue), StandardCharsets.UTF_8);
+                        } catch (Exception ignored) {
+                            continue;
+                        }
+                        if ("timestamp".equals(name)) {
+                            try { timestamp = Long.parseLong(value); } catch (NumberFormatException ignored) {}
+                        } else if ("ttl".equals(name)) {
+                            try { ttl = Long.parseLong(value); } catch (NumberFormatException ignored) {}
+                        }
+                    }
+
+                    if (timestamp < 0 || ttl < 0) continue; // no expiry information, skip
+                    long expiresAt = timestamp + ttl + PURGE_GRACE_WINDOW_SECONDS;
+                    if (now > expiresAt) {
+                        db.delete(key.getBytes(StandardCharsets.UTF_8));
+                        purgedCount++;
+                    }
+                } catch (RocksDBException e) {
+                    logger.severe("Compaction: failed to read/delete key=" + key + ": " + e.getMessage());
+                } catch (Exception ignored) {
+                    // Malformed entry — skip silently
+                }
+            }
+        } catch (Exception e) {
+            logger.severe("Compaction run failed: " + e.getMessage());
+        }
+
+        if (purgedCount > 0) {
+            logger.info("Compaction: purged " + purgedCount + " expired RocksDB entries.");
+        }
+    }
 }

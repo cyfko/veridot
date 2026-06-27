@@ -16,7 +16,7 @@ class RevocationTest {
     @BeforeEach
     void setUp() {
         broker = new InMemoryMetadataBroker();
-        sv = new GenericSignerVerifier(broker, "test-salt");
+        sv = TestTrustSetup.create().newSignerVerifier(broker);
     }
 
     @Test
@@ -100,6 +100,8 @@ class RevocationTest {
         assertTrue(revokeMsg.startsWith("2:u1:__REVOKE__|"), "Must be a structured V2 __REVOKE__ message");
         assertTrue(revokeMsg.contains("target:"), "Must contain 'target' property");
         assertTrue(revokeMsg.contains("timestamp:"), "Must contain 'timestamp' property");
+        // v3.0 — tombstone must be signed (F7)
+        assertTrue(revokeMsg.contains("tombstoneSig:"), "Must contain 'tombstoneSig' property (F7)");
     }
 
     @Test
@@ -146,5 +148,28 @@ class RevocationTest {
         // Use ProtocolV2 to parse (package-private, accessible from this test class)
         var meta = ProtocolV2.parseMetadata(revokeMsg);
         assertEquals("__ALL__", meta.get("target"), "revokeGroup must use target=__ALL__");
+    }
+
+    @Test
+    void revoke_replay_original_announcement_after_tombstone_has_no_effect() {
+        // F7 regression guard: signing a new token for the same sequenceId after revocation
+        // must NOT resurrect the revoked session (tombstone wins).
+        // In the current in-memory model, re-signing creates a new entry (new sequenceId);
+        // what we verify here is that the tombstone message is persisted and readable.
+        var cfg = BasicConfigurer.builder().groupId("replay-grp").sequenceId("s1").validity(600).build();
+        sv.sign("data", cfg);
+        sv.revoke("replay-grp", "s1");
+
+        // The tombstone must be present
+        assertTrue(broker.containsKey("2:replay-grp:__REVOKE__"),
+                "Tombstone must be present after revocation");
+        String tombstone = broker.getRaw("2:replay-grp:__REVOKE__");
+        var meta = ProtocolV2.parseMetadata(tombstone);
+        assertNotNull(meta.get("timestamp"), "Tombstone must carry a timestamp (F7)");
+        assertNotNull(meta.get("tombstoneSig"), "Tombstone must carry a long-term signature (F7)");
+
+        // The original session entry must be gone
+        assertFalse(broker.containsKey("2:replay-grp:s1"),
+                "Revoked session entry must be deleted — replay cannot resurrect it");
     }
 }

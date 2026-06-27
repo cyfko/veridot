@@ -1,146 +1,181 @@
 # veridot-kafka
 
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.cyfko/veridot-kafka.svg)](https://central.sonatype.com/artifact/io.github.cyfko/veridot-kafka)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](../../LICENSE)
+[![Java 17+](https://img.shields.io/badge/Java-17%2B-orange.svg)](https://openjdk.org/)
 
-Kafka-based implementation of the [`MetadataBroker`](https://github.com/cyfko/veridot/blob/main/java/veridot-core/src/main/java/io/github/cyfko/veridot/core/MetadataBroker.java) interface for **Veridot**, enabling distributed token verification metadata propagation via Apache Kafka with **RocksDB** local persistence.
+Kafka + RocksDB implementation of the [`MetadataBroker`](../veridot-core/src/main/java/io/github/cyfko/veridot/core/MetadataBroker.java) interface.
 
----
-
-## ✨ Features
-
-- 🔐 **JWT Signing & Verification** using ephemeral RSA key pairs
-- 🔁 **Automatic Key Rotation** (configurable interval)
-- 📬 **Public key distribution** via Kafka topics
-- 🧠 **RocksDB** embedded store for ultra-fast local lookups
-- 📢 **`__REVOKE__` message processing** — Kafka consumer parses structured revocation messages and deletes targeted sequences from RocksDB
-- ⚙️ **Environment-based configuration** with sensible defaults
+This is the **recommended broker** for production deployments. Key announcements are broadcast via Kafka and cached locally in RocksDB — verification reads never hit the network.
 
 ---
 
-## 📦 Installation
+## How it works
 
-**Maven**:
+```
+Signer node                          Verifier nodes (all)
+───────────                          ─────────────────────
+send(key, msg)                       Kafka consumer loop
+  ├─ sendLocal() → RocksDB           ├─ poll() every ~500ms
+  └─ Kafka producer → topic          ├─ write to RocksDB
+                                     └─ verify() reads RocksDB (<1ms)
+
+revoke() → __REVOKE__ tombstone  →   Kafka consumer
+                                     └─ delete from RocksDB
+```
+
+- **Fan-out**: one Kafka topic, all consumers receive all announcements.
+- **Local cache**: RocksDB handles all `get()` calls without network I/O.
+- **Race-free**: `sendLocal()` pre-populates RocksDB before the Kafka send, so `verify()` on the same node works immediately.
+- **Compaction**: expired entries (`timestamp + ttl + 300 < now`) are purged every 5 minutes.
+
+---
+
+## Installation
+
 ```xml
+<!-- Maven -->
 <dependency>
     <groupId>io.github.cyfko</groupId>
     <artifactId>veridot-core</artifactId>
-    <version>3.0.0</version>
+    <version>3.0.2</version>
 </dependency>
 <dependency>
     <groupId>io.github.cyfko</groupId>
     <artifactId>veridot-kafka</artifactId>
-    <version>3.0.0</version>
+    <version>3.0.2</version>
 </dependency>
 ```
 
-**Gradle**:
 ```gradle
-implementation 'io.github.cyfko:veridot-core:3.0.0'
-implementation 'io.github.cyfko:veridot-kafka:3.0.0'
+// Gradle
+implementation 'io.github.cyfko:veridot-core:3.0.2'
+implementation 'io.github.cyfko:veridot-kafka:3.0.2'
 ```
-
-> ⚠️ This project follows [Semantic Versioning](https://semver.org/).
 
 ---
 
-## ⚙️ Environment Variables
+## Creating the broker
+
+### Programmatic configuration (recommended for production)
+
+```java
+import io.github.cyfko.veridot.kafka.KafkaMetadataBrokerAdapter;
+
+Properties props = new Properties();
+
+// Required
+props.setProperty("bootstrap.servers", "kafka1:9092,kafka2:9092");
+props.setProperty("embedded.db.path", "/var/lib/veridot/rocksdb");
+
+// TLS + SASL (recommended in production)
+props.setProperty("security.protocol", "SASL_SSL");
+props.setProperty("sasl.mechanism", "SCRAM-SHA-512");
+props.setProperty("sasl.jaas.config",
+    "org.apache.kafka.common.security.scram.ScramLoginModule required " +
+    "username=\"veridot-svc\" password=\"${KAFKA_PASSWORD}\";");
+props.setProperty("ssl.endpoint.identification.algorithm", "https");
+props.setProperty("ssl.truststore.location", "/etc/ssl/kafka.truststore.jks");
+props.setProperty("ssl.truststore.password", System.getenv("TRUSTSTORE_PASSWORD"));
+
+MetadataBroker broker = KafkaMetadataBrokerAdapter.of(props);
+```
+
+### Environment-variable configuration (simple deployments)
+
+```java
+// Reads all config from environment variables (see table below)
+MetadataBroker broker = KafkaMetadataBrokerAdapter.of();
+```
+
+---
+
+## Configuration reference
+
+### Kafka properties passed to `KafkaMetadataBrokerAdapter.of(props)`
+
+All standard Kafka producer/consumer properties are supported. The most relevant:
+
+| Property | Required | Description | Default |
+|----------|:--------:|-------------|---------|
+| `bootstrap.servers` | ✅ | Kafka broker addresses | — |
+| `embedded.db.path` | ✅ | RocksDB directory path | — |
+| `security.protocol` | — | `PLAINTEXT`, `SSL`, `SASL_PLAINTEXT`, `SASL_SSL` | `PLAINTEXT` |
+| `sasl.mechanism` | — | `PLAIN`, `SCRAM-SHA-256`, `SCRAM-SHA-512` | — |
+| `sasl.jaas.config` | — | JAAS login config string | — |
+| `ssl.truststore.location` | — | Path to JKS truststore | — |
+| `ssl.truststore.password` | — | Truststore password | — |
+| `ssl.endpoint.identification.algorithm` | — | `https` to enforce hostname verification | — |
+| `compression.type` | — | `none`, `gzip`, `snappy`, `lz4` | `none` |
+
+### Environment variables (used by `KafkaMetadataBrokerAdapter.of()`)
 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `VDOT_KAFKA_BOOSTRAP_SERVERS` | Kafka bootstrap servers | `localhost:9092` |
-| `VDOT_TOKEN_VERIFIER_TOPIC` | Kafka topic for verification metadata | `token-verifier` |
-| `VDOT_EMBEDDED_DATABASE_PATH` | RocksDB storage path | `veridot_db_data` (temp dir) |
-| `VDOT_KEYS_ROTATION_MINUTES` | RSA key pair rotation interval (minutes) | `1440` (24h) |
+| `VDOT_TOKEN_VERIFIER_TOPIC` | Kafka topic for metadata | `token-verifier` |
+| `VDOT_EMBEDDED_DATABASE_PATH` | RocksDB storage path | temp dir |
+| `VDOT_KEYS_ROTATION_MINUTES` | Ephemeral key rotation interval | `1440` (24h) |
 
 ---
 
-## 🚀 Usage
+## Revocation processing
 
-### Creating the broker
+When a `__REVOKE__` tombstone is received from the Kafka topic, the consumer automatically:
 
-```java
-import io.github.cyfko.veridot.kafka.KafkaMetadataBrokerAdapter;
-import io.github.cyfko.veridot.core.MetadataBroker;
+- **Single-session revocation** (`target=<sequenceId>`): deletes `2:<groupId>:<sequenceId>` from RocksDB.
+- **Group-wide revocation** (`target=__ALL__`): deletes all normal sequences for `groupId` from RocksDB (preserves `__REVOKE__` and `__CONFIG__` entries).
 
-// Using environment variables (simplest)
-MetadataBroker broker = KafkaMetadataBrokerAdapter.of();
+Revocation propagates to all consumers within the next Kafka poll interval (~500ms by default, ~1s p99 under normal load).
 
-// Using custom properties
-Properties props = new Properties();
-props.put("bootstrap.servers", "kafka-cluster:9092");
-MetadataBroker broker = KafkaMetadataBrokerAdapter.of(props);
+### Tombstone authenticity (v3.0.2)
+
+Since v3.0.2, tombstones carry `tombstoneSig` — a long-term RSA signature. The consumer verifies this signature via the `TrustAnchor` before applying the revocation. A node with Kafka write-access cannot forge a valid tombstone.
+
+---
+
+## Kafka topic and ACL recommendations
+
+```bash
+# Create the topic (replication factor 3 for production)
+kafka-topics.sh --create \
+  --topic token-verifier \
+  --replication-factor 3 \
+  --partitions 12 \
+  --bootstrap-server kafka:9092
+
+# ACL: signing services may produce
+kafka-acls.sh --add --allow-principal User:veridot-signer \
+  --operation Write --topic token-verifier \
+  --bootstrap-server kafka:9092
+
+# ACL: verifying services may consume
+kafka-acls.sh --add --allow-principal User:veridot-verifier \
+  --operation Read --topic token-verifier \
+  --bootstrap-server kafka:9092
 ```
 
-### Sign, verify, and revoke
-
-```java
-import io.github.cyfko.veridot.core.*;
-import io.github.cyfko.veridot.core.impl.*;
-
-// Create signer/verifier with the Kafka broker
-var sv = new GenericSignerVerifier(broker, "my-secret-salt");
-
-// Sign data — returns JWT (DIRECT mode)
-String jwt = sv.sign("john@example.com",
-    BasicConfigurer.builder()
-        .groupId("user-123")
-        .validity(300)  // 5 minutes
-        .build());
-
-// Verify from any service connected to the same Kafka cluster
-VerifiedData<String> result = sv.verify(jwt, String::toString);
-String email = result.data();
-
-// Revoke a specific session
-sv.revoke(result.groupId(), result.sequenceId());
-
-// Verify after revocation → throws BrokerExtractionException
-sv.verify(jwt, String::toString); // throws!
-```
-
-### With session management
-
-```java
-// Max 3 concurrent sessions per user, FIFO eviction
-var sv = new GenericSignerVerifier(broker, "salt", 3, GenericSignerVerifier.EvictionPolicy.FIFO);
-
-// Track active sessions
-boolean hasActive = sv.hasActiveToken("user-123");
-
-// Revoke all sessions for a user
-sv.revoke("user-123", null);
-```
+**Tip**: use a dedicated topic (`token-verifier`) with aggressive retention. A 7-day retention is sufficient — ephemeral keys rotate every 24h and are compacted from RocksDB on expiry.
 
 ---
 
-## 🔄 Kafka Consumer — `__REVOKE__` Processing
+## Cluster considerations
 
-The Kafka consumer automatically processes Protocol V2 `__REVOKE__` messages:
-
-- **`target=<sequenceId>`** → Deletes the specific sequence from RocksDB
-- **`target=__ALL__`** → Deletes all normal sequences for the group (preserves `__REVOKE__` and `__CONFIG__` entries)
-
-This ensures that when one processor revokes a session, all other processors consuming the same topic will reflect the revocation in their local RocksDB stores.
+- All service instances connected to the **same Kafka cluster and topic** automatically share metadata.
+- RocksDB is a **local per-instance store**. Each pod has its own RocksDB directory.
+- In Kubernetes: mount RocksDB on an `emptyDir` or ephemeral volume — persistence across pod restarts is not required (the Kafka consumer rehydrates from the topic on startup).
+- The consumer uses an **auto-assigned `groupId`** so every instance receives all messages (broadcast semantics).
 
 ---
 
-## 📌 Requirements
+## Requirements
 
-- Java ≥ 17
-- Apache Kafka cluster (tested with Kafka 3.9.x / Confluent 7.6.x)
-
----
-
-## 🔐 Security Considerations
-
-- Ephemeral RSA key pairs with configurable rotation
-- All public keys are persisted and verified from **RocksDB**
-- Only keys within the TTL window are accepted
-- ±5 minute clock drift validation (Protocol V2 §9.1)
+- Java 17+ (this module only; `veridot-core` requires Java 25+)
+- Apache Kafka 3.x or later
+- RocksDB native libraries (included transitively)
 
 ---
 
-## 📄 License
+## License
 
-[MIT License](../LICENSE)
+[MIT](../../LICENSE) · **Kunrin SA** · [frank.kossi@kunrin.com](mailto:frank.kossi@kunrin.com)

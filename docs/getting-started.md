@@ -7,210 +7,243 @@ nav_order: 1
 
 # Getting Started with Veridot
 
-Welcome to Veridot! This guide will help you get up and running with secure, distributed token verification in your applications.
+Veridot est une bibliothèque Java pour la vérification de tokens distribuée en architecture microservices. Ce guide vous emmène de l'installation à votre premier token signé, vérifié et révoqué.
 
-## What is Veridot?
+## Prérequis
 
-Veridot is a multi-language library that enables secure token verification in distributed systems using:
-- **Ephemeral asymmetric cryptography** - No shared secrets
-- **Distributed metadata propagation** - Public keys shared via Kafka or databases
-- **High-performance verification** - Sub-millisecond token validation
+| Composant | Version | Rôle |
+|-----------|---------|------|
+| **Java** | **25+** | Requis pour `veridot-core` (sealed interfaces) |
+| **Maven ou Gradle** | Any | Build |
+| **Kafka** | 3.x+ | Broker recommandé pour la distribution des métadonnées |
+| **RocksDB** | inclus | Cache local (fourni par `veridot-kafka`) |
 
-## Choose Your Language
+> **Kafka optionnel** : pour les tests locaux ou les déploiements mono-nœud, vous pouvez utiliser `veridot-databases` (PostgreSQL, MySQL…) ou implémenter votre propre `MetadataBroker`.
 
-<div class="language-grid">
-  <div class="language-card">
-    <h3>☕ Java</h3>
-    <p>Production-ready with Spring Boot integration</p>
-    <ul>
-      <li>Maven/Gradle support</li>
-      <li>Multiple broker implementations</li>
-      <li>Enterprise monitoring hooks</li>
-    </ul>
-    <a href="{{ '/docs/java-guide' | relative_url }}" class="btn">Java Guide →</a>
-  </div>
-  
-  <div class="language-card">
-    <h3>🟢 Node.js</h3>
-    <p>TypeScript-first with automatic key management</p>
-    <ul>
-      <li>npm package available</li>
-      <li>LMDB for fast local storage</li>
-      <li>Environment-based configuration</li>
-    </ul>
-    <a href="{{ '/docs/nodejs-guide' | relative_url }}" class="btn">Node.js Guide →</a>
-  </div>
-</div>
+---
 
-## Quick Installation
+## 1. Installation
 
-### Java (Maven)
+### Maven
+
 ```xml
+<properties>
+    <maven.compiler.source>25</maven.compiler.source>
+    <maven.compiler.target>25</maven.compiler.target>
+</properties>
+
 <dependencies>
+    <!-- Core API — toujours requis -->
     <dependency>
         <groupId>io.github.cyfko</groupId>
         <artifactId>veridot-core</artifactId>
-        <version>2.0.1</version>
+        <version>3.0.2</version>
     </dependency>
+
+    <!-- Option A : broker Kafka + RocksDB (recommandé pour la production) -->
     <dependency>
         <groupId>io.github.cyfko</groupId>
         <artifactId>veridot-kafka</artifactId>
-        <version>2.0.1</version>
+        <version>3.0.2</version>
+    </dependency>
+
+    <!-- Option B : broker base de données SQL -->
+    <dependency>
+        <groupId>io.github.cyfko</groupId>
+        <artifactId>veridot-databases</artifactId>
+        <version>3.0.2</version>
     </dependency>
 </dependencies>
 ```
 
-### Java (Gradle)
+### Gradle
+
 ```gradle
+java {
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
+}
+
 dependencies {
-    implementation 'io.github.cyfko:veridot-core:2.0.1'
-    implementation 'io.github.cyfko:veridot-kafka:2.0.1'
+    implementation 'io.github.cyfko:veridot-core:3.0.2'
+    implementation 'io.github.cyfko:veridot-kafka:3.0.2' // ou veridot-databases
 }
 ```
 
-### Node.js
+---
+
+## 2. Concepts clés en 60 secondes
+
+```
+Signataire                          Vérificateur
+    │                                    │
+    │ 1. Génère clé éphémère RSA-3072    │
+    │ 2. Signe l'annonce (long-term key) │
+    │ 3. Publie sur broker ──────────────┼──────► broker
+    │ 4. Signe le payload → JWT          │               │
+    │                                    │ 5. Lit depuis broker
+    │                                    │ 6. Valide annonce via TrustAnchor ← SÉCURITÉ v3.0
+    │                                    │ 7. Vérifie JWT avec clé éphémère
+    │                                    │ → payload extrait
+    │
+    │ revoke() → tombstone signé ────────┼──────► broker
+                                         │ → session invalidée partout
+```
+
+Trois concepts essentiels :
+- **`TrustAnchor`** : valide que l'annonce de clé provient bien d'un signataire légitime.
+- **`GenericSignerVerifier`** : implémente `DataSigner`, `TokenVerifier`, `TokenRevoker`, `TokenTracker`.
+- **`MetadataBroker`** : transporte les annonces de clés entre nœuds.
+
+---
+
+## 3. Démarrage rapide
+
+### Étape 1 — Préparer les clés long-terme
+
+Chaque service signataire a besoin d'une paire de clés RSA long-terme. En développement :
+
 ```bash
-npm install dverify
-# or
-yarn add dverify
+# Générer une paire de clés pour votre service
+openssl genrsa -out private.pem 3072
+openssl rsa -in private.pem -pubout -out public.pem
 ```
 
-## Architecture Overview
+En production, stockez ces clés dans Vault, un Kubernetes Secret, ou votre KMS.
 
-```mermaid
-graph TB
-    A[Service A<br/>Signer] --> B[Metadata Broker<br/>Kafka/Database]
-    B --> C[Service B<br/>Verifier]
-    B --> D[Service C<br/>Verifier]
-    
-    A --> |1. Generate Keys| A
-    A --> |2. Sign Token| E[Client]
-    A --> |3. Publish Metadata| B
-    E --> |4. Send Token| C
-    C --> |5. Verify Token| C
-```
+### Étape 2 — Configurer le broker
 
-### How it Works
-
-1. **Key Generation**: Each service generates ephemeral RSA/ECDSA key pairs
-2. **Token Signing**: Services sign data with private keys and return tokens
-3. **Metadata Distribution**: Public keys are shared via brokers (Kafka/Database)
-4. **Token Verification**: Other services verify tokens using distributed public keys
-5. **Key Rotation**: Automatic rotation ensures forward security
-
-## Basic Example
-
-### Java
 ```java
-// Initialize with Kafka broker
-Properties props = new Properties();
-props.setProperty("bootstrap.servers", "localhost:9092");
-props.setProperty("embedded.db.path", "./veridot-keys");
+import io.github.cyfko.veridot.kafka.KafkaMetadataBrokerAdapter;
 
-MetadataBroker broker = KafkaMetadataBrokerAdapter.of(props);
-GenericSignerVerifier veridot = new GenericSignerVerifier(broker);
+Properties kafkaProps = new Properties();
+kafkaProps.setProperty("bootstrap.servers", "localhost:9092");
+kafkaProps.setProperty("embedded.db.path", "./veridot-data");
 
-// Sign data
-UserData data = new UserData("john.doe@example.com");
-BasicConfigurer config = BasicConfigurer.builder()
-    .useMode(TokenMode.jwt)
-    .trackedBy(12345L)
-    .validity(3600) // 1 hour
-    .build();
-
-String token = veridot.sign(data, config);
-
-// Verify token (in another service)
-UserData verified = veridot.verify(token, 
-    BasicConfigurer.deserializer(UserData.class));
+MetadataBroker broker = KafkaMetadataBrokerAdapter.of(kafkaProps);
 ```
 
-### Node.js
-```typescript
-import { DVerify } from 'dverify';
+### Étape 3 — Configurer le TrustAnchor
 
-const dverify = new DVerify();
+```java
+import io.github.cyfko.veridot.core.TrustAnchor;
 
-// Sign data
-const { token } = await dverify.sign({
-    userId: 123,
-    role: 'admin'
-}, 3600);
+// Option simple : clé publique dans un fichier PEM
+TrustAnchor anchor = (TrustAnchor.PublicKeyResolver) signerId -> {
+    byte[] pem = Files.readAllBytes(Paths.get("./trust/" + signerId + ".pub.pem"));
+    KeyFactory kf = KeyFactory.getInstance("RSA");
+    byte[] der = Base64.getDecoder().decode(
+        new String(pem).replaceAll("-----[^-]+-----", "").replaceAll("\\s", ""));
+    return kf.generatePublic(new X509EncodedKeySpec(der));
+};
+```
 
-// Verify token
-const result = await dverify.verify(token);
-if (result.valid) {
-    console.log('User:', result.data);
+### Étape 4 — Créer le signer/verifier
+
+```java
+import io.github.cyfko.veridot.core.impl.GenericSignerVerifier;
+
+// Charger la clé privée long-terme
+byte[] pkcs8 = Files.readAllBytes(Paths.get("./private.pem")); // PKCS#8
+// ... parsing ...
+PrivateKey longTermKey = KeyFactory.getInstance("RSA")
+    .generatePrivate(new PKCS8EncodedKeySpec(pkcs8));
+
+// Instancier
+var sv = new GenericSignerVerifier(broker, anchor, "my-auth-service", longTermKey);
+```
+
+### Étape 5 — Signer, vérifier, révoquer
+
+```java
+// ── SIGNER ────────────────────────────────────────────────────────
+String token = sv.sign("john@example.com",
+    BasicConfigurer.builder()
+        .groupId("user-42")         // identifiant du groupe (ex : userId)
+        .sequenceId("device-iphone") // identifiant de la session (optionnel)
+        .validity(3600)              // TTL en secondes
+        .distribution(DistributionMode.DIRECT) // JWT retourné directement
+        .build());
+
+// ── VÉRIFIER (depuis n'importe quel service partageant le même broker) ──
+try {
+    VerifiedData<String> result = sv.verify(token, s -> s);
+
+    String email   = result.data();       // "john@example.com"
+    String group   = result.groupId();    // "user-42"
+    String session = result.sequenceId(); // "device-iphone"
+
+} catch (BrokerExtractionException e) {
+    // Token invalide, révoqué, expiré, ou TrustAnchor a rejeté l'annonce
+    response.sendError(401, "Token invalide");
+}
+
+// ── RÉVOQUER ─────────────────────────────────────────────────────
+sv.revoke("user-42", "device-iphone"); // révoquer cette session uniquement
+sv.revoke("user-42", null);            // révoquer toutes les sessions de user-42
+```
+
+---
+
+## 4. Mode INDIRECT (gros payloads)
+
+```java
+// INDIRECT : le JWT est stocké dans le broker ; l'appelant reçoit un messageId
+String messageId = sv.sign(largeObject,
+    BasicConfigurer.builder()
+        .groupId("docs")
+        .sequenceId("doc-789")
+        .validity(86400)
+        .distribution(DistributionMode.INDIRECT)
+        .build());
+// messageId = "2:docs:doc-789"
+
+// Le vérificateur passe le messageId — la logique est identique
+VerifiedData<LargeObject> result = sv.verify(messageId,
+    json -> new ObjectMapper().readValue(json, LargeObject.class));
+```
+
+---
+
+## 5. Gestion des sessions
+
+```java
+// Max 3 sessions actives par utilisateur — évincer la plus ancienne (FIFO)
+var sv = new GenericSignerVerifier(
+    broker, anchor, "my-service", longTermKey,
+    3, GenericSignerVerifier.EvictionPolicy.FIFO);
+
+// Max 1 session — rejeter toute tentative supplémentaire
+var sv = new GenericSignerVerifier(
+    broker, anchor, "my-service", longTermKey,
+    1, GenericSignerVerifier.EvictionPolicy.REJECT);
+
+try {
+    sv.sign(data, config); // throws SessionCapacityExceededException si dépassement
+} catch (SessionCapacityExceededException e) {
+    // Inviter l'utilisateur à se déconnecter d'un autre appareil
 }
 ```
 
-## Prerequisites
+---
 
-### For Java
-- Java 17 or higher
-- Maven 3.6+ or Gradle 7+
-- Kafka cluster (for distributed deployment)
+## 6. Vérifier si un token est actif
 
-### For Node.js
-- Node.js 16 or higher
-- npm or yarn
-- Kafka cluster (for distributed deployment)
+```java
+// Par groupId
+boolean hasActive = sv.hasActiveToken("user-42");
 
-## Next Steps
+// Par JWT ou messageId
+boolean isValid = sv.hasActiveToken(token);
+boolean isValid2 = sv.hasActiveToken("2:user-42:device-iphone");
+```
 
-- **Java Developers**: Continue to the [Java Guide]({{ '/docs/java-guide' | relative_url }})
-- **Node.js Developers**: Check out the [Node.js Guide]({{ '/docs/nodejs-guide' | relative_url }})
-- **Learn More**: Explore the [API Reference]({{ '/docs/api-reference' | relative_url }})
-- **Security**: Review [Security Best Practices]({{ '/docs/security' | relative_url }})
+---
 
-<style>
-.language-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 2rem;
-  margin: 2rem 0;
-}
+## Étapes suivantes
 
-.language-card {
-  padding: 2rem;
-  border: 1px solid #e1e5e9;
-  border-radius: 8px;
-  background: #f8f9fa;
-}
-
-.language-card h3 {
-  margin-top: 0;
-  color: #2c3e50;
-}
-
-.language-card ul {
-  margin: 1rem 0;
-}
-
-.btn {
-  display: inline-block;
-  padding: 0.5rem 1rem;
-  background-color: #007bff;
-  color: white;
-  text-decoration: none;
-  border-radius: 4px;
-  margin-top: 1rem;
-}
-
-.btn:hover {
-  background-color: #0056b3;
-  text-decoration: none;
-  color: white;
-}
-
-@media (prefers-color-scheme: dark) {
-  .language-card {
-    background: #2d3748;
-    border-color: #4a5568;
-  }
-  
-  .language-card h3 {
-    color: #e2e8f0;
-  }
-}
-</style>
+- **[Java Guide complet]({{ '/docs/java-guide' | relative_url }})** — TrustAnchor avancé, Spring Boot, migration depuis v3.0.1
+- **[Modèle de sécurité]({{ '/docs/security' | relative_url }})** — Modèle de menaces, durcissement production, checklist
+- **[Référence API]({{ '/docs/api-reference' | relative_url }})** — Toutes les interfaces, exceptions, variables d'environnement
+- **[ADR-001 TrustAnchor]({{ '/docs/adr/001-trust-anchor' | relative_url }})** — Pourquoi et comment le TrustAnchor a été conçu
+- **[Protocol V2]({{ '/PROTOCOL_V2' | relative_url }})** — Spécification complète du format de message

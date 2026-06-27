@@ -5,7 +5,157 @@ All notable changes to the Veridot project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.2] - 2026-06-27
+
+### ⚠️ Breaking Changes
+
+- **Constructor signature changed** — `GenericSignerVerifier(MetadataBroker, String salt)` and
+  `GenericSignerVerifier(MetadataBroker, String salt, int maxSessions, EvictionPolicy policy)` are
+  **removed**. The `salt` parameter had no cryptographic function.
+
+  New constructors:
+  ```java
+  // Without session limit
+  new GenericSignerVerifier(MetadataBroker, TrustAnchor, String signerId, PrivateKey longTermPrivateKey)
+
+  // With session limit
+  new GenericSignerVerifier(MetadataBroker, TrustAnchor, String signerId, PrivateKey longTermPrivateKey,
+                            int maxSessions, EvictionPolicy policy)
+  ```
+
+  **Migration**: inject a `TrustAnchor` (that resolves long-term public keys) and the service's
+  long-term `PrivateKey`. The salt is gone. See [migration guide](docs/java-guide.md#migrating-from-v301).
+
+- **Java 25 required** for `veridot-core` (up from Java 17). `veridot-kafka` and
+  `veridot-databases` remain compatible with Java 17.
+
+- **`MetadataBroker.sendLocal(String key, String message)`** — new `default` method (no-op by
+  default). Existing custom `MetadataBroker` implementations remain source-compatible; implement
+  this method for zero-latency same-node verification.
+
+### 🔐 Security
+
+- **CVE-class fix: broker-injection attack vector closed** — Prior to this release, any node with
+  write access to the Kafka topic could inject a fraudulent key announcement and obtain valid
+  verification results from any Veridot consumer. v3.0.2 requires every key announcement to carry
+  a valid long-term RSA signature (`announcementSig`) over canonical bytes. The `TrustAnchor`
+  validates this signature before accepting the ephemeral public key. See
+  [ADR-001](docs/adr/adr-001-trust-anchor.md).
+
+- **Signed revocation tombstones** (F7) — `revoke()` now embeds a `tombstoneSig` (long-term RSA
+  signature over `groupId ‖ target ‖ timestamp`) in every `__REVOKE__` message. The
+  latest-timestamp-wins rule makes replay of old tombstones harmless. See
+  [ADR-003](docs/adr/adr-003-tombstone-signed.md).
+
+### Added
+
+- **`TrustAnchor` sealed interface** (`io.github.cyfko.veridot.core.TrustAnchor`) — root of trust
+  that decouples broker write-access from signing authority. Two permitted sub-interfaces:
+  - `TrustAnchor.PublicKeyResolver` — resolves `signerId → PublicKey` locally (trust store, Vault
+    KV, PEM file). Veridot then verifies the announcement signature in-process.
+  - `TrustAnchor.DelegatedVerifier` — delegates the full signature verification to an external
+    KMS or HSM (Vault Transit, AWS KMS, etc.). The long-term private key never leaves the KMS
+    boundary.
+
+- **`TrustResolutionException` sealed exception** (`io.github.cyfko.veridot.core.exceptions`) —
+  two semantically distinct subtypes:
+  - `TrustResolutionException.Unavailable` — transient infrastructure failure (KMS down). Must
+    **fail safe**: never accept the token when the trust anchor is unreachable.
+  - `TrustResolutionException.SignatureRejected` — definitive cryptographic rejection. Must
+    **alert**: log at SEVERE and notify the security team.
+
+- **Signed key announcements** — `sign()` computes a long-term RSA signature over the canonical
+  announcement bytes (`len(pubkeyDER) ‖ pubkeyDER ‖ timestamp ‖ ttl ‖ len(signerId) ‖ signerId`,
+  all big-endian, length-prefixed) and embeds `signerId` + `announcementSig` in the V2 metadata
+  message.
+
+- **`MetadataBroker.sendLocal(String, String)`** — default no-op method. `KafkaMetadataBrokerAdapter`
+  implements it by writing directly to the local RocksDB without producing to Kafka. Called by
+  `sign()` before the async Kafka `send()`. Eliminates the same-node read-after-write race (F5):
+  a `verify()` call immediately after `sign()` on the same JVM now succeeds without waiting for
+  the Kafka round-trip.
+
+- **RocksDB TTL compaction** (F6) — `KafkaMetadataBrokerAdapter` now schedules a periodic
+  compaction task (every 5 minutes) that iterates RocksDB and deletes entries where
+  `timestamp + ttl + 300 < now`. Database entry count is logged after each compaction run.
+
+- **Control-channel priority** (F4) — within each Kafka consumer poll cycle, messages with
+  `:__REVOKE__` or `:__CONFIG__` keys are processed before data messages. This bounds revocation
+  propagation latency to ≈1 poll interval (1s p99 with default settings).
+
+- **`Config.ASYMMETRIC_KEY_SIZE = 3072`** — explicit public constant for the RSA ephemeral key
+  size (previously implicit JDK default of 2048). See [ADR-002](docs/adr/adr-002-rsa-3072.md).
+
+- **New test class `TrustAnchorSecurityTest`** — 7 security-focused unit tests:
+  - Broker-injection without `announcementSig` → rejected.
+  - Broker-injection with random (forged) `announcementSig` → rejected.
+  - `TrustAnchor.Unavailable` → fail safe, token not accepted.
+  - Unknown `signerId` → rejected.
+  - Canonical announcement determinism and field-binding (length-prefix collision prevention).
+  - Positive path: valid announcement + valid JWT → accepted.
+
+- **`TestTrustSetup` test utility** — creates a self-contained long-term key pair and
+  `TrustAnchor.PublicKeyResolver` for unit tests. Replaces the removed salt-based constructors in
+  all test classes.
+
+### Changed
+
+- **RSA ephemeral key size**: **RSA-3072** (up from implicit RSA-2048). All existing tokens remain
+  verifiable until their TTL expires; the key size is embedded in the stored public key DER bytes,
+  not in a separate field.
+
+- **Eviction send timeout**: broker sends inside `enforceSessionLimit` now have a **10-second
+  timeout** (F8). Previously `CompletableFuture.get()` was unbounded, blocking the `sign()` hot
+  path indefinitely on a slow broker. Timeout triggers a warning log, not an exception.
+
+- **`ProtocolV2` metadata** — normal key announcements now include two mandatory fields:
+  `signerId` (base64url, UTF-8) and `announcementSig` (base64url, RSA signature bytes). Tombstone
+  messages include `tombstoneSig`. Implementations that do not validate these fields continue to
+  parse the messages without error (additive change).
+
+- **Java 25** set as `maven.compiler.source/target` in `veridot-core/pom.xml`.
+
+### Removed
+
+- `GenericSignerVerifier(MetadataBroker, String salt)` constructor.
+- `GenericSignerVerifier(MetadataBroker, String salt, int maxSessions, EvictionPolicy policy)` constructor.
+
+### Tests
+
+- All existing test classes (`SigningTest`, `RevocationTest`, `VerificationTest`,
+  `SessionCapacityTest`, `MultiInstanceSessionTest`, `TokenTrackerTest`) migrated to
+  `TestTrustSetup`.
+- `SigningTest`: added assertions that `signerId:` and `announcementSig:` fields are present in
+  stored V2 metadata.
+- `RevocationTest`: added `tombstoneSig:` assertion; added replay-after-tombstone regression test.
+- `VerificationTest`: added forge test — manually injected broker entry without trust-anchor
+  fields must be rejected.
+- Test suite: **89 tests, 0 failures, 0 errors** (Java 25, Maven 3.9.15).
+
+---
+
+## [3.0.1] - 2026-04-14
+
+### 🐛 Bug Fixes
+
+- **`GenericSignerVerifier.revoke()` race condition** — The sequence deletion send inside
+  `revoke(groupId, sequenceId)` and the `__REVOKE__` broadcast were previously fire-and-forget
+  (no `.get()` on the returned `CompletableFuture`). This caused a race condition where a
+  `sign()` call issued immediately after `revoke()` could still observe the deleted entry as
+  active in the broker, triggering a spurious `SessionCapacityExceededException` in REJECT
+  mode with `maxSessions=1`. Both sends are now awaited (`.get(3, TimeUnit.MINUTES)`),
+  consistent with the eviction behavior already implemented in `enforceSessionLimit`.
+
+### ✅ Tests
+
+- Added regression test `revoke_then_sign_immediately_no_race_condition` in
+  `SessionCapacityTest` that validates the fix without any `Thread.sleep()`, proving that
+  `revoke()` is fully synchronous before `enforceSessionLimit` runs.
+
+---
+
 ## [3.0.0] - 2026-04-12
+
 
 ### ⚠️ Breaking Changes
 

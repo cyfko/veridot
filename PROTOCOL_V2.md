@@ -2,11 +2,15 @@
 
 ```
 Title:        Veridot Protocol v2 — Distributed Token Verification
-Version:      2.0
+Version:      2.1
 Status:       Standards Track
 Author:       Frank Cyrille KOSSI KOSSI
 Created:      2026-04-10
-Last Revised: 2026-04-12
+Last Revised: 2026-06-27
+Changes:      v2.1 — Signed key announcements (§4.2, §4.5)
+                     Signed revocation tombstones (§6.3, §6.5)
+                     TrustAnchor security model (§11.4)
+                     Canonical announcement encoding (§11.5)
 ```
 
 ## Status of This Memo
@@ -218,11 +222,18 @@ A normal message is NOT responsible for:
 | Property | Type | Required | Description |
 |----------|------|:--------:|-------------|
 | `mode` | string | REQUIRED | Signature algorithm (`rsa`, `ecdsa`) |
-| `pubkey` | string | REQUIRED | Public key (binary, Base64url-encoded) |
+| `pubkey` | string | REQUIRED | Ephemeral public key (DER binary, Base64url-encoded) |
 | `timestamp` | number | REQUIRED | Unix timestamp of creation (seconds) |
 | `ttl` | number | OPTIONAL | Time to live in seconds |
 | `site` | string | OPTIONAL | Site identifier for group membership |
 | `token` | string | OPTIONAL | The signed object (used in indirect distribution mode) |
+| `signerId` | string | REQUIRED\* | Identifier of the signing service that produced this announcement |
+| `announcementSig` | bytes | REQUIRED\* | Long-term RSA signature over the canonical announcement bytes (§11.5) |
+
+> **\* Required since Protocol V2.1.** Processors conforming to v2.1 MUST reject
+> any normal message missing `signerId` or `announcementSig` when a `TrustAnchor`
+> is configured. Processors without a `TrustAnchor` configured MAY treat these
+> fields as OPTIONAL for backward compatibility, but SHOULD emit a warning.
 
 > **Note on `token`**: When the signed object is not returned directly
 > to the caller but stored in the broker, the `token` property carries
@@ -245,9 +256,12 @@ A normal message is considered **active** if and only if:
 1. **Retrieval**: The signed object references a `messageId`.
 2. **Extraction**: Retrieve the message from the broker by `messageId`.
 3. **Temporal validation**: Verify that the message is active (§4.3).
-4. **Cryptographic validation**: Use `pubkey` and `mode` to verify the
+4. **Trust validation** *(v2.1)*: Resolve `signerId` via the configured `TrustAnchor`
+   and verify `announcementSig` over the canonical announcement bytes (§11.5).
+   If validation fails, the message MUST be rejected with error `V2011` or `V2012`.
+5. **Cryptographic validation**: Use `pubkey` and `mode` to verify the
    object's signature.
-5. **Business validation**: The application applies its own rules (JWT
+6. **Business validation**: The application applies its own rules (JWT
    expiration, permissions, etc.).
 
 The signed object MUST reference the complete `messageId`
@@ -257,21 +271,22 @@ field), but the identifier MUST be transmitted in full and unmodified.
 
 ### 4.5 Examples
 
-#### JWT verification message
+#### JWT verification message (v2.1 — with trust fields)
 
 ```
-2:user123:session001|mode:cnNh,pubkey:TUlJQ...,timestamp:MTcwNjcxMjAwMA,ttl:MzYwMA
+2:user123:session001|mode:cnNh,pubkey:TUlJQ...,timestamp:MTcwNjcxMjAwMA,ttl:MzYwMA,signerId:YXV0aC1zdmM,announcementSig:U0hBMjU2d2l0aFJTQQ
 ```
 
 - Public key valid for 1 hour (`ttl=3600`)
-- JWTs signed with the corresponding private key are verifiable during
-  this window
+- `signerId` = `"auth-svc"` — the signing service identifier
+- `announcementSig` — RSA signature verifiable by the TrustAnchor (§11.5)
+- JWTs signed with the corresponding private key are verifiable during this window
 - After 1 hour, even a non-expired JWT is rejected (Veridot key expired)
 
 #### API key without explicit TTL
 
 ```
-2:API_SERVICE:key_789|mode:cnNh,pubkey:TUlJQ...,timestamp:MTcwNjcxMjAwMA
+2:API_SERVICE:key_789|mode:cnNh,pubkey:TUlJQ...,timestamp:MTcwNjcxMjAwMA,signerId:YXBpLWd3,announcementSig:U0hBMjU2d2l0aFJTQQ
 ```
 
 - No `ttl`: the key remains valid per `defaultTTL` from configuration
@@ -280,7 +295,7 @@ field), but the identifier MUST be transmitted in full and unmodified.
 #### Message with site membership
 
 ```
-2:USER_123:session001|mode:cnNh,site:bXMtYXV0aC12MQ,pubkey:TUlJQ...,timestamp:MTcwNjcxMjAwMA,ttl:MzYwMA
+2:USER_123:session001|mode:cnNh,site:bXMtYXV0aC12MQ,pubkey:TUlJQ...,timestamp:MTcwNjcxMjAwMA,ttl:MzYwMA,signerId:YXV0aC1zdmM,announcementSig:U0hBMjU2d2l0aFJTQQ
 ```
 
 - `site` = `"ms-auth-v1"`: the group belongs to site `ms-auth-v1`
@@ -396,7 +411,12 @@ verification against the targeted sessions MUST fail.
 | Property | Type | Required | Description |
 |----------|------|:--------:|-------------|
 | `target` | string | REQUIRED | The `sequenceId` to revoke, or `__ALL__` to revoke all sessions |
-| `timestamp` | number | REQUIRED | Unix timestamp of the revocation request |
+| `timestamp` | number | REQUIRED | Unix timestamp of the revocation request (epoch seconds) |
+| `signerId` | string | REQUIRED\* | Identifier of the signing service that issued this tombstone |
+| `tombstoneSig` | bytes | REQUIRED\* | Long-term RSA signature over the canonical tombstone bytes (§11.6) |
+
+> **\* Required since Protocol V2.1.** Processors with a `TrustAnchor` configured
+> MUST reject revocation messages missing `signerId` or `tombstoneSig`.
 
 ### 6.4 Semantics
 
@@ -410,25 +430,29 @@ verification against the targeted sessions MUST fail.
   `sequenceId`. To re-authorize, a new session MUST be created.
 - A processor MUST process revocations **atomically**: the deletion
   MUST be complete or MUST NOT take place at all.
+- **Conflict resolution** *(v2.1)*: When two revocation messages arrive for the
+  same `groupId`/`target`, the message with the **highest `timestamp`** MUST
+  take precedence (latest-timestamp-wins). This makes replay of older tombstones
+  harmless.
 
 ### 6.5 Examples
 
-#### Single-session revocation
+#### Single-session revocation (v2.1 — with trust fields)
 
 ```
-2:user123:__REVOKE__|target:c2Vzc2lvbjAwMQ,timestamp:MTcwNjcxNTYwMA
+2:user123:__REVOKE__|target:c2Vzc2lvbjAwMQ,timestamp:MTcwNjcxNTYwMA,signerId:YXV0aC1zdmM,tombstoneSig:U0hBMjU2d2l0aFJTQQ
 ```
 
 - `target` = `"session001"` → revokes only `2:user123:session001`
+- `tombstoneSig` verifiable by TrustAnchor using the canonical bytes (§11.6)
 
 #### Group-wide revocation
 
 ```
-2:user123:__REVOKE__|target:X19BTExfXw,timestamp:MTcwNjcxNTYwMA
+2:user123:__REVOKE__|target:X19BTExfXw,timestamp:MTcwNjcxNTYwMA,signerId:YXV0aC1zdmM,tombstoneSig:U0hBMjU2d2l0aFJTQQ
 ```
 
-- `target` = `"__ALL__"` → revokes all active sessions of group
-  `user123`
+- `target` = `"__ALL__"` → revokes all active sessions of group `user123`
 
 ---
 
@@ -666,12 +690,19 @@ A conforming implementation MUST log:
 - Timestamps MUST be validated against clock drift (tolerance: ±5
   minutes). A message with `timestamp > now + 300` MUST be rejected.
 - TTL values MUST be strictly enforced.
+- `announcementSig` MUST be validated via the configured `TrustAnchor` before
+  the ephemeral public key is accepted (§11.4).
+- `tombstoneSig` MUST be validated via the configured `TrustAnchor` before
+  a revocation tombstone is applied (§11.4).
 
 ### 11.2 Threat Mitigation
 
 | Threat | Mitigation |
 |--------|-----------|
 | Replay attacks | Timestamps and TTL enforcement |
+| Broker injection (key forgery) | TrustAnchor + `announcementSig` validation (§11.4) |
+| Tombstone forgery | `tombstoneSig` validation (§11.4) |
+| Tombstone replay | Latest-timestamp-wins conflict resolution (§6.4) |
 | Injection attacks | Strict format validation (§3.2, §8) |
 | Denial of Service | Size limits and rate limiting (implementation-specific) |
 | Tampering | Mandatory cryptographic signatures |
@@ -682,6 +713,54 @@ A conforming implementation MUST log:
 - Audit logs MUST provide complete traceability of operations.
 - Cryptographic signatures provide non-repudiation.
 - Log retention policies SHOULD be defined by the deployment.
+
+### 11.4 TrustAnchor — Broker is Transport Only *(v2.1)*
+
+Prior to v2.1, a processor with write access to the broker could inject arbitrary
+key announcements and obtain valid verification results from conforming consumers.
+This constitutes a critical security vulnerability.
+
+Since v2.1, every normal message MUST carry `signerId` and `announcementSig`.
+The verifying processor MUST resolve the long-term public key for `signerId` from
+an out-of-band trust store (the `TrustAnchor`) and verify `announcementSig` over
+the canonical announcement bytes (§11.5) **before** accepting the ephemeral
+`pubkey`.
+
+The `TrustAnchor` is independent of the broker. Broker write-access alone is
+insufficient to produce a valid `announcementSig` without also possessing the
+signer's long-term private key.
+
+Failure modes:
+- **`TrustAnchor` infrastructure unavailable** — the processor MUST fail safe:
+  reject the token. It MUST NOT fall back to accepting unverified announcements.
+- **`announcementSig` invalid** — the processor MUST reject the message and MUST
+  log a SEVERE security event. This indicates a possible broker-injection attack.
+
+### 11.5 Canonical Announcement Encoding
+
+The bytes signed by `announcementSig` are encoded in **length-prefixed** format
+to prevent ambiguity attacks (e.g., where `"AB" + "C"` and `"A" + "BC"` produce
+identical concatenated bytes):
+
+```
+len(pubkeyDER)  [4 bytes, big-endian unsigned] ‖ pubkeyDER
+‖ timestamp     [8 bytes, big-endian signed, epoch seconds]
+‖ ttl           [8 bytes, big-endian signed, seconds]
+‖ len(signerId) [4 bytes, big-endian unsigned] ‖ signerId [UTF-8]
+```
+
+All multi-byte integers are encoded big-endian. The `pubkeyDER` is the raw
+X.509 SubjectPublicKeyInfo DER encoding of the ephemeral public key.
+
+### 11.6 Canonical Tombstone Encoding
+
+The bytes signed by `tombstoneSig` use the same length-prefixed approach:
+
+```
+len(groupId) [4 bytes, big-endian unsigned] ‖ groupId [UTF-8]
+‖ len(target) [4 bytes, big-endian unsigned] ‖ target [UTF-8]
+‖ timestamp   [8 bytes, big-endian signed, epoch seconds]
+```
 
 ---
 
@@ -738,12 +817,14 @@ base64url-value   = 1*(ALPHA / DIGIT / "-" / "_")
 | `V2002` | `INVALID_VERSION` | Unsupported version |
 | `V2003` | `INVALID_IDENTIFIER` | Invalid groupId or sequenceId |
 | `V2004` | `INVALID_METADATA` | Invalid metadata format |
-| `V2005` | `MISSING_REQUIRED_PROPERTY` | Missing required property |
+| `V2005` | `MISSING_REQUIRED_PROPERTY` | Missing required property (including `signerId`, `announcementSig`) |
 | `V2006` | `INVALID_TIMESTAMP` | Invalid or expired timestamp |
-| `V2007` | `INVALID_SIGNATURE` | Invalid cryptographic signature |
+| `V2007` | `INVALID_SIGNATURE` | Invalid cryptographic signature (JWT / ephemeral key) |
 | `V2008` | `CONFIGURATION_CONFLICT` | Unresolvable configuration conflict |
 | `V2009` | `SESSION_CAPACITY_EXCEEDED` | Session limit reached (REJECT policy) |
 | `V2010` | `REVOCATION_FAILED` | Revocation could not be processed |
+| `V2011` | `TRUST_ANCHOR_UNAVAILABLE` | TrustAnchor infrastructure temporarily unreachable (fail safe) |
+| `V2012` | `ANNOUNCEMENT_SIGNATURE_REJECTED` | `announcementSig` or `tombstoneSig` failed TrustAnchor validation (security event) |
 
 ## Appendix C. Normative References
 
@@ -758,5 +839,6 @@ base64url-value   = 1*(ALPHA / DIGIT / "-" / "_")
 
 ---
 
-*Veridot Protocol Specification — Version 2.0*
-*Last revised: 2026-04-12*
+*Veridot Protocol Specification — Version 2.1*  
+*Last revised: 2026-06-27*  
+*Changes in v2.1: Signed key announcements (§4.2, §4.5), signed revocation tombstones (§6.3, §6.5), TrustAnchor security model (§11.4), canonical encoding specs (§11.5–11.6), new error codes V2011–V2012 (Appendix B).*

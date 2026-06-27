@@ -15,7 +15,7 @@ class TokenTrackerTest {
     @BeforeEach
     void setUp() {
         broker = new InMemoryMetadataBroker();
-        sv = new GenericSignerVerifier(broker, "test-salt");
+        sv = TestTrustSetup.create().newSignerVerifier(broker);
     }
 
     @Test

@@ -15,7 +15,7 @@ class SigningTest {
     @BeforeEach
     void setUp() {
         broker = new InMemoryMetadataBroker();
-        signer = new GenericSignerVerifier(broker, "test-salt");
+        signer = TestTrustSetup.create().newSignerVerifier(broker);
     }
 
     @Test
@@ -51,6 +51,9 @@ class SigningTest {
         assertTrue(stored.contains("pubkey:"), "Stored message must contain 'pubkey' property");
         assertTrue(stored.contains("timestamp:"), "Stored message must contain 'timestamp' property");
         assertTrue(stored.contains("ttl:"), "Stored message must contain 'ttl' property");
+        // v3.0 — trust-anchor fields must be present
+        assertTrue(stored.contains("signerId:"), "Stored message must contain 'signerId' property (F1)");
+        assertTrue(stored.contains("announcementSig:"), "Stored message must contain 'announcementSig' property (F1)");
     }
 
     @Test

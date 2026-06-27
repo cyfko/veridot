@@ -1,177 +1,60 @@
-# Veridot — Distributed Token Verification
+# Veridot — Java
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Java 17+](https://img.shields.io/badge/Java-17%2B-orange.svg)](https://openjdk.org/)
-[![Protocol V2](https://img.shields.io/badge/Protocol-V2-green.svg)](java/.agent/PROTOCOL_V2.md)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](../LICENSE)
+[![Java 25+](https://img.shields.io/badge/Java-25%2B-orange.svg)](https://openjdk.org/)
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.cyfko/veridot-core.svg)](https://central.sonatype.com/artifact/io.github.cyfko/veridot-core)
+[![Build](https://img.shields.io/badge/tests-89%20passed-brightgreen.svg)](veridot-core/)
+[![Protocol V2.1](https://img.shields.io/badge/Protocol-V2.1-green.svg)](../PROTOCOL_V2.md)
 
-**Enterprise-grade distributed token verification** for microservices architectures where any service may need to verify any incoming token — without shared secrets.
-
-Veridot implements **Protocol V2**, a binary-safe canonical message format with structured revocation, distributed configuration, and cryptographic clock-drift validation.
-
----
-
-## ✨ Key Features
-
-- 🔐 **Ephemeral RSA key pairs** with automatic rotation
-- 📡 **Distributed public key propagation** via pluggable brokers (Kafka, SQL databases)
-- 🔄 **Two distribution modes**: DIRECT (JWT returned to caller) or INDIRECT (messageId reference)
-- ⚡ **Session capacity management** with FIFO/LIFO/LRU/REJECT eviction policies
-- 📢 **Structured revocation** (`__REVOKE__`) for cross-processor interoperability
-- ⚙️ **Distributed configuration** (`__CONFIG__`) with local → site → global hierarchy
-- ⏱️ **Clock drift validation** (±5 minutes, §9.1)
-- 🔍 **Token tracking** — query active tokens by group, JWT, or messageId
+Java implementation of the Veridot distributed token verification protocol.
 
 ---
 
-## 📦 Project Structure
+## Modules
 
-| Module | Artifact | Description |
-|--------|----------|-------------|
-| [`veridot-core`](veridot-core/) | `io.github.cyfko:veridot-core` | Core API: interfaces, Protocol V2 implementation, `GenericSignerVerifier` |
-| [`veridot-kafka`](veridot-kafka/) | `io.github.cyfko:veridot-kafka` | Kafka-based `MetadataBroker` with RocksDB local cache |
-| [`veridot-databases`](veridot-databases/) | `io.github.cyfko:veridot-databases` | SQL database-backed `MetadataBroker` (PostgreSQL, MySQL, MariaDB…) |
-| [`veridot-tests`](veridot-tests/) | — | Integration tests across all broker implementations |
+| Module | Artifact | Java | Role |
+|--------|----------|:----:|------|
+| [`veridot-core`](veridot-core/) | `io.github.cyfko:veridot-core:3.0.2` | 25+ | Core API, `GenericSignerVerifier`, `TrustAnchor`, Protocol V2 |
+| [`veridot-kafka`](veridot-kafka/) | `io.github.cyfko:veridot-kafka:3.0.2` | 17+ | `MetadataBroker` backed by Kafka + RocksDB |
+| [`veridot-databases`](veridot-databases/) | `io.github.cyfko:veridot-databases:3.0.2` | 17+ | `MetadataBroker` backed by SQL (PostgreSQL, MySQL…) |
+| [`veridot-tests`](veridot-tests/) | _(internal)_ | 25+ | Integration tests across all brokers |
+
+> **Start reading here**: [`veridot-core/README.md`](veridot-core/README.md) — self-contained reference for all developers. No external site required.
 
 ---
 
-## 🚀 Quick Start
+## Choosing a broker
 
-### 1. Add dependencies
-
-**Maven** (with Kafka broker):
-```xml
-<dependency>
-    <groupId>io.github.cyfko</groupId>
-    <artifactId>veridot-core</artifactId>
-    <version>3.0.0</version>
-</dependency>
-<dependency>
-    <groupId>io.github.cyfko</groupId>
-    <artifactId>veridot-kafka</artifactId>
-    <version>3.0.0</version>
-</dependency>
 ```
+Your application needs to distribute public key metadata across service instances.
+Choose the broker that matches your infrastructure:
 
-**Maven** (with Database broker):
-```xml
-<dependency>
-    <groupId>io.github.cyfko</groupId>
-    <artifactId>veridot-core</artifactId>
-    <version>3.0.0</version>
-</dependency>
-<dependency>
-    <groupId>io.github.cyfko</groupId>
-    <artifactId>veridot-databases</artifactId>
-    <version>3.0.0</version>
-</dependency>
-```
-
-### 2. Sign, verify, and revoke
-
-```java
-import io.github.cyfko.veridot.core.*;
-import io.github.cyfko.veridot.core.impl.*;
-
-// Create broker (Kafka or Database — see module READMEs)
-MetadataBroker broker = createBroker();
-
-// Create signer/verifier (implements DataSigner, TokenVerifier, TokenRevoker, TokenTracker)
-var sv = new GenericSignerVerifier(broker, "my-secret-salt");
-
-// Sign data → returns JWT (DIRECT mode, default)
-String jwt = sv.sign("john@example.com",
-    BasicConfigurer.builder()
-        .groupId("user-123")
-        .validity(300)  // 5 minutes
-        .build());
-
-// Verify token → extract payload and protocol identifiers
-VerifiedData<String> result = sv.verify(jwt, String::toString);
-String email = result.data();      // "john@example.com"
-String group = result.groupId();   // "user-123"
-
-// Revoke a specific session
-sv.revoke(result.groupId(), result.sequenceId());
-
-// Or revoke the entire group
-sv.revoke("user-123", null);
-
-// Check if group has active tokens
-boolean active = sv.hasActiveToken("user-123");
+  ┌─── Already running Kafka? ───────► veridot-kafka   (recommended)
+  │      Sub-ms reads via RocksDB
+  │      Fan-out to all consumers automatically
+  │
+  └─── No Kafka / prefer SQL? ───────► veridot-databases
+         Works with any JDBC DataSource
+         Good for existing DB-centric stacks
+         Polling-based propagation
 ```
 
 ---
 
-## 🔄 How It Works
-
-```
-┌──────────────┐     sign()      ┌──────────────────────┐
-│ Issuer       │ ──────────────→ │ GenericSignerVerifier │
-│ Service      │                 │                      │
-└──────────────┘                 │  1. Generate key pair│
-                                 │  2. Sign JWT         │
-                                 │  3. Publish V2 msg   │
-                                 └──────────┬───────────┘
-                                            │ send(messageId, v2Message)
-                                            ▼
-                                 ┌──────────────────────┐
-                                 │   MetadataBroker     │
-                                 │  (Kafka / Database)  │
-                                 └──────────┬───────────┘
-                                            │ get(messageId)
-                                            ▼
-┌──────────────┐    verify()     ┌──────────────────────┐
-│ Consumer     │ ──────────────→ │ GenericSignerVerifier │
-│ Service      │ ←────────────── │  (any instance)      │
-└──────────────┘   deserialized  └──────────────────────┘
-                     data
-```
-
----
-
-## 🧪 Running Tests
+## Running tests
 
 ```bash
-# Unit tests (core)
-./mvnw -pl veridot-core test
+# Unit tests — no external dependencies
+./mvnw test -pl veridot-core --no-transfer-progress
 
-# Integration tests (requires Docker for Testcontainers)
-./mvnw -pl veridot-tests test
+# Integration tests — requires Docker (Testcontainers)
+./mvnw test -pl veridot-tests --no-transfer-progress
 ```
 
-**Test coverage**: 169 tests across 11 suites (68 unit + 101 integration).
+**v3.0.2 results**: 89 unit tests, 0 failures, 0 errors.
 
 ---
 
-## 📋 Protocol V2
+## License
 
-Veridot implements [Protocol V2](https://cyfko.github.io/veridot) — a self-describing canonical message format:
-
-```
-2:<groupId>:<sequenceId>|mode:<b64>,pubkey:<b64>,timestamp:<b64>,ttl:<b64>
-```
-
-Key sections:
-- **§3** Normal messages (sign/verify lifecycle)
-- **§4** Distributed configuration (`__CONFIG__`)
-- **§5** Structured revocation (`__REVOKE__`)
-- **§9.1** Clock drift validation (±5 minutes)
-
-Full specification: [PROTOCOL_V2.md](.agent/PROTOCOL_V2.md)
-
----
-
-## 📌 Requirements
-
-- Java ≥ 17
-- Maven 3.9+ (wrapper included)
-
----
-
-## 📄 License
-
-[MIT License](LICENSE)
-
----
-
-**Maintained by** [Frank KOSSI](mailto:frank.kossi@kunrin.com) — [Kunrin SA](https://www.kunrin.com)
+[MIT](../LICENSE) · **Kunrin SA** · [frank.kossi@kunrin.com](mailto:frank.kossi@kunrin.com)

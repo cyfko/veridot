@@ -7,451 +7,512 @@ nav_order: 2
 
 # Java Implementation Guide
 
-This comprehensive guide covers everything you need to implement Veridot in your Java applications.
+Ce guide couvre tout ce dont vous avez besoin pour intégrer Veridot dans vos applications Java, de l'installation au déploiement en production avec le modèle de confiance v3.0.
 
-## Table of Contents
+## Table des matières
+
+- [Prérequis](#prérequis)
 - [Installation](#installation)
-- [Core Concepts](#core-concepts)
-- [Basic Usage](#basic-usage)
-- [Configuration](#configuration)
-- [Advanced Features](#advanced-features)
-- [Spring Boot Integration](#spring-boot-integration)
-- [Production Deployment](#production-deployment)
+- [Concepts clés](#concepts-clés)
+- [Démarrage rapide](#démarrage-rapide)
+- [Configuration du TrustAnchor](#configuration-du-trustanchor)
+- [Signature de tokens](#signature-de-tokens)
+- [Vérification de tokens](#vérification-de-tokens)
+- [Révocation de sessions](#révocation-de-sessions)
+- [Gestion de la capacité de sessions](#gestion-de-la-capacité-de-sessions)
+- [Intégration Spring Boot](#intégration-spring-boot)
+- [Migration depuis v3.0.1](#migration-depuis-v301)
+
+---
+
+## Prérequis
+
+| Composant | Version minimale |
+|-----------|-----------------|
+| **Java** | **25** (pour `veridot-core`) |
+| Maven / Gradle | Toute version récente |
+| Kafka (optionnel) | 3.x+ (pour `veridot-kafka`) |
+
+> **Note** : `veridot-kafka` et `veridot-databases` restent compatibles Java 17. Seul `veridot-core` requiert Java 25 (pour les `sealed interface` et le pattern matching).
+
+---
 
 ## Installation
 
 ### Maven
+
 ```xml
 <dependencies>
-    <!-- Core API -->
+    <!-- Core API — Java 25 requis -->
     <dependency>
         <groupId>io.github.cyfko</groupId>
         <artifactId>veridot-core</artifactId>
-        <version>2.0.1</version>
+        <version>3.0.2</version>
     </dependency>
-    
-    <!-- Choose your broker implementation -->
-    
-    <!-- Option 1: Kafka-based metadata distribution -->
+
+    <!-- Implémentation broker Kafka + RocksDB -->
     <dependency>
         <groupId>io.github.cyfko</groupId>
         <artifactId>veridot-kafka</artifactId>
-        <version>2.0.1</version>
+        <version>3.0.2</version>
     </dependency>
-    
-    <!-- Option 2: Database-based metadata storage -->
+
+    <!-- OU : Implémentation broker base de données SQL -->
     <dependency>
         <groupId>io.github.cyfko</groupId>
         <artifactId>veridot-databases</artifactId>
-        <version>2.0.1</version>
+        <version>3.0.2</version>
     </dependency>
 </dependencies>
 ```
 
+Assurez-vous que votre `pom.xml` cible Java 25 :
+
+```xml
+<properties>
+    <maven.compiler.source>25</maven.compiler.source>
+    <maven.compiler.target>25</maven.compiler.target>
+</properties>
+```
+
 ### Gradle
+
 ```gradle
 dependencies {
-    implementation 'io.github.cyfko:veridot-core:2.0.1'
-    implementation 'io.github.cyfko:veridot-kafka:2.0.1'
-    // or
-    // implementation 'io.github.cyfko:veridot-databases:2.0.1'
+    implementation 'io.github.cyfko:veridot-core:3.0.2'
+    implementation 'io.github.cyfko:veridot-kafka:3.0.2'
+    // ou
+    // implementation 'io.github.cyfko:veridot-databases:3.0.2'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
 }
 ```
 
-## Core Concepts
+---
 
-### Key Interfaces
+## Concepts clés
 
-- **`DataSigner`** - Creates cryptographically signed tokens
-- **`TokenVerifier`** - Validates token signatures using distributed public keys
-- **`MetadataBroker`** - Handles public key distribution (Kafka, Database, Custom)
-- **`TokenRevoker`** - Enables immediate token invalidation
+### Interfaces principales
 
-### Token Modes
+| Interface | Rôle |
+|-----------|------|
+| `DataSigner` | Crée des tokens cryptographiquement signés |
+| `TokenVerifier` | Valide les tokens à l'aide des clés publiques distribuées |
+| `TokenRevoker` | Invalide immédiatement des sessions sur tout le cluster |
+| `TokenTracker` | Interroge le statut actif d'une session |
+| `MetadataBroker` | Propage les métadonnées cryptographiques (Kafka, DB, etc.) |
+| **`TrustAnchor`** | **v3.0** — valide les annonces de clés provenant du broker |
 
-- **`TokenMode.jwt`** - Embeds data directly in JWT (recommended for small payloads)
-- **`TokenMode.id`** - Returns reference ID, stores JWT in broker (for large payloads)
+### Modes de distribution
 
-## Basic Usage
+| Mode | `sign()` retourne | Localisation du JWT | Idéal pour |
+|------|------------------|---------------------|------------|
+| `DIRECT` | Le JWT lui-même | Retourné à l'appelant | Payloads petits à moyens |
+| `INDIRECT` | Un `messageId` (`2:groupe:seq`) | Stocké dans le broker | Gros payloads, confidentialité renforcée |
 
-### Simple Setup
+### Modèle de confiance v3.0
+
+Le broker est un **transport uniquement**. Chaque annonce de clé reçue du broker est validée par un `TrustAnchor` avant que la clé éphémère soit utilisée. Cela empêche les attaquants ayant accès au broker d'injecter des clés frauduleuses.
+
+---
+
+## Démarrage rapide
 
 ```java
 import io.github.cyfko.veridot.core.*;
 import io.github.cyfko.veridot.core.impl.*;
 import io.github.cyfko.veridot.kafka.KafkaMetadataBrokerAdapter;
 
-// Configure Kafka broker
-Properties kafkaProps = new Properties();
-kafkaProps.setProperty("bootstrap.servers", "localhost:9092");
-kafkaProps.setProperty("embedded.db.path", "./veridot-keys");
-
-// Initialize signer/verifier
-MetadataBroker broker = KafkaMetadataBrokerAdapter.of(kafkaProps);
-GenericSignerVerifier veridot = new GenericSignerVerifier(broker);
-```
-
-### Signing Data
-
-```java
-// Create data to sign
-public class UserSession {
-    private String userId;
-    private List<String> roles;
-    private long expiresAt;
-    
-    // constructors, getters, setters...
-}
-
-UserSession session = new UserSession("user123", List.of("ADMIN", "USER"));
-
-// Configure signing
-BasicConfigurer config = BasicConfigurer.builder()
-    .useMode(TokenMode.jwt)        // Embed data in JWT
-    .trackedBy(session.getUserId().hashCode())  // For revocation
-    .validity(3600)                // 1 hour validity
-    .build();
-
-// Sign and get token
-String token = veridot.sign(session, config);
-```
-
-### Verifying Tokens
-
-```java
-// In another service
-try {
-    UserSession verified = veridot.verify(token, 
-        BasicConfigurer.deserializer(UserSession.class));
-    
-    System.out.println("User: " + verified.getUserId());
-    System.out.println("Roles: " + verified.getRoles());
-    
-} catch (BrokerExtractionException e) {
-    // Token invalid, expired, or key not found
-    log.warn("Token verification failed: {}", e.getMessage());
-    
-} catch (DataDeserializationException e) {
-    // Token valid but payload corrupted
-    log.error("Data deserialization failed: {}", e.getMessage());
-}
-```
-
-## Configuration
-
-### Kafka Broker Configuration
-
-```java
-Properties props = new Properties();
-
-// Basic configuration
-props.setProperty("bootstrap.servers", "kafka1:9092,kafka2:9092,kafka3:9092");
-props.setProperty("embedded.db.path", "/app/data/veridot");
-
-// Security configuration (for production)
-props.setProperty("security.protocol", "SASL_SSL");
-props.setProperty("sasl.mechanism", "PLAIN");
-props.setProperty("sasl.jaas.config", 
-    "org.apache.kafka.common.security.plain.PlainLoginModule required " +
-    "username=\"veridot-user\" password=\"secure-password\";");
-
-// Performance tuning
-props.setProperty("batch.size", "16384");
-props.setProperty("linger.ms", "5");
-props.setProperty("compression.type", "snappy");
-
-MetadataBroker broker = KafkaMetadataBrokerAdapter.of(props);
-```
-
-### Database Broker Configuration
-
-```java
-Properties props = new Properties();
-props.setProperty("jdbc.url", "jdbc:postgresql://db:5432/veridot");
-props.setProperty("jdbc.username", "veridot_user");
-props.setProperty("jdbc.password", "secure_password");
-props.setProperty("jdbc.driver", "org.postgresql.Driver");
-
-// Connection pool settings
-props.setProperty("connection.pool.size", "20");
-props.setProperty("connection.timeout", "30000");
-
-MetadataBroker broker = DatabaseMetadataBroker.of(props);
-```
-
-### Custom Serialization
-
-```java
-// Custom serializer for specific data formats
-Function<Object, String> customSerializer = data -> {
-    if (data instanceof SpecialData) {
-        return ((SpecialData) data).toCustomFormat();
-    }
-    return new ObjectMapper().writeValueAsString(data);
+// 1. Construire un TrustAnchor (résout les clés publiques long-terme des signataires annoncés)
+TrustAnchor anchor = (TrustAnchor.PublicKeyResolver) signerId -> {
+    // Charger la clé publique long-terme pour ce signerId depuis votre trust store
+    return loadPublicKeyFromVault(signerId); // votre implémentation
 };
 
-BasicConfigurer config = BasicConfigurer.builder()
-    .useMode(TokenMode.jwt)
-    .serializedBy(customSerializer)
-    .trackedBy(123L)
-    .validity(1800)
-    .build();
+// 2. Charger la clé privée long-terme du service
+PrivateKey longTermKey = loadPrivateKeyFromSecret("/etc/veridot/private.key");
+
+// 3. Connecter au broker
+MetadataBroker broker = KafkaMetadataBrokerAdapter.of(kafkaProperties());
+
+// 4. Instancier le signer/vérificateur
+var sv = new GenericSignerVerifier(broker, anchor, "mon-service-id", longTermKey);
+
+// 5. Signer
+String token = sv.sign("user@example.com",
+    BasicConfigurer.builder()
+        .groupId("user-123")
+        .sequenceId("session-A")
+        .validity(3600)   // 1 heure
+        .distribution(DistributionMode.DIRECT)
+        .build());
+
+// 6. Vérifier (depuis n'importe quel service partageant le même broker + trust anchor)
+VerifiedData<String> result = sv.verify(token, s -> s);
+String email   = result.data();       // "user@example.com"
+String group   = result.groupId();    // "user-123"
+String session = result.sequenceId(); // "session-A"
+
+// 7. Révoquer
+sv.revoke("user-123", "session-A");  // révoquer une session spécifique
+sv.revoke("user-123", null);         // révoquer toutes les sessions du groupe
 ```
 
-## Advanced Features
+---
 
-### Token Revocation
+## Configuration du TrustAnchor
+
+Le `TrustAnchor` est la pierre angulaire de la sécurité v3.0. Choisissez l'implémentation adaptée à votre infrastructure.
+
+### Option A : Clé publique statique (fichier PEM / Vault KV)
 
 ```java
-// Revoke by tracking ID (affects all tokens with that ID)
-TokenRevoker revoker = (TokenRevoker) veridot;
-revoker.revoke(12345L);
-
-// Revoke specific token
-revoker.revoke("eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9...");
+// Chaque signerId correspond à un fichier PEM dans un répertoire en lecture seule
+TrustAnchor anchor = (TrustAnchor.PublicKeyResolver) signerId -> {
+    Path keyPath = Paths.get("/etc/veridot/trust/" + signerId + ".pub.pem");
+    byte[] pem = Files.readAllBytes(keyPath);
+    return parsePemPublicKey(pem);
+};
 ```
 
-### ID Mode for Large Payloads
+### Option B : Vault KV secrets
 
 ```java
-// For large documents or complex objects
-LargeDocument document = new LargeDocument(/* large data */);
-
-BasicConfigurer config = BasicConfigurer.builder()
-    .useMode(TokenMode.id)         // Return reference ID only
-    .trackedBy(document.getId())
-    .validity(1800)                // 30 minutes
-    .build();
-
-String documentId = veridot.sign(document, config); // Returns short ID
-
-// Later, in another service
-LargeDocument verified = veridot.verify(documentId, 
-    BasicConfigurer.deserializer(LargeDocument.class));
+TrustAnchor anchor = (TrustAnchor.PublicKeyResolver) signerId -> {
+    VaultResponse resp = vaultTemplate.read("secret/veridot/trust/" + signerId);
+    String pem = (String) resp.getData().get("public_key");
+    return parsePemPublicKey(pem.getBytes(StandardCharsets.UTF_8));
+};
 ```
 
-### Error Handling with Retry
+### Option C : Vault Transit Engine (KMS — la clé ne quitte pas Vault)
 
 ```java
-@Retryable(value = {BrokerTransportException.class}, maxAttempts = 3)
-public String signWithRetry(Object data, DataSigner.Configurer config) {
-    try {
-        return dataSigner.sign(data, config);
-    } catch (BrokerTransportException e) {
-        log.warn("Broker communication failed, retrying: {}", e.getMessage());
-        throw e; // Will trigger retry
+TrustAnchor anchor = (TrustAnchor.DelegatedVerifier) (signerId, canonical, sig) -> {
+    // Vault vérifie la signature RSA ; la clé privée ne quitte jamais Vault
+    boolean valid = vaultTransit.verify(signerId, canonical, sig);
+    if (!valid) throw new TrustResolutionException.SignatureRejected(
+        "Vault a rejeté la signature pour " + signerId);
+};
+```
+
+### Gestion des exceptions TrustAnchor
+
+```java
+try {
+    var result = sv.verify(token, s -> s);
+
+} catch (BrokerExtractionException e) {
+    // Inspecter la cause pour distinguer les échecs TrustAnchor
+    Throwable cause = e.getCause();
+    if (cause instanceof TrustResolutionException.Unavailable) {
+        // Infrastructure KMS indisponible — fail safe, alerter les ops
+        alertOps("TrustAnchor indisponible : " + cause.getMessage());
+    } else if (cause instanceof TrustResolutionException.SignatureRejected) {
+        // Événement de sécurité — alerter l'équipe sécurité
+        alertSecurity("Tentative d'injection de clé possible : " + cause.getMessage());
     }
+    throw e; // toujours propager
 }
 ```
 
-## Spring Boot Integration
+---
 
-### Configuration Class
+## Signature de tokens
+
+```java
+// Mode DIRECT : JWT retourné à l'appelant
+String jwt = sv.sign(userPayload,
+    BasicConfigurer.builder()
+        .groupId(userId)              // identifie le groupe "propriétaire"
+        .sequenceId(deviceId)         // identifie cette session spécifique
+        .validity(3600)               // secondes
+        .distribution(DistributionMode.DIRECT)
+        .build());
+
+// Mode INDIRECT : messageId retourné, JWT stocké dans le broker
+String messageId = sv.sign(largeDocument,
+    BasicConfigurer.builder()
+        .groupId("docs")
+        .sequenceId(docId)
+        .validity(86400)
+        .distribution(DistributionMode.INDIRECT)
+        .build());
+```
+
+### Sérialisation personnalisée
+
+```java
+ObjectMapper mapper = new ObjectMapper();
+
+String token = sv.sign(myObject,
+    BasicConfigurer.builder()
+        .groupId("grp")
+        .validity(3600)
+        .serializedBy(obj -> mapper.writeValueAsString(obj))
+        .build());
+
+VerifiedData<MyClass> result = sv.verify(token,
+    json -> mapper.readValue(json, MyClass.class));
+```
+
+---
+
+## Vérification de tokens
+
+```java
+try {
+    // Accepte indifféremment un JWT brut (DIRECT) ou un messageId (INDIRECT)
+    VerifiedData<String> result = sv.verify(tokenOrMessageId, s -> s);
+
+    String payload   = result.data();       // payload désérialisé
+    String groupId   = result.groupId();    // ex. "user-123"
+    String sessionId = result.sequenceId(); // ex. "session-A"
+
+} catch (BrokerExtractionException e) {
+    // Token invalide, révoqué, expiré, ou échec du trust anchor
+    log.warn("Vérification échouée : {}", e.getMessage());
+}
+```
+
+---
+
+## Révocation de sessions
+
+```java
+// Révoquer une session spécifique
+sv.revoke("user-123", "session-A");
+
+// Révoquer toutes les sessions d'un utilisateur (droit à l'oubli)
+sv.revoke("user-123", null);
+
+// Vérifier si une session est active avant de révoquer
+if (sv.hasActiveToken("user-123")) {
+    sv.revoke("user-123", null);
+}
+
+// hasActiveToken accepte aussi un JWT ou un messageId
+boolean isActive  = sv.hasActiveToken(jwt);
+boolean isActive2 = sv.hasActiveToken(messageId);
+```
+
+Les tombstones de révocation sont **signés** avec la clé long-terme du service (v3.0). Un attaquant avec accès au broker ne peut pas forger un tombstone arbitraire ni rejouer un ancien tombstone.
+
+---
+
+## Gestion de la capacité de sessions
+
+```java
+// Refuser tout dépassement (1 session active max, REJECT)
+var sv = new GenericSignerVerifier(
+    broker, anchor, signerId, longTermKey,
+    1, GenericSignerVerifier.EvictionPolicy.REJECT);
+
+// Évincer la plus ancienne session si dépassement (FIFO, max 3)
+var sv = new GenericSignerVerifier(
+    broker, anchor, signerId, longTermKey,
+    3, GenericSignerVerifier.EvictionPolicy.FIFO);
+```
+
+### Politiques d'éviction
+
+| Politique | Comportement au dépassement |
+|-----------|-----------------------------|
+| `FIFO` | Évince la session la plus ancienne (timestamp minimum) |
+| `LIFO` | Évince la session la plus récente (timestamp maximum) |
+| `LRU` | Identique à FIFO dans l'implémentation actuelle |
+| `REJECT` | Lance `SessionCapacityExceededException` — pas d'éviction |
+
+```java
+// Exemple REJECT avec gestion d'exception
+try {
+    String token = sv.sign(data, config);
+} catch (SessionCapacityExceededException e) {
+    log.warn("Limite de sessions atteinte pour {} : max={}", e.getGroupId(), e.getMaxSessions());
+    // Inviter l'utilisateur à se déconnecter d'un autre appareil
+}
+```
+
+---
+
+## Intégration Spring Boot
 
 ```java
 @Configuration
-@EnableConfigurationProperties(VeridotProperties.class)
 public class VeridotConfig {
-    
+
+    @Value("${veridot.signer-id}")
+    private String signerId;
+
+    @Value("${veridot.long-term-key-path}")
+    private String keyPath;
+
     @Bean
-    public MetadataBroker metadataBroker(VeridotProperties properties) {
+    public PrivateKey longTermPrivateKey() throws Exception {
+        byte[] pkcs8 = Files.readAllBytes(Paths.get(keyPath));
+        KeyFactory kf = KeyFactory.getInstance("RSA");
+        return kf.generatePrivate(new PKCS8EncodedKeySpec(pkcs8));
+    }
+
+    @Bean
+    public TrustAnchor trustAnchor(VaultTemplate vault) {
+        return (TrustAnchor.PublicKeyResolver) id -> {
+            String pem = (String) vault.read("secret/veridot/trust/" + id)
+                                       .getData().get("public_key");
+            return parsePemPublicKey(pem.getBytes(StandardCharsets.UTF_8));
+        };
+    }
+
+    @Bean
+    public MetadataBroker metadataBroker(
+            @Value("${spring.kafka.bootstrap-servers}") String brokers) {
         Properties props = new Properties();
-        props.setProperty("bootstrap.servers", properties.getKafka().getBootstrapServers());
-        props.setProperty("embedded.db.path", properties.getDbPath());
-        
+        props.setProperty("bootstrap.servers", brokers);
+        props.setProperty("security.protocol", "SASL_SSL");
+        props.setProperty("sasl.mechanism", "SCRAM-SHA-512");
+        props.setProperty("sasl.jaas.config", buildJaasConfig());
+        props.setProperty("ssl.endpoint.identification.algorithm", "https");
         return KafkaMetadataBrokerAdapter.of(props);
     }
-    
+
     @Bean
-    public DataSigner dataSigner(MetadataBroker broker) {
-        return new GenericSignerVerifier(broker);
+    public GenericSignerVerifier veridot(MetadataBroker broker,
+                                          TrustAnchor anchor,
+                                          PrivateKey longTermPrivateKey) {
+        return new GenericSignerVerifier(broker, anchor, signerId, longTermPrivateKey);
     }
-    
-    @Bean 
-    public TokenVerifier tokenVerifier(MetadataBroker broker) {
-        return new GenericSignerVerifier(broker);
-    }
+
+    // Exposer les interfaces individuelles comme beans Spring
+    @Bean public DataSigner   dataSigner(GenericSignerVerifier sv)   { return sv; }
+    @Bean public TokenVerifier tokenVerifier(GenericSignerVerifier sv) { return sv; }
+    @Bean public TokenRevoker  tokenRevoker(GenericSignerVerifier sv)  { return sv; }
+    @Bean public TokenTracker  tokenTracker(GenericSignerVerifier sv)  { return sv; }
 }
 ```
 
-### Properties Configuration
+### application.yml
 
-```java
-@ConfigurationProperties(prefix = "veridot")
-@Data
-public class VeridotProperties {
-    private String dbPath = "./veridot-keys";
-    private Kafka kafka = new Kafka();
-    
-    @Data
-    public static class Kafka {
-        private String bootstrapServers = "localhost:9092";
-        private String topic = "veridot-keys";
-        private Security security = new Security();
-        
-        @Data
-        public static class Security {
-            private String protocol = "PLAINTEXT";
-            private String mechanism;
-            private String jaasConfig;
-        }
-    }
-}
-```
-
-### Application Properties
-
-```properties
-# application.yml
+```yaml
 veridot:
-  db-path: /app/data/veridot
+  signer-id: mon-service-auth
+  long-term-key-path: /var/secrets/veridot/private.key
+
+spring:
   kafka:
-    bootstrap-servers: kafka1:9092,kafka2:9092,kafka3:9092
-    topic: veridot-metadata
-    security:
-      protocol: SASL_SSL
-      mechanism: PLAIN
-      jaas-config: |
-        org.apache.kafka.common.security.plain.PlainLoginModule required
-        username="veridot-user"
-        password="${KAFKA_PASSWORD}";
+    bootstrap-servers: kafka1:9092,kafka2:9092
 ```
 
-### Service Implementation
+### Service d'exemple
 
 ```java
 @Service
 @Slf4j
 public class TokenService {
-    
-    private final DataSigner dataSigner;
+
+    private final DataSigner    dataSigner;
     private final TokenVerifier tokenVerifier;
-    
-    public TokenService(DataSigner dataSigner, TokenVerifier tokenVerifier) {
-        this.dataSigner = dataSigner;
-        this.tokenVerifier = tokenVerifier;
+    private final TokenRevoker  tokenRevoker;
+
+    public String createAccessToken(User user) {
+        return dataSigner.sign(user.getId(),
+            BasicConfigurer.builder()
+                .groupId(user.getId())
+                .sequenceId(UUID.randomUUID().toString())
+                .validity(3600)
+                .distribution(DistributionMode.DIRECT)
+                .build());
     }
-    
-    public String createUserToken(User user) {
-        UserTokenData tokenData = new UserTokenData(
-            user.getId(), 
-            user.getRoles(), 
-            Instant.now().plusSeconds(3600)
-        );
-        
-        BasicConfigurer config = BasicConfigurer.builder()
-            .useMode(TokenMode.jwt)
-            .trackedBy(user.getId())
-            .validity(3600)
-            .build();
-        
+
+    public Optional<VerifiedData<String>> verifyToken(String token) {
         try {
-            return dataSigner.sign(tokenData, config);
-        } catch (Exception e) {
-            log.error("Failed to sign token for user {}", user.getId(), e);
-            throw new TokenCreationException("Token creation failed", e);
-        }
-    }
-    
-    public Optional<UserTokenData> verifyToken(String token) {
-        try {
-            UserTokenData userData = tokenVerifier.verify(token,
-                BasicConfigurer.deserializer(UserTokenData.class));
-            return Optional.of(userData);
-        } catch (BrokerExtractionException | DataDeserializationException e) {
-            log.warn("Token verification failed: {}", e.getMessage());
+            return Optional.of(tokenVerifier.verify(token, s -> s));
+        } catch (BrokerExtractionException e) {
+            log.warn("Vérification échouée : {}", e.getMessage());
             return Optional.empty();
         }
     }
+
+    public void logout(String userId, String sessionId) {
+        tokenRevoker.revoke(userId, sessionId);
+    }
+
+    public void logoutAll(String userId) {
+        tokenRevoker.revoke(userId, null);
+    }
 }
 ```
 
-## Production Deployment
+---
 
-### Docker Configuration
+## Migration depuis v3.0.1
 
-```yaml
-# docker-compose.yml
-version: '3.8'
-services:
-  app:
-    image: myapp:latest
-    environment:
-      KAFKA_BROKERS: kafka:9092
-      VERIDOT_DB_PATH: /app/data/veridot
-      JAVA_OPTS: -XX:+UseG1GC -Xmx2g
-    volumes:
-      - veridot_data:/app/data
-    depends_on:
-      - kafka
+Le **seul breaking change** entre v3.0.1 et v3.0.2 est le constructeur de `GenericSignerVerifier`.
 
-volumes:
-  veridot_data:
-```
-
-### Monitoring with Micrometer
+### Avant (v3.0.1)
 
 ```java
-@Component
-public class VeridotMetrics {
-    private final Counter signCounter;
-    private final Counter verifyCounter;
-    private final Timer verificationLatency;
-    
-    public VeridotMetrics(MeterRegistry registry) {
-        this.signCounter = Counter.builder("veridot.tokens.signed")
-            .description("Total tokens signed")
-            .register(registry);
-            
-        this.verifyCounter = Counter.builder("veridot.tokens.verified")
-            .tag("status", "success")
-            .register(registry);
-            
-        this.verificationLatency = Timer.builder("veridot.verification.duration")
-            .description("Token verification latency")
-            .register(registry);
-    }
-    
-    // Use in your service methods
-    public String signWithMetrics(Object data, DataSigner.Configurer config) {
-        signCounter.increment();
-        return Timer.Sample.start(registry)
-            .stop(verificationLatency, () -> dataSigner.sign(data, config));
-    }
-}
+// Ancien constructeur — le salt n'avait aucune valeur cryptographique
+var sv = new GenericSignerVerifier(broker, "mon-salt");
+var sv = new GenericSignerVerifier(broker, "mon-salt", 3, EvictionPolicy.FIFO);
 ```
 
-### Health Checks
+### Après (v3.0.2)
 
 ```java
-@Component
-public class VeridotHealthIndicator implements HealthIndicator {
-    
-    private final MetadataBroker broker;
-    
-    @Override
-    public Health health() {
-        try {
-            // Test broker connectivity
-            String testKey = "health-check-" + System.currentTimeMillis();
-            broker.send(testKey, "health-check").get(5, TimeUnit.SECONDS);
-            
-            return Health.up()
-                .withDetail("broker", "connected")
-                .build();
-        } catch (Exception e) {
-            return Health.down()
-                .withDetail("broker", "disconnected")
-                .withDetail("error", e.getMessage())
-                .build();
-        }
-    }
-}
+// Nouveau constructeur — sécurité réelle via TrustAnchor
+TrustAnchor anchor = (TrustAnchor.PublicKeyResolver) signerId -> loadPublicKey(signerId);
+PrivateKey longTermKey = loadPrivateKey("/etc/veridot/private.key");
+
+var sv = new GenericSignerVerifier(broker, anchor, "mon-service-id", longTermKey);
+var sv = new GenericSignerVerifier(broker, anchor, "mon-service-id", longTermKey, 3, EvictionPolicy.FIFO);
 ```
 
-## Next Steps
+### Étapes de migration
 
-- Learn about [Node.js implementation]({{ '/docs/nodejs-guide' | relative_url }})
-- Review [Security best practices]({{ '/docs/security' | relative_url }})
-- Explore [API Reference]({{ '/docs/api-reference' | relative_url }})
-- See [Production deployment examples]({{ '/docs/deployment' | relative_url }})
+**Étape 1** : Générer une paire de clés RSA long-terme (3072 bits) pour chaque service signataire :
+
+```bash
+openssl genrsa -out private.pem 3072
+openssl rsa -in private.pem -pubout -out public.pem
+```
+
+**Étape 2** : Stocker la clé privée dans Vault, un Kubernetes Secret, ou un autre gestionnaire de secrets sécurisé. Ne jamais la committer dans le code source.
+
+**Étape 3** : Distribuer la clé publique à tous les services vérificateurs. Un secret Vault KV en lecture seule ou un ConfigMap Kubernetes suffit — la clé publique n'est pas sensible.
+
+**Étape 4** : Implémenter `TrustAnchor` (3 à 5 lignes selon le backend, voir [Configuration du TrustAnchor](#configuration-du-trustanchor)).
+
+**Étape 5** : Mettre à jour le compilateur vers Java 25 dans `pom.xml` :
+
+```xml
+<properties>
+    <maven.compiler.source>25</maven.compiler.source>
+    <maven.compiler.target>25</maven.compiler.target>
+</properties>
+```
+
+**Étape 6** : Mettre à jour les tests unitaires. Remplacer `new GenericSignerVerifier(broker, "salt")` par un setup minimal en mémoire :
+
+```java
+// Setup de test minimal
+KeyPairGenerator gen = KeyPairGenerator.getInstance("RSA");
+gen.initialize(2048); // RSA-2048 suffisant pour les tests
+KeyPair kp = gen.generateKeyPair();
+
+TrustAnchor anchor = (TrustAnchor.PublicKeyResolver) id -> kp.getPublic();
+var sv = new GenericSignerVerifier(broker, anchor, "test-signer", kp.getPrivate());
+```
+
+> **Note** : le projet Veridot fournit `TestTrustSetup` dans le module de test pour éviter cette duplication.
+
+---
+
+## Étapes suivantes
+
+- Lire le [Modèle de sécurité et bonnes pratiques]({{ '/docs/security' | relative_url }})
+- Consulter [ADR-001 : TrustAnchor]({{ '/docs/adr/001-trust-anchor' | relative_url }})
+- Explorer la [Référence API]({{ '/docs/api-reference' | relative_url }})
+- Voir la [Spécification du Protocole V2]({{ '/protocol-v2' | relative_url }})
