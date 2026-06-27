@@ -499,7 +499,7 @@ openssl rsa -in private.pem -pubout -out public.pem
 ```java
 // Setup de test minimal
 KeyPairGenerator gen = KeyPairGenerator.getInstance("RSA");
-gen.initialize(2048); // RSA-2048 suffisant pour les tests
+gen.initialize(3072); // RSA-3072 (recommandation NIST) — même taille qu'en production
 KeyPair kp = gen.generateKeyPair();
 
 TrustAnchor anchor = (TrustAnchor.PublicKeyResolver) id -> kp.getPublic();
