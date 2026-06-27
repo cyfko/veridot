@@ -255,6 +255,10 @@ class ProtocolV2 {
             throw new IllegalArgumentException(
                     fieldName + " must be 1-125 printable characters excluding :,| and whitespace, got: " + id);
         }
+        if (id.startsWith("__") && id.endsWith("__")) {
+            throw new IllegalArgumentException(
+                    fieldName + " must not use the reserved namespace pattern __...__: " + id);
+        }
     }
 
     // ── Base64url codec ───────────────────────────────────────────────────────

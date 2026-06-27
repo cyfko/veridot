@@ -182,7 +182,7 @@ public class KafkaMetadataBrokerAdapter implements MetadataBroker {
             this.properties = props;
             this.producer = new KafkaProducer<>(properties);
             this.consumer = new KafkaConsumer<>(properties);
-            this.consumer.subscribe(List.of(Constant.KAFKA_TOKEN_VERIFIER_TOPIC));
+            this.consumer.subscribe(List.of(props.getProperty(VerifierConfig.BROKER_TOPIC_CONFIG, Constant.KAFKA_TOKEN_VERIFIER_TOPIC)));
 
             // Add a shutdown hook to gracefully close the embedded database
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
@@ -307,8 +307,8 @@ public class KafkaMetadataBrokerAdapter implements MetadataBroker {
     @Override
     public String get(String keyId) {
         try {
-            byte[] bytes = db.get(keyId.getBytes());
-            final String messageValue = bytes != null ? new String(bytes) : null;
+            byte[] bytes = db.get(keyId.getBytes(StandardCharsets.UTF_8));
+            final String messageValue = bytes != null ? new String(bytes, StandardCharsets.UTF_8) : null;
             if (messageValue == null) {
                 logger.info("Failed to find public key for keyId: " + keyId);
                 throw new BrokerExtractionException("Key {" + keyId + "} not found");
@@ -333,12 +333,21 @@ public class KafkaMetadataBrokerAdapter implements MetadataBroker {
     private void scheduleAsyncWork() {
         // Data + control consumer (F4: revocation keys detected and processed with priority inside)
         scheduler.scheduleAtFixedRate(() -> {
-            saveKafkaMessagesOnEmbeddedDatabase(consumer, db);
+            try {
+                saveKafkaMessagesOnEmbeddedDatabase(consumer, db);
+            } catch (Throwable t) {
+                logger.severe("Kafka consumer loop error: " + t.getMessage());
+            }
         }, 0, 1, TimeUnit.SECONDS);
 
         // Compaction task: purge TTL-expired entries from RocksDB (F6)
-        scheduler.scheduleAtFixedRate(
-                this::compactExpiredEntries,
+        scheduler.scheduleAtFixedRate(() -> {
+            try {
+                compactExpiredEntries();
+            } catch (Throwable t) {
+                logger.severe("compaction loop error: " + t.getMessage());
+            }
+        },
                 COMPACTION_INTERVAL_SECONDS,
                 COMPACTION_INTERVAL_SECONDS,
                 TimeUnit.SECONDS
@@ -387,12 +396,12 @@ public class KafkaMetadataBrokerAdapter implements MetadataBroker {
      * @throws RocksDBException if retrieval or persistence fails.
      */
     private String getOrCreateUniqueGroupId() throws RocksDBException {
-        byte[] idByte = db.get(ConstantDefault.UNIQUE_BROKER_GROUP_ID_KEY.getBytes());
+        byte[] idByte = db.get(ConstantDefault.UNIQUE_BROKER_GROUP_ID_KEY.getBytes(StandardCharsets.UTF_8));
         if (idByte == null) {
-            idByte = UUID.randomUUID().toString().getBytes();
-            db.put(ConstantDefault.UNIQUE_BROKER_GROUP_ID_KEY.getBytes(), idByte);
+            idByte = UUID.randomUUID().toString().getBytes(StandardCharsets.UTF_8);
+            db.put(ConstantDefault.UNIQUE_BROKER_GROUP_ID_KEY.getBytes(StandardCharsets.UTF_8), idByte);
         }
-        return new String(idByte);
+        return new String(idByte, StandardCharsets.UTF_8);
     }
 
     /**
@@ -434,12 +443,12 @@ public class KafkaMetadataBrokerAdapter implements MetadataBroker {
 
             try {
                 if (message.isBlank()) {
-                    db.delete(key.getBytes());
+                    db.delete(key.getBytes(StandardCharsets.UTF_8));
                 } else if (key.contains(":__REVOKE__")) {
                     processRevocationMessage(key, message, db);
-                    db.put(key.getBytes(), message.getBytes());
+                    db.put(key.getBytes(StandardCharsets.UTF_8), message.getBytes(StandardCharsets.UTF_8));
                 } else {
-                    db.put(key.getBytes(), message.getBytes());
+                    db.put(key.getBytes(StandardCharsets.UTF_8), message.getBytes(StandardCharsets.UTF_8));
                 }
             } catch (RocksDBException ex) {
                 logger.severe("RocksDB error processing control message key=" + key + ": " + ex.getMessage());
@@ -456,10 +465,10 @@ public class KafkaMetadataBrokerAdapter implements MetadataBroker {
             try {
                 if (message.isBlank()) {
                     // remove this entry (direct deletion or V1-style revocation)
-                    db.delete(key.getBytes());
+                    db.delete(key.getBytes(StandardCharsets.UTF_8));
                 } else {
                     // Normal message — persist on embedded DB
-                    db.put(key.getBytes(), message.getBytes());
+                    db.put(key.getBytes(StandardCharsets.UTF_8), message.getBytes(StandardCharsets.UTF_8));
                 }
             } catch (RocksDBException ex) {
                 logger.severe(ex.getMessage());

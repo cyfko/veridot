@@ -411,14 +411,14 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             final String messageId;
             final String jwtToken;
 
-            if (ProtocolV2.isJwt(token)) {
-                // DIRECT mode: token is the JWT itself; extract messageId from "sub" claim
-                messageId = extractSubFromJwt(token);
-                jwtToken = token;
-            } else if (ProtocolV2.isMessageId(token)) {
+            if (ProtocolV2.isMessageId(token)) {
                 // INDIRECT mode: token is the messageId
                 messageId = token;
                 jwtToken = null; // will be resolved from broker
+            } else if (ProtocolV2.isJwt(token)) {
+                // DIRECT mode: token is the JWT itself; extract messageId from "sub" claim
+                messageId = extractSubFromJwt(token);
+                jwtToken = token;
             } else {
                 throw new BrokerExtractionException("Unrecognized token format: " + token);
             }
@@ -552,7 +552,9 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
                     + (target == null ? "null" : target.getClass().getName()));
         }
 
-        if (ProtocolV2.isJwt(s)) {
+        if (ProtocolV2.isMessageId(s)) {
+            return isMessageIdActive(s);
+        } else if (ProtocolV2.isJwt(s)) {
             // Extract messageId from JWT sub claim and check that specific sequence
             try {
                 String messageId = extractSubFromJwt(s);
@@ -560,8 +562,6 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             } catch (Exception e) {
                 return false;
             }
-        } else if (ProtocolV2.isMessageId(s)) {
-            return isMessageIdActive(s);
         } else {
             // Treat as groupId: check if any normal sequence within the group is active
             try {
@@ -922,8 +922,7 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             byte[] tombstoneSig = signAnnouncement(tombstoneBytes, longTermPrivateKey);
             tombstoneSigB64 = Base64.getUrlEncoder().withoutPadding().encodeToString(tombstoneSig);
         } catch (Exception e) {
-            logger.warning("Failed to sign revocation tombstone (will use unsigned): " + e.getMessage());
-            tombstoneSigB64 = "";
+            throw new RuntimeException("SECURITY: Cannot sign revocation tombstone — refusing to publish unsigned tombstone", e);
         }
 
         Map<String, String> props = new LinkedHashMap<>();
