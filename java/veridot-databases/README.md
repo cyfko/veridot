@@ -29,19 +29,19 @@ Use this broker when your infrastructure already runs a relational database and 
 <dependency>
     <groupId>io.github.cyfko</groupId>
     <artifactId>veridot-core</artifactId>
-    <version>3.0.2</version>
+    <version>3.1.0</version>
 </dependency>
 <dependency>
     <groupId>io.github.cyfko</groupId>
     <artifactId>veridot-databases</artifactId>
-    <version>3.0.2</version>
+    <version>3.1.0</version>
 </dependency>
 ```
 
 ```gradle
 // Gradle
-implementation 'io.github.cyfko:veridot-core:3.0.2'
-implementation 'io.github.cyfko:veridot-databases:3.0.2'
+implementation 'io.github.cyfko:veridot-core:3.1.0'
+implementation 'io.github.cyfko:veridot-databases:3.1.0'
 ```
 
 ---

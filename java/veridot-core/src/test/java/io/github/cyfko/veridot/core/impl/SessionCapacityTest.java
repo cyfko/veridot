@@ -123,14 +123,7 @@ class SessionCapacityTest {
         var sv = trust.newSignerVerifier(broker);
 
         // Publish a local config with maxSessions=1
-        long now = java.time.Instant.now().getEpochSecond();
-        var cfgProps = new java.util.LinkedHashMap<String, String>();
-        cfgProps.put("ts", String.valueOf(now));
-        cfgProps.put("exp", String.valueOf(now + 3600));
-        cfgProps.put("max", "1");
-        cfgProps.put("pol", "FIFO");
-        String configMsg = ProtocolV2.buildMessage("u1", "__CONFIG__", cfgProps);
-        broker.send("3:u1:__CONFIG__", configMsg);
+        sv.publishConfig(GenericSignerVerifier.ConfigScope.LOCAL, "u1", 1, GenericSignerVerifier.EvictionPolicy.FIFO, -1, 3600);
 
         // Sign 2 sessions — config should enforce maxSessions=1
         sv.sign("d1", BasicConfigurer.builder().groupId("u1").sequenceId("s1").validity(600).build());
@@ -147,14 +140,7 @@ class SessionCapacityTest {
         var sv = trust.newSignerVerifier(broker);
 
         // Publish a global config with maxSessions=1
-        long now = java.time.Instant.now().getEpochSecond();
-        var cfgProps = new java.util.LinkedHashMap<String, String>();
-        cfgProps.put("ts", String.valueOf(now));
-        cfgProps.put("exp", String.valueOf(now + 3600));
-        cfgProps.put("max", "1");
-        cfgProps.put("pol", "FIFO");
-        String configMsg = ProtocolV2.buildMessage("__CONFIG__", "__ALL__", cfgProps);
-        broker.send("3:__CONFIG__:__ALL__", configMsg);
+        sv.publishConfig(GenericSignerVerifier.ConfigScope.GLOBAL, null, 1, GenericSignerVerifier.EvictionPolicy.FIFO, -1, 3600);
 
         // Sign 2 sessions for a group that has NO local config
         sv.sign("d1", BasicConfigurer.builder().groupId("u2").sequenceId("s1").validity(600).build());

@@ -91,6 +91,17 @@ class ProtocolV2 {
         return header + META_SEP + metadata;
     }
 
+    /**
+     * Overload of {@link #buildMessage(String, String, Map)} that accepts an already
+     * composed messageId (useful for reserved keys such as config keys).
+     */
+    static String buildMessage(String messageId, Map<String, String> properties) {
+        String metadata = properties.entrySet().stream()
+                .map(e -> e.getKey() + FIELD_SEP + base64UrlEncode(e.getValue()))
+                .collect(Collectors.joining(PROP_SEP));
+        return messageId + META_SEP + metadata;
+    }
+
     // ── Message parsing ───────────────────────────────────────────────────────
 
     /**

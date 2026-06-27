@@ -5,6 +5,28 @@ All notable changes to the Veridot project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0] - 2026-06-27
+
+### ⚠️ Breaking Behavior
+
+- **Distributed configuration must now be signed** — Any `__CONFIG__` message written to the broker that lacks a valid signature from an identity resolved by the `TrustAnchor` will be silently ignored. Systems will fall back to the next priority level or constructor defaults.
+
+  **Migration**: Any session capacity configurations (maxSessions, eviction policy, defaultTTL) published prior to this release must be republished using the new `publishConfig(...)` API.
+
+### 🔐 Security
+
+- **CVE-class fix: closed configuration DoS injection vector (F9)** — Prior to this release, an attacker with write access to the broker could inject unsigned configuration overrides (e.g. `maxSessions=1` with `EvictionPolicy.REJECT`) to execute a silent denial of service (DoS) on target groups. Configuration parameters are now authenticated via the `TrustAnchor`.
+
+- **TrustAnchor availability degradation** — Unavailability of the `TrustAnchor` (KMS down) during configuration verification degrades gracefully to the next priority level or default settings without blocking token signing.
+
+### Added
+
+- **`publishConfig(ConfigScope, String, int, EvictionPolicy, long, long)` API** — Public method on `GenericSignerVerifier` to publish cryptographically signed configurations.
+- **`TrustAnchor.isAuthorizedForScope(String, String)`** — Default permissive method on `TrustAnchor` to verify if a signing identity is authorized to configure a specific scope (local/site/global).
+- **`ConfigTrustSecurityTest`** — 7 unit tests targeting configuration signature validation, expired config, KMS unavailability fallback, and scope authorization.
+
+---
+
 ## [3.0.2] - 2026-06-27
 
 ### ⚠️ Breaking Changes

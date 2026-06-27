@@ -70,20 +70,20 @@ sv.revoke("user-alice", null)
     <dependency>
         <groupId>io.github.cyfko</groupId>
         <artifactId>veridot-core</artifactId>
-        <version>3.0.2</version>
+        <version>3.1.0</version>
     </dependency>
 
     <!-- Pick exactly one broker -->
     <dependency>
         <groupId>io.github.cyfko</groupId>
         <artifactId>veridot-kafka</artifactId>      <!-- Kafka + RocksDB (recommended) -->
-        <version>3.0.2</version>
+        <version>3.1.0</version>
     </dependency>
     <!-- OR -->
     <dependency>
         <groupId>io.github.cyfko</groupId>
         <artifactId>veridot-databases</artifactId>  <!-- SQL database -->
-        <version>3.0.2</version>
+        <version>3.1.0</version>
     </dependency>
 </dependencies>
 ```
