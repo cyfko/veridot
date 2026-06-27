@@ -49,7 +49,7 @@ public abstract class DatabaseTest {
     void setUpClass() {
         dataSource = createDataSource();
         MetadataBroker metadataBroker = new DatabaseMetadataBroker(dataSource, "broker_messages");
-        GenericSignerVerifier gsv = new GenericSignerVerifier(metadataBroker, "test-salt");
+        GenericSignerVerifier gsv = TestTrustSetup.create().newSignerVerifier(metadataBroker);
         dataSigner    = gsv;
         tokenVerifier = gsv;
         tokenRevoker  = gsv;
