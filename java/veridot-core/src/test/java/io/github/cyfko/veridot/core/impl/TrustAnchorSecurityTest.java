@@ -285,4 +285,68 @@ class TrustAnchorSecurityTest {
             assertEquals("hello", result.data());
         }, "Valid token with correct TrustAnchor must verify successfully");
     }
+
+    /**
+     * An attacker writes a forged/unsigned revocation tombstone with a future timestamp
+     * to the broker. The tombstone lacks a valid signature → must be ignored →
+     * token verification must succeed.
+     */
+    @Test
+    void unsigned_revocation_tombstone_is_ignored_and_does_not_revoke_session() {
+        InMemoryMetadataBroker broker = new InMemoryMetadataBroker();
+        TestTrustSetup trust = TestTrustSetup.create();
+        var sv = trust.newSignerVerifier(broker);
+
+        String token = sv.sign("secret-data",
+                BasicConfigurer.builder().groupId("mygroup").validity(600).build());
+
+        // Attacker writes an unsigned tombstone under 3:mygroup:__REVOKE__ with future timestamp
+        long futureTs = java.time.Instant.now().getEpochSecond() + 1000;
+        Map<String, String> props = new java.util.LinkedHashMap<>();
+        props.put(ProtocolV2.PROP_TARGET, ProtocolV2.SEQ_ALL);
+        props.put(ProtocolV2.PROP_TS, String.valueOf(futureTs));
+        props.put(ProtocolV2.PROP_SID, trust.signerId);
+        // Note: PROP_SIG is missing!
+        String forgedMsg = ProtocolV2.buildMessage("mygroup", ProtocolV2.SEQ_REVOKE, props);
+
+        broker.send("3:mygroup:__REVOKE__", forgedMsg);
+
+        // Verification must still succeed because the unsigned tombstone is ignored
+        assertDoesNotThrow(() -> {
+            var result = sv.verify(token, s -> s);
+            assertEquals("secret-data", result.data());
+        }, "Unsigned tombstone must be ignored");
+    }
+
+    /**
+     * An attacker writes a revocation tombstone with a future timestamp but an invalid signature.
+     * The signature verification fails → tombstone must be ignored →
+     * token verification must succeed.
+     */
+    @Test
+    void invalid_signature_revocation_tombstone_is_ignored_and_does_not_revoke_session() {
+        InMemoryMetadataBroker broker = new InMemoryMetadataBroker();
+        TestTrustSetup trust = TestTrustSetup.create();
+        var sv = trust.newSignerVerifier(broker);
+
+        String token = sv.sign("secret-data",
+                BasicConfigurer.builder().groupId("mygroup").validity(600).build());
+
+        // Attacker writes a tombstone with random invalid signature
+        long futureTs = java.time.Instant.now().getEpochSecond() + 1000;
+        Map<String, String> props = new java.util.LinkedHashMap<>();
+        props.put(ProtocolV2.PROP_TARGET, ProtocolV2.SEQ_ALL);
+        props.put(ProtocolV2.PROP_TS, String.valueOf(futureTs));
+        props.put(ProtocolV2.PROP_SID, trust.signerId);
+        props.put(ProtocolV2.PROP_SIG, Base64.getUrlEncoder().withoutPadding().encodeToString(new byte[256]));
+        String forgedMsg = ProtocolV2.buildMessage("mygroup", ProtocolV2.SEQ_REVOKE, props);
+
+        broker.send("3:mygroup:__REVOKE__", forgedMsg);
+
+        // Verification must still succeed because the invalid-signature tombstone is ignored
+        assertDoesNotThrow(() -> {
+            var result = sv.verify(token, s -> s);
+            assertEquals("secret-data", result.data());
+        }, "Invalid signature tombstone must be ignored");
+    }
 }

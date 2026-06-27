@@ -18,7 +18,7 @@ import java.util.stream.Collectors;
  *
  * <p>This class is package-private and must not be exposed as public API.</p>
  */
-class ProtocolV2 {
+public class ProtocolV2 {
 
     // ── Version ──────────────────────────────────────────────────────────────
     static final int VERSION = 3;
@@ -135,7 +135,7 @@ class ProtocolV2 {
      * @return map of property name → decoded string value; empty map if no properties
      * @throws IllegalArgumentException if the format is invalid
      */
-    static Map<String, String> parseMetadata(String message) {
+    public static Map<String, String> parseMetadata(String message) {
         int pipeIndex = message.indexOf(META_SEP);
         if (pipeIndex < 0) {
             throw new IllegalArgumentException("Message contains no metadata separator '|': " + message);

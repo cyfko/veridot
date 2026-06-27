@@ -18,7 +18,7 @@ import java.util.Map;
  *
  * @since 3.1.0 (F9)
  */
-final class TrustedAnnouncement {
+public final class TrustedAnnouncement {
 
     private TrustedAnnouncement() {}
 
@@ -26,7 +26,7 @@ final class TrustedAnnouncement {
      * Signs the properties map (excluding 'sig' and 'token') with the long-term private key.
      * Returns the signature encoded as URL-safe Base64 without padding.
      */
-    static String sign(String messageId, Map<String, String> props, PrivateKey longTermKey) {
+    public static String sign(String messageId, Map<String, String> props, PrivateKey longTermKey) {
         byte[] canonical = ProtocolV2.buildCanonicalBytes(messageId, props);
         try {
             Signature sig = Signature.getInstance("SHA256withRSA");
@@ -46,7 +46,7 @@ final class TrustedAnnouncement {
      *         or the sid is unknown/revoked
      * @throws TrustResolutionException.Unavailable if the trust anchor is temporarily unreachable
      */
-    static void verify(String messageId, Map<String, String> meta, TrustAnchor anchor)
+    public static void verify(String messageId, Map<String, String> meta, TrustAnchor anchor)
             throws TrustResolutionException {
         String sid = meta.get(ProtocolV2.PROP_SID);
         String sigB64 = meta.get(ProtocolV2.PROP_SIG);

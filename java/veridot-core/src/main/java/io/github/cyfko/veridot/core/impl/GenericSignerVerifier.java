@@ -259,6 +259,7 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         this.signerId = signerId;
         this.longTermPrivateKey = longTermPrivateKey;
         this.defaultConfig = new EffectiveConfig(maxSessions, policy, -1);
+        this.metadataBroker.setTrustAnchor(trustAnchor);
 
         generatedKeysPair();
 
@@ -836,45 +837,33 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             long tombstoneTs = Long.parseLong(tombstoneTimestampStr);
             long announcementTs = Long.parseLong(announcementTimestampStr);
 
-            // Latest-timestamp-wins: if the tombstone is newer, the session is revoked
-            if (tombstoneTs > announcementTs) {
-                // Check target scope: __ALL__ revokes everything, specific target matches sequenceId
-                if (ProtocolV2.SEQ_ALL.equals(tombstoneTarget)) {
-                    logger.info("F7: Rejecting token — group-wide tombstone (ts=" + tombstoneTs
-                            + ") is newer than announcement (ts=" + announcementTs + ") for group=" + groupId);
-                    throw new BrokerExtractionException(
-                            "Session revoked: group-wide tombstone (ts=" + tombstoneTs + ") supersedes announcement");
-                }
-                if (sequenceId.equals(tombstoneTarget)) {
-                    logger.info("F7: Rejecting token — targeted tombstone (ts=" + tombstoneTs
-                            + ") is newer than announcement (ts=" + announcementTs + ") for sequence=" + sequenceId);
-                    throw new BrokerExtractionException(
-                            "Session revoked: targeted tombstone (ts=" + tombstoneTs + ") supersedes announcement");
-                }
-            }
-
             // Verify tombstone signature using TrustAnchor (prevents forged tombstones)
             String tombstoneSigB64 = tombstoneMeta.get(ProtocolV2.PROP_SIG);
             String tombstoneSignerId = tombstoneMeta.get(ProtocolV2.PROP_SID);
-            if (tombstoneSigB64 != null && !tombstoneSigB64.isEmpty()
-                    && tombstoneSignerId != null && tombstoneTarget != null) {
-                try {
-                    TrustedAnnouncement.verify(revokeKey, tombstoneMeta, trustAnchor);
-                    // Tombstone signature verified — if we reach here and tombstoneTs > announcementTs,
-                    // the revocation is cryptographically proven
-                    if (tombstoneTs > announcementTs) {
-                        if (ProtocolV2.SEQ_ALL.equals(tombstoneTarget) || sequenceId.equals(tombstoneTarget)) {
-                            throw new BrokerExtractionException(
-                                    "Session revoked: verified tombstone (ts=" + tombstoneTs
-                                            + ") supersedes announcement (ts=" + announcementTs + ")");
-                        }
+            if (tombstoneSigB64 == null || tombstoneSigB64.isEmpty()
+                    || tombstoneSignerId == null || tombstoneTarget == null) {
+                logger.warning("F7: Ignoring unsigned/incomplete tombstone for group=" + groupId);
+                return;
+            }
+
+            try {
+                TrustedAnnouncement.verify(revokeKey, tombstoneMeta, trustAnchor);
+                // Tombstone signature verified — if we reach here and tombstoneTs > announcementTs,
+                // the revocation is cryptographically proven
+                if (tombstoneTs > announcementTs) {
+                    if (ProtocolV2.SEQ_ALL.equals(tombstoneTarget) || sequenceId.equals(tombstoneTarget)) {
+                        logger.info("F7: Rejecting token — verified tombstone (ts=" + tombstoneTs
+                                + ") supersedes announcement (ts=" + announcementTs + ")");
+                        throw new BrokerExtractionException(
+                                "Session revoked: verified tombstone (ts=" + tombstoneTs
+                                        + ") supersedes announcement (ts=" + announcementTs + ")");
                     }
-                } catch (BrokerExtractionException e) {
-                    throw e;
-                } catch (TrustResolutionException e) {
-                    // Tombstone signature invalid — ignore the tombstone (could be forged)
-                    logger.warning("F7: Ignoring tombstone with invalid signature for group=" + groupId);
                 }
+            } catch (BrokerExtractionException e) {
+                throw e;
+            } catch (TrustResolutionException e) {
+                // Tombstone signature invalid — ignore the tombstone (could be forged)
+                logger.warning("F7: Ignoring tombstone with invalid signature for group=" + groupId + ": " + e.getMessage());
             }
         } catch (BrokerExtractionException e) {
             throw e;
@@ -884,7 +873,7 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         }
     }
 
-    // ── TrustAnchor validation (F1) ───────────────────────────────────────────
+// ── TrustAnchor validation (F1) ───────────────────────────────────────────
 
     /**
      * Validates the key announcement contained in {@code meta} against the configured
