@@ -2,6 +2,7 @@ package io.github.cyfko.veridot.core.impl;
 
 import io.github.cyfko.veridot.core.InMemoryMetadataBroker;
 import io.github.cyfko.veridot.core.TrustAnchor;
+import io.github.cyfko.veridot.core.EvictionPolicy;
 import io.github.cyfko.veridot.core.exceptions.TrustResolutionException;
 
 import java.security.*;
@@ -77,7 +78,7 @@ public class TestTrustSetup {
      */
     public GenericSignerVerifier newSignerVerifier(InMemoryMetadataBroker broker,
                                                     int maxSessions,
-                                                    GenericSignerVerifier.EvictionPolicy policy) {
+                                                    EvictionPolicy policy) {
         return new GenericSignerVerifier(broker, trustAnchor, signerId, longTermKeyPair.getPrivate(),
                 maxSessions, policy);
     }

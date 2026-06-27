@@ -3,7 +3,7 @@ package io.github.cyfko.veridot.core.impl;
 import io.github.cyfko.veridot.core.MetadataBroker;
 import io.github.cyfko.veridot.core.exceptions.BrokerExtractionException;
 import io.github.cyfko.veridot.core.exceptions.SessionCapacityExceededException;
-import io.github.cyfko.veridot.core.impl.GenericSignerVerifier.EvictionPolicy;
+import io.github.cyfko.veridot.core.EvictionPolicy;
 
 import java.time.Instant;
 import java.util.ArrayList;

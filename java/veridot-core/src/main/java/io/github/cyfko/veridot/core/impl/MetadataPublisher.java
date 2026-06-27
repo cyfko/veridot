@@ -1,7 +1,7 @@
 package io.github.cyfko.veridot.core.impl;
 
 import io.github.cyfko.veridot.core.MetadataBroker;
-import io.github.cyfko.veridot.core.impl.GenericSignerVerifier.EvictionPolicy;
+import io.github.cyfko.veridot.core.EvictionPolicy;
 
 import java.security.PrivateKey;
 import java.security.PublicKey;

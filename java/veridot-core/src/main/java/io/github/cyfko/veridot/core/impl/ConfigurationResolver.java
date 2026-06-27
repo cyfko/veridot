@@ -3,7 +3,7 @@ package io.github.cyfko.veridot.core.impl;
 import io.github.cyfko.veridot.core.MetadataBroker;
 import io.github.cyfko.veridot.core.TrustAnchor;
 import io.github.cyfko.veridot.core.exceptions.TrustResolutionException;
-import io.github.cyfko.veridot.core.impl.GenericSignerVerifier.EvictionPolicy;
+import io.github.cyfko.veridot.core.EvictionPolicy;
 
 import java.time.Instant;
 import java.util.List;

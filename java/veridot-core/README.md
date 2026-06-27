@@ -298,12 +298,12 @@ Enforce a maximum number of concurrent active sessions per `groupId`. Useful for
 // Allow up to 3 sessions, evict the oldest on overflow (FIFO)
 var sv = new GenericSignerVerifier(
     broker, anchor, "auth-service", longTermKey,
-    3, GenericSignerVerifier.EvictionPolicy.FIFO);
+    3, EvictionPolicy.FIFO);
 
 // Allow only 1 session. Reject any attempt to create a second.
 var sv = new GenericSignerVerifier(
     broker, anchor, "auth-service", longTermKey,
-    1, GenericSignerVerifier.EvictionPolicy.REJECT);
+    1, EvictionPolicy.REJECT);
 ```
 
 ### Eviction policies
@@ -485,7 +485,7 @@ public class VeridotConfig {
                                           PrivateKey longTermKey) {
         return new GenericSignerVerifier(
             broker, anchor, signerId, longTermKey,
-            maxSessions, GenericSignerVerifier.EvictionPolicy.FIFO);
+            maxSessions, EvictionPolicy.FIFO);
     }
 
     // Expose individual interfaces as Spring beans
@@ -615,30 +615,30 @@ Use the `publishConfig` method on `GenericSignerVerifier` to push configurations
 ```java
 // 1. Publish a GLOBAL config: limit all groups to 10 concurrent sessions, LRU eviction
 sv.publishConfig(
-    GenericSignerVerifier.ConfigScope.GLOBAL, 
+    ConfigScope.GLOBAL, 
     null,                                     // scopeId not needed for GLOBAL
     10,                                       // maxSessions
-    GenericSignerVerifier.EvictionPolicy.LRU, // evictionPolicy
+    EvictionPolicy.LRU, // evictionPolicy
     1800,                                     // defaultTtlSeconds (30 min)
     86400                                     // validitySeconds (expires in 24 hours)
 );
 
 // 2. Publish a LOCAL config for a target group: limit to 2 sessions, REJECT any more
 sv.publishConfig(
-    GenericSignerVerifier.ConfigScope.LOCAL, 
+    ConfigScope.LOCAL, 
     "vip-customer-group",                      // target groupId
     2,                                        // maxSessions
-    GenericSignerVerifier.EvictionPolicy.REJECT, 
+    EvictionPolicy.REJECT, 
     3600,                                     // defaultTtlSeconds (1 hour)
     604800                                    // validitySeconds (expires in 7 days)
 );
 
 // 3. Publish a SITE config (applies to a datacenter or region):
 sv.publishConfig(
-    GenericSignerVerifier.ConfigScope.SITE, 
+    ConfigScope.SITE, 
     "site-europe-west",                       // siteId
     5,                                        // maxSessions
-    GenericSignerVerifier.EvictionPolicy.FIFO, 
+    EvictionPolicy.FIFO, 
     7200,                                     // defaultTtlSeconds (2 hours)
     86400                                     // validitySeconds
 );
