@@ -84,9 +84,26 @@ public abstract class Config {
     public static final String DEFAULT_CRYPTO_MODE = "rsa";
 
     static {
+        long parsedRotation = ConstantDefault.KEYS_ROTATION_MINUTES;
         final var rotationRate = System.getenv(Env.KEYS_ROTATION_MINUTES);
-        KEYS_ROTATION_MINUTES = rotationRate != null
-                ? Long.parseLong(rotationRate)
-                : ConstantDefault.KEYS_ROTATION_MINUTES;
+        if (rotationRate != null) {
+            try {
+                long parsed = Long.parseLong(rotationRate);
+                if (parsed >= 1) {
+                    parsedRotation = parsed;
+                } else {
+                    System.getLogger(Config.class.getName()).log(
+                            System.Logger.Level.WARNING,
+                            "Ignoring invalid " + Env.KEYS_ROTATION_MINUTES + "=" + parsed
+                                    + " (must be >= 1). Using default: " + ConstantDefault.KEYS_ROTATION_MINUTES);
+                }
+            } catch (NumberFormatException e) {
+                System.getLogger(Config.class.getName()).log(
+                        System.Logger.Level.WARNING,
+                        "Ignoring non-numeric " + Env.KEYS_ROTATION_MINUTES + "='" + rotationRate
+                                + "'. Using default: " + ConstantDefault.KEYS_ROTATION_MINUTES);
+            }
+        }
+        KEYS_ROTATION_MINUTES = parsedRotation;
     }
 }

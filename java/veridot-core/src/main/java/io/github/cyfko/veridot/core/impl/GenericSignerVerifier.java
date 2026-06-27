@@ -498,6 +498,10 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         if (groupId == null || groupId.isBlank()) {
             throw new IllegalArgumentException("groupId must not be null or blank");
         }
+        ProtocolV2.validateIdentifier(groupId, "groupId");
+        if (sequenceId != null) {
+            ProtocolV2.validateIdentifier(sequenceId, "sequenceId");
+        }
         try {
             if (sequenceId == null) {
                 // 1. Publish formal V2 __REVOKE__ message with target=__ALL__ (§5.4) — signed tombstone
@@ -647,16 +651,28 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             long validUntil = Long.parseLong(vuStr);
             if (Instant.now().getEpochSecond() > validUntil) return null; // config expired
 
-            // Parse optional properties, falling back to constructor defaults
-            int ms = meta.containsKey(ProtocolV2.PROP_MAX_SESSIONS)
-                    ? Integer.parseInt(meta.get(ProtocolV2.PROP_MAX_SESSIONS))
-                    : defaultConfig.maxSessions();
+            // Parse optional properties with semantic validation (H2/M8)
+            int ms = defaultConfig.maxSessions();
+            if (meta.containsKey(ProtocolV2.PROP_MAX_SESSIONS)) {
+                int brokerMs = Integer.parseInt(meta.get(ProtocolV2.PROP_MAX_SESSIONS));
+                if (brokerMs == -1 || brokerMs > 0) {
+                    ms = brokerMs;
+                } else {
+                    logger.warning("Ignoring invalid broker maxSessions=" + brokerMs + " (must be -1 or > 0)");
+                }
+            }
             EvictionPolicy pol = meta.containsKey(ProtocolV2.PROP_POLICY)
                     ? EvictionPolicy.valueOf(meta.get(ProtocolV2.PROP_POLICY))
                     : defaultConfig.policy();
-            long dttl = meta.containsKey(ProtocolV2.PROP_DEFAULT_TTL)
-                    ? Long.parseLong(meta.get(ProtocolV2.PROP_DEFAULT_TTL))
-                    : defaultConfig.defaultTTL();
+            long dttl = defaultConfig.defaultTTL();
+            if (meta.containsKey(ProtocolV2.PROP_DEFAULT_TTL)) {
+                long brokerTtl = Long.parseLong(meta.get(ProtocolV2.PROP_DEFAULT_TTL));
+                if (brokerTtl > 0) {
+                    dttl = brokerTtl;
+                } else {
+                    logger.warning("Ignoring invalid broker defaultTTL=" + brokerTtl + " (must be > 0)");
+                }
+            }
 
             return new EffectiveConfig(ms, pol, dttl);
         } catch (Exception e) {
@@ -991,6 +1007,16 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             throw new BrokerExtractionException(
                     "Message timestamp is " + (timestamp - now) + "s in the future (max drift: ±5min)");
         }
+        // M7: Also reject timestamps far in the past (beyond TTL + drift window)
+        String ttlStr = meta.get(ProtocolV2.PROP_TTL);
+        if (ttlStr != null) {
+            long ttl = Long.parseLong(ttlStr);
+            if (timestamp + ttl + MAX_CLOCK_DRIFT_SECONDS < now) {
+                throw new BrokerExtractionException(
+                        "Message expired: timestamp + ttl + drift = " + (timestamp + ttl + MAX_CLOCK_DRIFT_SECONDS)
+                                + " < now = " + now);
+            }
+        }
     }
 
     /**
@@ -1147,11 +1173,11 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
                 KeyPairGenerator generator = KeyPairGenerator.getInstance(Config.ASYMMETRIC_KEYPAIR_ALGORITHM);
                 generator.initialize(Config.ASYMMETRIC_KEY_SIZE, new SecureRandom()); // F3 fix: explicit 3072
                 keyPair = generator.generateKeyPair();
+                lastExecutionTime = now; // M3: only update on success
                 logger.log(Level.FINEST, "Rotating ephemeral RSA-{0} keys.", Config.ASYMMETRIC_KEY_SIZE);
             } catch (Exception e) {
+                // M3: Do NOT update lastExecutionTime — retry on next interval
                 logger.log(Level.SEVERE, "Failed to generate key pair: " + e.getMessage());
-            } finally {
-                lastExecutionTime = now;
             }
         }
     }

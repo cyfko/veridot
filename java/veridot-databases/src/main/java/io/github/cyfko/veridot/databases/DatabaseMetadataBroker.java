@@ -62,6 +62,21 @@ public class DatabaseMetadataBroker implements MetadataBroker {
 
     private final DataSource dataSource;
     private final String tableName;
+    private final UpsertDialect upsertDialect;
+
+    /**
+     * Database-specific upsert strategy, resolved once at construction time.
+     */
+    private enum UpsertDialect {
+        /** PostgreSQL, H2: INSERT ... ON CONFLICT(key) DO UPDATE SET ... */
+        POSTGRES_H2,
+        /** MySQL: INSERT ... ON DUPLICATE KEY UPDATE ... */
+        MYSQL,
+        /** Oracle: MERGE INTO ... USING DUAL ON ... */
+        ORACLE,
+        /** SQL Server: MERGE ... WHEN MATCHED ... WHEN NOT MATCHED ... */
+        SQL_SERVER
+    }
 
     /**
      * Constructs a {@code DatabaseMetadataBroker} backed by the given {@link DataSource}.
@@ -87,8 +102,32 @@ public class DatabaseMetadataBroker implements MetadataBroker {
         }
         this.dataSource = dataSource;
         this.tableName = tableName;
+        this.upsertDialect = detectDialect();
         createBrokerTableIfNotExists();
     }
+
+    /**
+     * Detects the database product once and selects the matching upsert dialect.
+     */
+    private UpsertDialect detectDialect() {
+        try (Connection conn = dataSource.getConnection()) {
+            String dbProduct = conn.getMetaData().getDatabaseProductName().toLowerCase();
+            if (dbProduct.contains("postgresql") || dbProduct.contains("h2")) {
+                return UpsertDialect.POSTGRES_H2;
+            } else if (dbProduct.contains("mysql")) {
+                return UpsertDialect.MYSQL;
+            } else if (dbProduct.contains("oracle")) {
+                return UpsertDialect.ORACLE;
+            } else if (dbProduct.contains("sql server")) {
+                return UpsertDialect.SQL_SERVER;
+            } else {
+                throw new UnsupportedOperationException("Unsupported DB for upsert: " + dbProduct);
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Cannot detect database dialect", e);
+        }
+    }
+
 
     private boolean isValidTableName(String tableName) {
         // Allow only alphanumeric characters and underscores, and must start with a letter
@@ -160,11 +199,10 @@ public class DatabaseMetadataBroker implements MetadataBroker {
     /**
      * Asynchronously stores or deletes a verification metadata message.
      *
-     * <p>If {@code message} is non-empty, any existing row for {@code keyId} is deleted
-     * first (upsert semantics), then the new row is inserted.</p>
-     *
-     * <p>If {@code message} is empty (or blank), the existing row for {@code keyId}
-     * is deleted — this is the revocation signal as defined by {@link MetadataBroker}.</p>
+     * <p>If {@code message} is non-empty, a native UPSERT is executed (single atomic SQL
+     * statement, dialect-specific). If {@code message} is empty (or blank), the existing
+     * row for {@code keyId} is deleted — this is the revocation signal as defined by
+     * {@link MetadataBroker}.</p>
      *
      * @param keyId   the Protocol V2 {@code messageId} or reserved key; must not be {@code null}
      * @param message the Protocol V2 metadata message to store; an empty string signals revocation
@@ -179,28 +217,11 @@ public class DatabaseMetadataBroker implements MetadataBroker {
 
                 if (message.isBlank()) { // Delete the record with keyId
                     removeEntry(keyId, conn);
-                } else { // save a new records with that keyId
-                    // Transactional upsert: delete then insert in a single transaction block to prevent concurrent duplicates (H8)
-                    conn.setAutoCommit(false);
-                    try {
-                        removeEntry(keyId, conn);
-
-                        String sql = String.format(
-                                "INSERT INTO %s (%s, %s) VALUES (?, ?)",
-                                tableName, COLUMN_KEY, COLUMN_MESSAGE
-                        );
-
-                        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
-                            stmt.setString(1, keyId);
-                            stmt.setString(2, message);
-                            stmt.executeUpdate();
-                        }
-                        conn.commit();
-                    } catch (SQLException e) {
-                        conn.rollback();
-                        throw e;
-                    } finally {
-                        conn.setAutoCommit(true);
+                } else { // Native UPSERT — single atomic statement (H8)
+                    String sql = buildUpsertSql();
+                    try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+                        bindUpsertParams(stmt, keyId, message);
+                        stmt.executeUpdate();
                     }
                 }
 
@@ -209,6 +230,40 @@ public class DatabaseMetadataBroker implements MetadataBroker {
             }
         });
     }
+
+    /**
+     * Builds the native upsert SQL for the detected database dialect.
+     * Each dialect uses a single atomic statement — no DELETE+INSERT.
+     */
+    private String buildUpsertSql() {
+        return switch (upsertDialect) {
+            case POSTGRES_H2 -> String.format(
+                    "INSERT INTO %s (%s, %s) VALUES (?, ?) ON CONFLICT (%s) DO UPDATE SET %s = EXCLUDED.%s",
+                    tableName, COLUMN_KEY, COLUMN_MESSAGE, COLUMN_KEY, COLUMN_MESSAGE, COLUMN_MESSAGE);
+            case MYSQL -> String.format(
+                    "INSERT INTO %s (%s, %s) VALUES (?, ?) ON DUPLICATE KEY UPDATE %s = VALUES(%s)",
+                    tableName, COLUMN_KEY, COLUMN_MESSAGE, COLUMN_MESSAGE, COLUMN_MESSAGE);
+            case ORACLE -> String.format(
+                    "MERGE INTO %s t USING (SELECT ? AS k, ? AS v FROM DUAL) s ON (t.%s = s.k) "
+                            + "WHEN MATCHED THEN UPDATE SET t.%s = s.v "
+                            + "WHEN NOT MATCHED THEN INSERT (%s, %s) VALUES (s.k, s.v)",
+                    tableName, COLUMN_KEY, COLUMN_MESSAGE, COLUMN_KEY, COLUMN_MESSAGE);
+            case SQL_SERVER -> String.format(
+                    "MERGE INTO %s WITH (HOLDLOCK) AS t USING (SELECT ? AS k, ? AS v) AS s ON (t.%s = s.k) "
+                            + "WHEN MATCHED THEN UPDATE SET t.%s = s.v "
+                            + "WHEN NOT MATCHED THEN INSERT (%s, %s) VALUES (s.k, s.v);",
+                    tableName, COLUMN_KEY, COLUMN_MESSAGE, COLUMN_KEY, COLUMN_MESSAGE);
+        };
+    }
+
+    /**
+     * Binds upsert parameters. All dialects use exactly 2 positional parameters (key, value).
+     */
+    private void bindUpsertParams(PreparedStatement stmt, String keyId, String message) throws SQLException {
+        stmt.setString(1, keyId);
+        stmt.setString(2, message);
+    }
+
 
     // Remove entry from the secured keys
     private void removeEntry(String keyId, Connection conn) throws SQLException {
