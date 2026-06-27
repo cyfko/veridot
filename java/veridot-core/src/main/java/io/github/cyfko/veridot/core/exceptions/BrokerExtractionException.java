@@ -14,7 +14,7 @@ package io.github.cyfko.veridot.core.exceptions;
  *       (e.g., the token was issued against a different broker)</li>
  *   <li>Clock drift between the signing service and the verifying service exceeds
  *       the allowed threshold (default: ±5 minutes)</li>
- *   <li>The token format is unrecognized (neither a valid signed token nor a Protocol V2
+ *   <li>The token format is unrecognized (neither a valid signed token nor a Protocol V3
  *       {@code messageId})</li>
  * </ul>
  *

@@ -39,8 +39,8 @@ public abstract class Config {
     /**
      * Protocol version implemented by this library.
      *
-     * <p>This value corresponds to the version prefix embedded in every Protocol V2
-     * {@code messageId} (e.g., {@code "2:user-123:session-A"}).</p>
+     * <p>This value corresponds to the version prefix embedded in every Protocol V3
+     * {@code messageId} (e.g., {@code "3:user-123:session-A"}).</p>
      */
     public static final int PROTOCOL_VERSION = ProtocolV2.VERSION;
 
@@ -74,9 +74,9 @@ public abstract class Config {
     public static final int ASYMMETRIC_KEY_SIZE = ConstantDefault.ASYMMETRIC_KEY_SIZE;
 
     /**
-     * The default cryptographic mode identifier embedded in Protocol V2 metadata messages.
+     * The default cryptographic mode identifier embedded in Protocol V3 metadata messages.
      *
-     * <p>This value is stored in the {@code mode} property of each V2 metadata message so
+     * <p>This value is stored in the {@code alg} property of each V3 metadata message so
      * that verifiers know which algorithm was used to sign the token.</p>
      *
      * @implNote Currently {@code "rsa"}.

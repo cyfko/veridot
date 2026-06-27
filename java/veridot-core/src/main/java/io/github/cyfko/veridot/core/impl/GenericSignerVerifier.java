@@ -21,7 +21,7 @@ import java.util.logging.Logger;
 
 /**
  * Reference implementation of {@link DataSigner}, {@link TokenVerifier}, {@link TokenRevoker},
- * and {@link TokenTracker}, conforming to the Veridot Protocol V2, v3.0 security model.
+ * and {@link TokenTracker}, conforming to the Veridot Protocol V3 security model.
  *
  * <p>This class provides the complete token lifecycle — signing, verification, revocation,
  * and active-state tracking — backed by a {@link MetadataBroker} that propagates
@@ -34,13 +34,13 @@ import java.util.logging.Logger;
  *
  * <p>Key capabilities include:</p>
  * <ul>
- *   <li>Issuing cryptographically signed tokens and publishing Protocol V2 verification metadata
+ *   <li>Issuing cryptographically signed tokens and publishing Protocol V3 verification metadata
  *       (with a long-term signature over the announcement) to a {@link MetadataBroker}</li>
- *   <li>Verifying tokens by fetching, validating via {@link TrustAnchor}, and parsing V2 metadata
+ *   <li>Verifying tokens by fetching, validating via {@link TrustAnchor}, and parsing V3 metadata
  *       from the broker</li>
- *   <li>Revoking specific sessions or entire groups via Protocol V2 structured revocation (§5)
+ *   <li>Revoking specific sessions or entire groups via Protocol V3 structured revocation (§5)
  *       with signed tombstones (F7 — replay-safe)</li>
- *   <li>Querying whether active tokens exist for a group, a token, or a Protocol V2 messageId</li>
+ *   <li>Querying whether active tokens exist for a group, a token, or a Protocol V3 messageId</li>
  *   <li>Enforcing per-group session capacity limits with configurable eviction policies</li>
  *   <li>Resolving distributed configuration from the broker hierarchy:
  *       local → site → global → constructor default (§4)</li>

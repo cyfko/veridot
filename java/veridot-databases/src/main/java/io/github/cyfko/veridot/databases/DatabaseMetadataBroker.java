@@ -204,8 +204,8 @@ public class DatabaseMetadataBroker implements MetadataBroker {
      * row for {@code keyId} is deleted — this is the revocation signal as defined by
      * {@link MetadataBroker}.</p>
      *
-     * @param keyId   the Protocol V2 {@code messageId} or reserved key; must not be {@code null}
-     * @param message the Protocol V2 metadata message to store; an empty string signals revocation
+     * @param keyId   the Protocol V3 {@code messageId} or reserved key; must not be {@code null}
+     * @param message the Protocol V3 metadata message to store; an empty string signals revocation
      * @return a {@link java.util.concurrent.CompletableFuture} that completes when the
      *         database operation finishes, or completes exceptionally on SQL error
      */
@@ -284,7 +284,7 @@ public class DatabaseMetadataBroker implements MetadataBroker {
      * <p>Returns the first (oldest) matching row. If no row exists (key unknown or
      * already revoked), a {@link BrokerExtractionException} is thrown.</p>
      *
-     * @param keyId the Protocol V2 {@code messageId} or reserved key; must not be {@code null}
+     * @param keyId the Protocol V3 {@code messageId} or reserved key; must not be {@code null}
      * @return the stored metadata message; never {@code null} or empty
      * @throws BrokerExtractionException if no row is found, or if a SQL error occurs
      */
