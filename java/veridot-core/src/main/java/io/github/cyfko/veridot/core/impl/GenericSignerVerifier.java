@@ -126,6 +126,18 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         REJECT
     }
 
+    /**
+     * Scope of a distributed configuration (§4 of the protocol).
+     */
+    public enum ConfigScope {
+        /** Local scope: applies to a specific groupId. */
+        LOCAL,
+        /** Site scope: applies to a specific siteId. */
+        SITE,
+        /** Global scope: applies to all groups on the broker. */
+        GLOBAL
+    }
+
     // ── Static state ──────────────────────────────────────────────────────────
 
     private static final Logger logger = Logger.getLogger(GenericSignerVerifier.class.getName());
@@ -354,16 +366,8 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         }
 
         // Canonicalize (without sig), sign, then add sig
-        byte[] canonical = ProtocolV2.buildCanonicalBytes(messageId, props);
-        byte[] signature;
-        try {
-            signature = signCanonical(canonical, longTermPrivateKey);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to sign key announcement with long-term key: " + e.getMessage(), e);
-        }
-        props.put(ProtocolV2.PROP_SIG, Base64.getUrlEncoder()
-                .withoutPadding()
-                .encodeToString(signature));
+        String sigB64 = TrustedAnnouncement.sign(messageId, props, longTermPrivateKey);
+        props.put(ProtocolV2.PROP_SIG, sigB64);
 
         // 8. Resolve effective config from broker hierarchy (§4) and enforce maxSessions
         Object groupLock = groupLocks.computeIfAbsent(groupId, k -> new Object());
@@ -536,6 +540,73 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         }
     }
 
+    /**
+     * Publishes a signed configuration for the designated scope.
+     *
+     * <p>The configuration is signed with this signer's long-term private key and will
+     * be validated by the {@link TrustAnchor} of any verifier reading it. Unsigned or
+     * invalidly signed configurations are ignored.</p>
+     *
+     * @param scope             LOCAL, SITE, or GLOBAL
+     * @param scopeId           groupId if LOCAL, siteId if SITE, ignored if GLOBAL
+     * @param maxSessions       maximum concurrent active sequences, or {@code -1} for unlimited
+     * @param policy            eviction policy when {@code maxSessions} is reached
+     * @param defaultTtlSeconds default TTL in seconds for new sequences, or {@code -1} for none
+     * @param validitySeconds   validity period in seconds for this configuration
+     * @throws IllegalArgumentException if parameters are invalid
+     * @throws RuntimeException if publication fails (e.g. broker timeout)
+     * @since 3.1.0 (F9)
+     */
+    public void publishConfig(ConfigScope scope, String scopeId,
+                              int maxSessions, EvictionPolicy policy,
+                              long defaultTtlSeconds, long validitySeconds) {
+        if (scope == null) throw new IllegalArgumentException("scope cannot be null");
+        if (scope != ConfigScope.GLOBAL && (scopeId == null || scopeId.isBlank())) {
+            throw new IllegalArgumentException("scopeId is required for scope=" + scope);
+        }
+        if (policy == null) throw new IllegalArgumentException("policy cannot be null");
+        if (validitySeconds <= 0) throw new IllegalArgumentException("validitySeconds must be positive");
+        if (maxSessions != -1 && maxSessions <= 0) {
+            throw new IllegalArgumentException("maxSessions must be -1 or positive");
+        }
+        if (defaultTtlSeconds != -1 && defaultTtlSeconds <= 0) {
+            throw new IllegalArgumentException("defaultTtlSeconds must be -1 or positive");
+        }
+
+        String key = switch (scope) {
+            case LOCAL  -> ProtocolV2.buildLocalConfigKey(scopeId);
+            case SITE   -> ProtocolV2.buildSiteConfigKey(scopeId);
+            case GLOBAL -> ProtocolV2.buildGlobalConfigKey();
+        };
+
+        long now = Instant.now().getEpochSecond();
+        Map<String, String> props = new LinkedHashMap<>();
+        props.put(ProtocolV2.PROP_MAX, String.valueOf(maxSessions));
+        props.put(ProtocolV2.PROP_POL, policy.name());
+        props.put(ProtocolV2.PROP_DTTL, String.valueOf(defaultTtlSeconds));
+        props.put(ProtocolV2.PROP_TS, String.valueOf(now));
+        props.put(ProtocolV2.PROP_EXP, String.valueOf(now + validitySeconds));
+        props.put(ProtocolV2.PROP_SID, signerId);
+
+        String sigB64 = TrustedAnnouncement.sign(key, props, longTermPrivateKey);
+        props.put(ProtocolV2.PROP_SIG, sigB64);
+
+        String message = ProtocolV2.buildMessage(key, props);
+        try {
+            metadataBroker.send(key, message).get(30, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            logger.severe("Failed to publish config at " + key + ": " + e.getMessage());
+            throw new RuntimeException("Config publication failed: " + e.getMessage(), e);
+        }
+
+        // Invalidate configCache to propagate immediately
+        if (scope == ConfigScope.LOCAL) {
+            configCache.remove(scopeId);
+        } else {
+            configCache.clear();
+        }
+    }
+
     // ── TokenTracker ──────────────────────────────────────────────────────────
 
     /**
@@ -641,6 +712,27 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             String msg = metadataBroker.get(configKey);
             if (msg == null || msg.isBlank()) return null;
             Map<String, String> meta = ProtocolV2.parseMetadata(msg);
+
+            // F9 — authenticity check before trusting config content
+            try {
+                TrustedAnnouncement.verify(configKey, meta, trustAnchor);
+            } catch (TrustResolutionException.SignatureRejected e) {
+                logger.warning("F9: Rejected unsigned/forged config at " + configKey
+                        + " — falling back to next priority level: " + e.getMessage());
+                return null;
+            } catch (TrustResolutionException.Unavailable e) {
+                // Deliberate choice: do NOT block sign() if TrustAnchor is down.
+                // Fall back gracefully to keep the system operational.
+                logger.warning("F9: TrustAnchor unavailable for config at " + configKey
+                        + ", falling back to next priority level: " + e.getMessage());
+                return null;
+            }
+
+            String sid = meta.get(ProtocolV2.PROP_SID);
+            if (sid != null && !trustAnchor.isAuthorizedForScope(sid, configKey)) {
+                logger.severe("SECURITY: sid=" + sid + " not authorized for config scope " + configKey);
+                return null;
+            }
 
             // Validate: timestamp and validUntil present and config not expired (§4.2.4)
             String tsStr = meta.get(ProtocolV2.PROP_TS);
@@ -766,21 +858,8 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             String tombstoneSignerId = tombstoneMeta.get(ProtocolV2.PROP_SID);
             if (tombstoneSigB64 != null && !tombstoneSigB64.isEmpty()
                     && tombstoneSignerId != null && tombstoneTarget != null) {
-                // Reconstruct tombstone props (all fields except sig) for canonical bytes
-                Map<String, String> tombstoneProps = new LinkedHashMap<>(tombstoneMeta);
-                tombstoneProps.remove(ProtocolV2.PROP_SIG);
-                byte[] tombstoneCanonical = ProtocolV2.buildCanonicalBytes(revokeKey, tombstoneProps);
-                byte[] tombstoneSig = Base64.getUrlDecoder().decode(tombstoneSigB64);
                 try {
-                    switch (trustAnchor) {
-                        case TrustAnchor.PublicKeyResolver r -> {
-                            PublicKey ltKey = r.resolve(tombstoneSignerId);
-                            verifySignature(tombstoneCanonical, tombstoneSig, ltKey);
-                        }
-                        case TrustAnchor.DelegatedVerifier d -> {
-                            d.verify(tombstoneSignerId, tombstoneCanonical, tombstoneSig);
-                        }
-                    }
+                    TrustedAnnouncement.verify(revokeKey, tombstoneMeta, trustAnchor);
                     // Tombstone signature verified — if we reach here and tombstoneTs > announcementTs,
                     // the revocation is cryptographically proven
                     if (tombstoneTs > announcementTs) {
@@ -828,24 +907,7 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         }
 
         try {
-            // Reconstruct props from meta (all fields except sig and token) for canonical bytes
-            Map<String, String> propsFromMeta = new LinkedHashMap<>(meta);
-            propsFromMeta.remove(ProtocolV2.PROP_SIG);
-            propsFromMeta.remove(ProtocolV2.PROP_TOKEN);
-            byte[] canonical = ProtocolV2.buildCanonicalBytes(messageId, propsFromMeta);
-            byte[] sig = Base64.getUrlDecoder().decode(sigB64);
-
-            switch (trustAnchor) {
-                case TrustAnchor.PublicKeyResolver r -> {
-                    // Resolve the long-term key and verify the signature locally
-                    PublicKey ltKey = r.resolve(signerIdMeta);
-                    verifySignature(canonical, sig, ltKey);
-                }
-                case TrustAnchor.DelegatedVerifier d -> {
-                    // Delegate both resolution and verification to the external boundary
-                    d.verify(signerIdMeta, canonical, sig);
-                }
-            }
+            TrustedAnnouncement.verify(messageId, meta, trustAnchor);
         } catch (TrustResolutionException.Unavailable u) {
             // Transient infra failure — fail safe: do NOT accept the token
             logger.warning("TrustAnchor temporarily unavailable for sid=" + signerIdMeta + ": " + u.getMessage());
@@ -859,39 +921,6 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         } catch (Exception e) {
             throw new BrokerExtractionException("Trust anchor validation failed: " + e.getMessage());
         }
-    }
-
-    /**
-     * Verifies that {@code signature} was produced by {@code ltKey} over {@code canonical}.
-     *
-     * @throws TrustResolutionException.SignatureRejected if the signature is invalid
-     */
-    private static void verifySignature(byte[] canonical, byte[] signature, PublicKey ltKey)
-            throws TrustResolutionException.SignatureRejected {
-        try {
-            java.security.Signature sig = java.security.Signature.getInstance("SHA256withRSA");
-            sig.initVerify(ltKey);
-            sig.update(canonical);
-            if (!sig.verify(signature)) {
-                throw new TrustResolutionException.SignatureRejected(
-                        "Signature verification failed");
-            }
-        } catch (TrustResolutionException.SignatureRejected e) {
-            throw e;
-        } catch (Exception e) {
-            throw new TrustResolutionException.SignatureRejected(
-                    "Signature verification error: " + e.getMessage());
-        }
-    }
-
-    /**
-     * Signs the canonical bytes with the given private key using SHA256withRSA.
-     */
-    private static byte[] signCanonical(byte[] canonical, PrivateKey privateKey) throws Exception {
-        java.security.Signature sig = java.security.Signature.getInstance("SHA256withRSA");
-        sig.initSign(privateKey);
-        sig.update(canonical);
-        return sig.sign();
     }
 
     // ── Signed tombstones (F7) ────────────────────────────────────────────────
@@ -914,14 +943,7 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         props.put(ProtocolV2.PROP_SID, signerId);
 
         // Canonicalize (without sig), sign, then add sig
-        byte[] canonical = ProtocolV2.buildCanonicalBytes(messageId, props);
-        String tombstoneSigB64;
-        try {
-            byte[] tombstoneSig = signCanonical(canonical, longTermPrivateKey);
-            tombstoneSigB64 = Base64.getUrlEncoder().withoutPadding().encodeToString(tombstoneSig);
-        } catch (Exception e) {
-            throw new RuntimeException("SECURITY: Cannot sign revocation tombstone — refusing to publish unsigned tombstone", e);
-        }
+        String tombstoneSigB64 = TrustedAnnouncement.sign(messageId, props, longTermPrivateKey);
         props.put(ProtocolV2.PROP_SIG, tombstoneSigB64);
         return ProtocolV2.buildMessage(groupId, ProtocolV2.SEQ_REVOKE, props);
     }

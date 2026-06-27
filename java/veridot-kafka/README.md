@@ -38,19 +38,19 @@ revoke() → __REVOKE__ tombstone  →   Kafka consumer
 <dependency>
     <groupId>io.github.cyfko</groupId>
     <artifactId>veridot-core</artifactId>
-    <version>3.0.2</version>
+    <version>3.1.0</version>
 </dependency>
 <dependency>
     <groupId>io.github.cyfko</groupId>
     <artifactId>veridot-kafka</artifactId>
-    <version>3.0.2</version>
+    <version>3.1.0</version>
 </dependency>
 ```
 
 ```gradle
 // Gradle
-implementation 'io.github.cyfko:veridot-core:3.0.2'
-implementation 'io.github.cyfko:veridot-kafka:3.0.2'
+implementation 'io.github.cyfko:veridot-core:3.1.0'
+implementation 'io.github.cyfko:veridot-kafka:3.1.0'
 ```
 
 ---

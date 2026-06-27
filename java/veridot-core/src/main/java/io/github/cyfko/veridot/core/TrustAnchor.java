@@ -112,4 +112,29 @@ public sealed interface TrustAnchor
         void verify(String sid, byte[] canonicalBytes, byte[] signature)
                 throws TrustResolutionException;
     }
+
+    /**
+     * Verifies that the identity {@code sid} is authorized to publish a configuration
+     * for the scope designated by {@code scopeKey} (e.g., {@code "3:user-123:__CONFIG__"},
+     * {@code "3:__CONFIG__:eu-west"}, {@code "3:__CONFIG__:__ALL__"}).
+     *
+     * <p><strong>Default behavior: permissive</strong> (returns {@code true}),
+     * to ensure backward compatibility with TrustAnchor implementations written
+     * before version 3.1.0.</p>
+     *
+     * <p><strong>WARNING:</strong> unless this method is overridden in production,
+     * any signing identity whose long-term key is resolved or verified by this anchor
+     * can modify the configuration (session limits, eviction policies, default TTLs)
+     * of any group, site, or the global configuration. This default behavior
+     * authenticates the <em>origin</em> of the configuration but not its
+     * <em>perimeter of authority</em>.</p>
+     *
+     * @param sid      the identity of the signer of the configuration, already authenticated
+     * @param scopeKey the Protocol V3 key of the target configuration scope
+     * @return {@code true} if {@code sid} is authorized to publish for this scope
+     * @since 3.1.0
+     */
+    default boolean isAuthorizedForScope(String sid, String scopeKey) {
+        return true; // Permissive by default — see warning above
+    }
 }
