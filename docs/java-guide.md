@@ -309,12 +309,12 @@ Les tombstones de révocation sont **signés** avec la clé long-terme du servic
 // Refuser tout dépassement (1 session active max, REJECT)
 var sv = new GenericSignerVerifier(
     broker, anchor, signerId, longTermKey,
-    1, GenericSignerVerifier.EvictionPolicy.REJECT);
+    1, EvictionPolicy.REJECT);
 
 // Évincer la plus ancienne session si dépassement (FIFO, max 3)
 var sv = new GenericSignerVerifier(
     broker, anchor, signerId, longTermKey,
-    3, GenericSignerVerifier.EvictionPolicy.FIFO);
+    3, EvictionPolicy.FIFO);
 ```
 
 ### Politiques d'éviction

@@ -225,12 +225,12 @@ kafka-acls.sh --add --allow-principal User:veridot-verifier \
 // Refuser tout dépassement (1 session active max par utilisateur)
 var sv = new GenericSignerVerifier(
     broker, anchor, signerId, longTermKey,
-    1, GenericSignerVerifier.EvictionPolicy.REJECT);
+    1, EvictionPolicy.REJECT);
 
 // Éviction FIFO (3 sessions max, la plus ancienne évincée)
 var sv = new GenericSignerVerifier(
     broker, anchor, signerId, longTermKey,
-    3, GenericSignerVerifier.EvictionPolicy.FIFO);
+    3, EvictionPolicy.FIFO);
 ```
 
 ---
