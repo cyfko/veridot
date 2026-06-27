@@ -756,7 +756,7 @@ var sv = new GenericSignerVerifier(broker, anchor, "my-service-id", longTermKey,
 | `SigningTest` | 9 | ✅ |
 | `SessionCapacityTest` | 14 | ✅ |
 | `MultiInstanceSessionTest` | 4 | ✅ |
-| `ProtocolV2Test` | 27 | ✅ |
+| `ProtocolTest` | 27 | ✅ |
 | **Total** | **89** | **0 failures** |
 
 ---

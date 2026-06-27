@@ -156,7 +156,7 @@ new GenericSignerVerifier(broker, trustAnchor, signerId, longTermPrivateKey, max
 - `TrustAnchor` (injectable via constructeur) — valide les annonces de clés.
 - `JwtMaker` / `JwtVerifier` : utilitaires internes (package-private) pour construction/parsing JWT RS256 (sans bibliothèque externe).
 - `Config` : constantes (algo RSA-3072, durée de rotation des clés via env `VDOT_KEYS_ROTATION_MINUTES`, défaut 1440 min = 24h).
-- `ProtocolV2` : utilitaires pour le format de message V2 (construction/parsing de `messageId`, métadonnées structurées).
+- `Protocol` : utilitaires pour le format de message V2 (construction/parsing de `messageId`, métadonnées structurées).
 
 #### Dérivation du `messageId` (Protocol V2)
 ```
@@ -172,8 +172,8 @@ Le `messageId` est la clé du broker : il sert à publier et récupérer la mét
 
 #### Flux de signature (`sign`)
 ```
-1. Valider groupId et sequenceId (ProtocolV2.validateIdentifier)
-2. Construire messageId = ProtocolV2.buildMessageId(groupId, sequenceId)
+1. Valider groupId et sequenceId (Protocol.validateIdentifier)
+2. Construire messageId = Protocol.buildMessageId(groupId, sequenceId)
 3. Construire JWT :
      header  : { alg: RS256, typ: JWT }
      payload : { sub: messageId, data: serializedPayload, iat, exp }
@@ -183,7 +183,7 @@ Le `messageId` est la clé du broker : il sert à publier et récupérer la mét
      announcementSig = RSA-SHA256(canonicalAnnouncement, longTermPrivateKey)
 5. Construire la métadonnée broker Protocol V2 :
      props = { mode, pubkey, timestamp, ttl, signerId, announcementSig, [token si INDIRECT] }
-     v2Message = ProtocolV2.buildMessage(groupId, sequenceId, props)
+     v2Message = Protocol.buildMessage(groupId, sequenceId, props)
 6. broker.sendLocal(messageId, v2Message)    ← F5 : écriture locale immédiate
 7. broker.send(messageId, v2Message)         ← propagation réseau asynchrone
 8. Retourner :
@@ -208,7 +208,7 @@ Format structuré clé-valeur avec les propriétés suivantes :
 1. Résoudre messageId et jwtToken :
      token contient "." → DIRECT → extraire messageId du claim "sub"
      token format V2    → INDIRECT → token IS le messageId
-2. Extraire groupId et sequenceId depuis messageId (ProtocolV2.parseMessageId)
+2. Extraire groupId et sequenceId depuis messageId (Protocol.parseMessageId)
 3. Vérifier la révocation (tombstone check)
 4. broker.get(messageId) → métadonnée Protocol V2
 5. Parser métadonnée → Map<String, String>
@@ -440,7 +440,7 @@ io.github.cyfko.veridot.core
     ├── GenericSignerVerifier [DataSigner + TokenVerifier + TokenRevoker + TokenTracker]
     ├── BasicConfigurer       [DataSigner.Configurer, Builder pattern]
     ├── Config                [constantes + env vars — RSA-3072, Protocol V2]
-    ├── ProtocolV2            [format de message V2 — messageId, métadonnées]
+    ├── Protocol            [format de message V2 — messageId, métadonnées]
     ├── JwtMaker              [package-private, construit JWT RS256]
     └── JwtVerifier           [package-private, vérifie JWT RS256]
 

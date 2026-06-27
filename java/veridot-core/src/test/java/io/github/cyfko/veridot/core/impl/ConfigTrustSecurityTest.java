@@ -36,14 +36,14 @@ class ConfigTrustSecurityTest {
         // Attacker writes an unsigned config with maxSessions = 1
         long now = Instant.now().getEpochSecond();
         Map<String, String> props = new LinkedHashMap<>();
-        props.put(ProtocolV2.PROP_MAX, "1");
-        props.put(ProtocolV2.PROP_POL, GenericSignerVerifier.EvictionPolicy.REJECT.name());
-        props.put(ProtocolV2.PROP_DTTL, "600");
-        props.put(ProtocolV2.PROP_TS, String.valueOf(now));
-        props.put(ProtocolV2.PROP_EXP, String.valueOf(now + 3600));
+        props.put(Protocol.PROP_MAX, "1");
+        props.put(Protocol.PROP_POL, GenericSignerVerifier.EvictionPolicy.REJECT.name());
+        props.put(Protocol.PROP_DTTL, "600");
+        props.put(Protocol.PROP_TS, String.valueOf(now));
+        props.put(Protocol.PROP_EXP, String.valueOf(now + 3600));
 
-        String key = ProtocolV2.buildLocalConfigKey("group1");
-        String unsignedMsg = ProtocolV2.buildMessage(key, props);
+        String key = Protocol.buildLocalConfigKey("group1");
+        String unsignedMsg = Protocol.buildMessage(key, props);
         broker.send(key, unsignedMsg);
 
         // Sign two sessions. Since unsigned config is ignored, no exception should be thrown
@@ -65,16 +65,16 @@ class ConfigTrustSecurityTest {
         // Attacker writes a config with a fake signature
         long now = Instant.now().getEpochSecond();
         Map<String, String> props = new LinkedHashMap<>();
-        props.put(ProtocolV2.PROP_MAX, "1");
-        props.put(ProtocolV2.PROP_POL, GenericSignerVerifier.EvictionPolicy.REJECT.name());
-        props.put(ProtocolV2.PROP_DTTL, "600");
-        props.put(ProtocolV2.PROP_TS, String.valueOf(now));
-        props.put(ProtocolV2.PROP_EXP, String.valueOf(now + 3600));
-        props.put(ProtocolV2.PROP_SID, "attacker-sid");
-        props.put(ProtocolV2.PROP_SIG, "YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY"); // fake b64 signature
+        props.put(Protocol.PROP_MAX, "1");
+        props.put(Protocol.PROP_POL, GenericSignerVerifier.EvictionPolicy.REJECT.name());
+        props.put(Protocol.PROP_DTTL, "600");
+        props.put(Protocol.PROP_TS, String.valueOf(now));
+        props.put(Protocol.PROP_EXP, String.valueOf(now + 3600));
+        props.put(Protocol.PROP_SID, "attacker-sid");
+        props.put(Protocol.PROP_SIG, "YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY"); // fake b64 signature
 
-        String key = ProtocolV2.buildLocalConfigKey("group1");
-        String fakeSignedMsg = ProtocolV2.buildMessage(key, props);
+        String key = Protocol.buildLocalConfigKey("group1");
+        String fakeSignedMsg = Protocol.buildMessage(key, props);
         broker.send(key, fakeSignedMsg);
 
         // Sign two sessions. The forged config must be ignored.
@@ -103,15 +103,15 @@ class ConfigTrustSecurityTest {
         // Publish a config signed with a valid signature format
         long now = Instant.now().getEpochSecond();
         Map<String, String> props = new LinkedHashMap<>();
-        props.put(ProtocolV2.PROP_MAX, "1");
-        props.put(ProtocolV2.PROP_POL, GenericSignerVerifier.EvictionPolicy.REJECT.name());
-        props.put(ProtocolV2.PROP_DTTL, "600");
-        props.put(ProtocolV2.PROP_TS, String.valueOf(now));
-        props.put(ProtocolV2.PROP_EXP, String.valueOf(now + 3600));
-        props.put(ProtocolV2.PROP_SID, trust.signerId);
+        props.put(Protocol.PROP_MAX, "1");
+        props.put(Protocol.PROP_POL, GenericSignerVerifier.EvictionPolicy.REJECT.name());
+        props.put(Protocol.PROP_DTTL, "600");
+        props.put(Protocol.PROP_TS, String.valueOf(now));
+        props.put(Protocol.PROP_EXP, String.valueOf(now + 3600));
+        props.put(Protocol.PROP_SID, trust.signerId);
         
-        String key = ProtocolV2.buildLocalConfigKey("group1");
-        String signedMsg = ProtocolV2.buildMessage(key, props);
+        String key = Protocol.buildLocalConfigKey("group1");
+        String signedMsg = Protocol.buildMessage(key, props);
         broker.send(key, signedMsg);
 
         // Sign a session. It should not throw because badAnchor throwing Unavailable
@@ -213,18 +213,18 @@ class ConfigTrustSecurityTest {
 
         long now = Instant.now().getEpochSecond();
         Map<String, String> announceProps = new LinkedHashMap<>();
-        announceProps.put(ProtocolV2.PROP_ALG, "rsa");
-        announceProps.put(ProtocolV2.PROP_PK, pubKeyBase64);
-        announceProps.put(ProtocolV2.PROP_TS, String.valueOf(now));
-        announceProps.put(ProtocolV2.PROP_TTL, "600");
-        announceProps.put(ProtocolV2.PROP_SID, trust.signerId);
-        announceProps.put(ProtocolV2.PROP_SITE, "site-A");
+        announceProps.put(Protocol.PROP_ALG, "rsa");
+        announceProps.put(Protocol.PROP_PK, pubKeyBase64);
+        announceProps.put(Protocol.PROP_TS, String.valueOf(now));
+        announceProps.put(Protocol.PROP_TTL, "600");
+        announceProps.put(Protocol.PROP_SID, trust.signerId);
+        announceProps.put(Protocol.PROP_SITE, "site-A");
 
-        String msgId = ProtocolV2.buildMessageId("group-X", "s1");
+        String msgId = Protocol.buildMessageId("group-X", "s1");
         String sigB64 = TrustedAnnouncement.sign(msgId, announceProps, trust.longTermKeyPair.getPrivate());
-        announceProps.put(ProtocolV2.PROP_SIG, sigB64);
+        announceProps.put(Protocol.PROP_SIG, sigB64);
 
-        String message = ProtocolV2.buildMessage("group-X", "s1", announceProps);
+        String message = Protocol.buildMessage("group-X", "s1", announceProps);
         broker.send(msgId, message);
 
         // Since local config maxSessions = 2, REJECT is the highest priority:

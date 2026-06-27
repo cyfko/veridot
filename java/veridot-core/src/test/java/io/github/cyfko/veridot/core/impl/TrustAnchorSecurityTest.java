@@ -60,13 +60,13 @@ class TrustAnchorSecurityTest {
         String attackerPubKey = Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(attackerKp.getPublic().getEncoded());
         Map<String, String> props = new LinkedHashMap<>();
-        props.put(ProtocolV2.PROP_ALG, Config.DEFAULT_CRYPTO_MODE);
-        props.put(ProtocolV2.PROP_PK, attackerPubKey);
-        props.put(ProtocolV2.PROP_TS, String.valueOf(ts));
-        props.put(ProtocolV2.PROP_TTL, "3600");
-        props.put(ProtocolV2.PROP_SID, trust.signerId); // claims to be the legitimate signer
+        props.put(Protocol.PROP_ALG, Config.DEFAULT_CRYPTO_MODE);
+        props.put(Protocol.PROP_PK, attackerPubKey);
+        props.put(Protocol.PROP_TS, String.valueOf(ts));
+        props.put(Protocol.PROP_TTL, "3600");
+        props.put(Protocol.PROP_SID, trust.signerId); // claims to be the legitimate signer
         // Note: no announcementSig!
-        String forgedMsg = ProtocolV2.buildMessage("victim-group", "evil-session", props);
+        String forgedMsg = Protocol.buildMessage("victim-group", "evil-session", props);
         broker.sendLocal("3:victim-group:evil-session", forgedMsg);
 
         // Verify must reject because sig is absent
@@ -102,13 +102,13 @@ class TrustAnchorSecurityTest {
         String fakeSigB64 = Base64.getUrlEncoder().withoutPadding().encodeToString(fakeSignature);
 
         Map<String, String> props = new LinkedHashMap<>();
-        props.put(ProtocolV2.PROP_ALG, Config.DEFAULT_CRYPTO_MODE);
-        props.put(ProtocolV2.PROP_PK, attackerPubKeyB64);
-        props.put(ProtocolV2.PROP_TS, String.valueOf(ts));
-        props.put(ProtocolV2.PROP_TTL, String.valueOf(ttl));
-        props.put(ProtocolV2.PROP_SID, trust.signerId); // claims to be the legitimate signer
-        props.put(ProtocolV2.PROP_SIG, fakeSigB64); // fake signature
-        String forgedMsg = ProtocolV2.buildMessage("victim-group2", "evil-session2", props);
+        props.put(Protocol.PROP_ALG, Config.DEFAULT_CRYPTO_MODE);
+        props.put(Protocol.PROP_PK, attackerPubKeyB64);
+        props.put(Protocol.PROP_TS, String.valueOf(ts));
+        props.put(Protocol.PROP_TTL, String.valueOf(ttl));
+        props.put(Protocol.PROP_SID, trust.signerId); // claims to be the legitimate signer
+        props.put(Protocol.PROP_SIG, fakeSigB64); // fake signature
+        String forgedMsg = Protocol.buildMessage("victim-group2", "evil-session2", props);
         broker.sendLocal("3:victim-group2:evil-session2", forgedMsg);
 
         // Verify must reject because the RSA signature does not match the legitimate long-term key
@@ -162,12 +162,12 @@ class TrustAnchorSecurityTest {
                 .encodeToString(fakeKp.getPublic().getEncoded());
 
         Map<String, String> canonProps = new LinkedHashMap<>();
-        canonProps.put(ProtocolV2.PROP_ALG, Config.DEFAULT_CRYPTO_MODE);
-        canonProps.put(ProtocolV2.PROP_PK, fakePubKeyB64);
-        canonProps.put(ProtocolV2.PROP_TS, String.valueOf(ts));
-        canonProps.put(ProtocolV2.PROP_TTL, String.valueOf(3600L));
-        canonProps.put(ProtocolV2.PROP_SID, "unknown-signer");
-        byte[] canonical = ProtocolV2.buildCanonicalBytes("3:victim:unknown-attack", canonProps);
+        canonProps.put(Protocol.PROP_ALG, Config.DEFAULT_CRYPTO_MODE);
+        canonProps.put(Protocol.PROP_PK, fakePubKeyB64);
+        canonProps.put(Protocol.PROP_TS, String.valueOf(ts));
+        canonProps.put(Protocol.PROP_TTL, String.valueOf(3600L));
+        canonProps.put(Protocol.PROP_SID, "unknown-signer");
+        byte[] canonical = Protocol.buildCanonicalBytes("3:victim:unknown-attack", canonProps);
         java.security.Signature sig = java.security.Signature.getInstance("SHA256withRSA");
         sig.initSign(fakeKp.getPrivate()); // sign with its own key (not the legitimate long-term)
         sig.update(canonical);
@@ -175,13 +175,13 @@ class TrustAnchorSecurityTest {
         String fakeSigB64 = Base64.getUrlEncoder().withoutPadding().encodeToString(fakeSig);
 
         Map<String, String> props = new LinkedHashMap<>();
-        props.put(ProtocolV2.PROP_ALG, Config.DEFAULT_CRYPTO_MODE);
-        props.put(ProtocolV2.PROP_PK, fakePubKeyB64);
-        props.put(ProtocolV2.PROP_TS, String.valueOf(ts));
-        props.put(ProtocolV2.PROP_TTL, "3600");
-        props.put(ProtocolV2.PROP_SID, "unknown-signer"); // not in trust store
-        props.put(ProtocolV2.PROP_SIG, fakeSigB64);
-        String msg = ProtocolV2.buildMessage("victim", "unknown-attack", props);
+        props.put(Protocol.PROP_ALG, Config.DEFAULT_CRYPTO_MODE);
+        props.put(Protocol.PROP_PK, fakePubKeyB64);
+        props.put(Protocol.PROP_TS, String.valueOf(ts));
+        props.put(Protocol.PROP_TTL, "3600");
+        props.put(Protocol.PROP_SID, "unknown-signer"); // not in trust store
+        props.put(Protocol.PROP_SIG, fakeSigB64);
+        String msg = Protocol.buildMessage("victim", "unknown-attack", props);
         broker.sendLocal("3:victim:unknown-attack", msg);
 
         assertThrows(BrokerExtractionException.class,
@@ -204,14 +204,14 @@ class TrustAnchorSecurityTest {
         String signerId = "svc-A";
 
         Map<String, String> p = new LinkedHashMap<>();
-        p.put(ProtocolV2.PROP_ALG, Config.DEFAULT_CRYPTO_MODE);
-        p.put(ProtocolV2.PROP_PK, dummyPkB64);
-        p.put(ProtocolV2.PROP_TS, String.valueOf(ts));
-        p.put(ProtocolV2.PROP_TTL, String.valueOf(ttl));
-        p.put(ProtocolV2.PROP_SID, signerId);
+        p.put(Protocol.PROP_ALG, Config.DEFAULT_CRYPTO_MODE);
+        p.put(Protocol.PROP_PK, dummyPkB64);
+        p.put(Protocol.PROP_TS, String.valueOf(ts));
+        p.put(Protocol.PROP_TTL, String.valueOf(ttl));
+        p.put(Protocol.PROP_SID, signerId);
 
-        byte[] a1 = ProtocolV2.buildCanonicalBytes("3:test:seq1", p);
-        byte[] a2 = ProtocolV2.buildCanonicalBytes("3:test:seq1", p);
+        byte[] a1 = Protocol.buildCanonicalBytes("3:test:seq1", p);
+        byte[] a2 = Protocol.buildCanonicalBytes("3:test:seq1", p);
         assertArrayEquals(a1, a2, "buildCanonicalBytes must be deterministic");
     }
 
@@ -230,31 +230,31 @@ class TrustAnchorSecurityTest {
         // Helper to build props
         java.util.function.Supplier<Map<String, String>> baseProps = () -> {
             Map<String, String> m = new LinkedHashMap<>();
-            m.put(ProtocolV2.PROP_ALG, Config.DEFAULT_CRYPTO_MODE);
-            m.put(ProtocolV2.PROP_PK, derB64);
-            m.put(ProtocolV2.PROP_TS, String.valueOf(ts));
-            m.put(ProtocolV2.PROP_TTL, String.valueOf(ttl));
-            m.put(ProtocolV2.PROP_SID, signerId);
+            m.put(Protocol.PROP_ALG, Config.DEFAULT_CRYPTO_MODE);
+            m.put(Protocol.PROP_PK, derB64);
+            m.put(Protocol.PROP_TS, String.valueOf(ts));
+            m.put(Protocol.PROP_TTL, String.valueOf(ttl));
+            m.put(Protocol.PROP_SID, signerId);
             return m;
         };
 
-        byte[] base = ProtocolV2.buildCanonicalBytes("3:g:s", baseProps.get());
+        byte[] base = Protocol.buildCanonicalBytes("3:g:s", baseProps.get());
 
         Map<String, String> pDiffDer = baseProps.get();
-        pDiffDer.put(ProtocolV2.PROP_PK, Base64.getUrlEncoder().withoutPadding().encodeToString(new byte[]{0x01, 0x02, 0x04}));
-        byte[] diffDer = ProtocolV2.buildCanonicalBytes("3:g:s", pDiffDer);
+        pDiffDer.put(Protocol.PROP_PK, Base64.getUrlEncoder().withoutPadding().encodeToString(new byte[]{0x01, 0x02, 0x04}));
+        byte[] diffDer = Protocol.buildCanonicalBytes("3:g:s", pDiffDer);
 
         Map<String, String> pDiffTs = baseProps.get();
-        pDiffTs.put(ProtocolV2.PROP_TS, String.valueOf(ts + 1));
-        byte[] diffTs = ProtocolV2.buildCanonicalBytes("3:g:s", pDiffTs);
+        pDiffTs.put(Protocol.PROP_TS, String.valueOf(ts + 1));
+        byte[] diffTs = Protocol.buildCanonicalBytes("3:g:s", pDiffTs);
 
         Map<String, String> pDiffTtl = baseProps.get();
-        pDiffTtl.put(ProtocolV2.PROP_TTL, String.valueOf(ttl + 1));
-        byte[] diffTtl = ProtocolV2.buildCanonicalBytes("3:g:s", pDiffTtl);
+        pDiffTtl.put(Protocol.PROP_TTL, String.valueOf(ttl + 1));
+        byte[] diffTtl = Protocol.buildCanonicalBytes("3:g:s", pDiffTtl);
 
         Map<String, String> pDiffSigner = baseProps.get();
-        pDiffSigner.put(ProtocolV2.PROP_SID, "svc-B");
-        byte[] diffSigner = ProtocolV2.buildCanonicalBytes("3:g:s", pDiffSigner);
+        pDiffSigner.put(Protocol.PROP_SID, "svc-B");
+        byte[] diffSigner = Protocol.buildCanonicalBytes("3:g:s", pDiffSigner);
 
         assertFalse(java.util.Arrays.equals(base, diffDer), "Different pubkey DER must change canonical bytes");
         assertFalse(java.util.Arrays.equals(base, diffTs), "Different timestamp must change canonical bytes");
@@ -262,7 +262,7 @@ class TrustAnchorSecurityTest {
         assertFalse(java.util.Arrays.equals(base, diffSigner), "Different signerId must change canonical bytes");
 
         // Also verify that different messageId changes canonical bytes (anti-substitution)
-        byte[] diffMsgId = ProtocolV2.buildCanonicalBytes("3:g:other", baseProps.get());
+        byte[] diffMsgId = Protocol.buildCanonicalBytes("3:g:other", baseProps.get());
         assertFalse(java.util.Arrays.equals(base, diffMsgId), "Different messageId must change canonical bytes");
     }
 
@@ -303,11 +303,11 @@ class TrustAnchorSecurityTest {
         // Attacker writes an unsigned tombstone under 3:mygroup:__REVOKE__ with future timestamp
         long futureTs = java.time.Instant.now().getEpochSecond() + 1000;
         Map<String, String> props = new java.util.LinkedHashMap<>();
-        props.put(ProtocolV2.PROP_TARGET, ProtocolV2.SEQ_ALL);
-        props.put(ProtocolV2.PROP_TS, String.valueOf(futureTs));
-        props.put(ProtocolV2.PROP_SID, trust.signerId);
+        props.put(Protocol.PROP_TARGET, Protocol.SEQ_ALL);
+        props.put(Protocol.PROP_TS, String.valueOf(futureTs));
+        props.put(Protocol.PROP_SID, trust.signerId);
         // Note: PROP_SIG is missing!
-        String forgedMsg = ProtocolV2.buildMessage("mygroup", ProtocolV2.SEQ_REVOKE, props);
+        String forgedMsg = Protocol.buildMessage("mygroup", Protocol.SEQ_REVOKE, props);
 
         broker.send("3:mygroup:__REVOKE__", forgedMsg);
 
@@ -335,11 +335,11 @@ class TrustAnchorSecurityTest {
         // Attacker writes a tombstone with random invalid signature
         long futureTs = java.time.Instant.now().getEpochSecond() + 1000;
         Map<String, String> props = new java.util.LinkedHashMap<>();
-        props.put(ProtocolV2.PROP_TARGET, ProtocolV2.SEQ_ALL);
-        props.put(ProtocolV2.PROP_TS, String.valueOf(futureTs));
-        props.put(ProtocolV2.PROP_SID, trust.signerId);
-        props.put(ProtocolV2.PROP_SIG, Base64.getUrlEncoder().withoutPadding().encodeToString(new byte[256]));
-        String forgedMsg = ProtocolV2.buildMessage("mygroup", ProtocolV2.SEQ_REVOKE, props);
+        props.put(Protocol.PROP_TARGET, Protocol.SEQ_ALL);
+        props.put(Protocol.PROP_TS, String.valueOf(futureTs));
+        props.put(Protocol.PROP_SID, trust.signerId);
+        props.put(Protocol.PROP_SIG, Base64.getUrlEncoder().withoutPadding().encodeToString(new byte[256]));
+        String forgedMsg = Protocol.buildMessage("mygroup", Protocol.SEQ_REVOKE, props);
 
         broker.send("3:mygroup:__REVOKE__", forgedMsg);
 

@@ -18,7 +18,7 @@ import java.util.stream.Collectors;
  *
  * <p>This class is package-private and must not be exposed as public API.</p>
  */
-public class ProtocolV2 {
+public class Protocol {
 
     // ── Version ──────────────────────────────────────────────────────────────
     static final int VERSION = 3;
@@ -331,5 +331,5 @@ public class ProtocolV2 {
     }
 
     // Prevent instantiation
-    private ProtocolV2() {}
+    private Protocol() {}
 }

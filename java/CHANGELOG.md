@@ -130,7 +130,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   timeout** (F8). Previously `CompletableFuture.get()` was unbounded, blocking the `sign()` hot
   path indefinitely on a slow broker. Timeout triggers a warning log, not an exception.
 
-- **`ProtocolV2` metadata** — normal key announcements now include two mandatory fields:
+- **`Protocol` metadata** — normal key announcements now include two mandatory fields:
   `signerId` (base64url, UTF-8) and `announcementSig` (base64url, RSA signature bytes). Tombstone
   messages include `tombstoneSig`. Implementations that do not validate these fields continue to
   parse the messages without error (additive change).
