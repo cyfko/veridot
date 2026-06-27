@@ -37,13 +37,6 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         }
     }
 
-    public enum EvictionPolicy {
-        FIFO, LIFO, LRU, REJECT
-    }
-
-    public enum ConfigScope {
-        LOCAL, SITE, GLOBAL
-    }
 
     private final MetadataBroker metadataBroker;
     private final TrustAnchor trustAnchor;

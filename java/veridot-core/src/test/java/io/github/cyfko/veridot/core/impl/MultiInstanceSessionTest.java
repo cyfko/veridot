@@ -1,5 +1,8 @@
 package io.github.cyfko.veridot.core.impl;
 
+import io.github.cyfko.veridot.core.EvictionPolicy;
+import io.github.cyfko.veridot.core.ConfigScope;
+
 import io.github.cyfko.veridot.core.DistributionMode;
 import io.github.cyfko.veridot.core.InMemoryMetadataBroker;
 import io.github.cyfko.veridot.core.VerifiedData;
@@ -39,7 +42,7 @@ class MultiInstanceSessionTest {
         TestTrustSetup trust = TestTrustSetup.create();
 
         // Limited signer: maxSessions=1, REJECT (for access tokens)
-        limitedSigner = trust.newSignerVerifier(broker, 1, GenericSignerVerifier.EvictionPolicy.REJECT);
+        limitedSigner = trust.newSignerVerifier(broker, 1, EvictionPolicy.REJECT);
 
         // Unlimited signer: no session limit (for refresh tokens)
         unlimitedSigner = trust.newSignerVerifier(broker);

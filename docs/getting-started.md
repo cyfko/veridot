@@ -211,12 +211,12 @@ VerifiedData<LargeObject> result = sv.verify(messageId,
 // Max 3 sessions actives par utilisateur — évincer la plus ancienne (FIFO)
 var sv = new GenericSignerVerifier(
     broker, anchor, "my-service", longTermKey,
-    3, GenericSignerVerifier.EvictionPolicy.FIFO);
+    3, EvictionPolicy.FIFO);
 
 // Max 1 session — rejeter toute tentative supplémentaire
 var sv = new GenericSignerVerifier(
     broker, anchor, "my-service", longTermKey,
-    1, GenericSignerVerifier.EvictionPolicy.REJECT);
+    1, EvictionPolicy.REJECT);
 
 try {
     sv.sign(data, config); // throws SessionCapacityExceededException si dépassement

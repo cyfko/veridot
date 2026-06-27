@@ -1,5 +1,8 @@
 package io.github.cyfko.veridot.core.impl;
 
+import io.github.cyfko.veridot.core.EvictionPolicy;
+import io.github.cyfko.veridot.core.ConfigScope;
+
 import io.github.cyfko.veridot.core.InMemoryMetadataBroker;
 import io.github.cyfko.veridot.core.TrustAnchor;
 import io.github.cyfko.veridot.core.exceptions.TrustResolutionException;
@@ -37,7 +40,7 @@ class ConfigTrustSecurityTest {
         long now = Instant.now().getEpochSecond();
         Map<String, String> props = new LinkedHashMap<>();
         props.put(Protocol.PROP_MAX, "1");
-        props.put(Protocol.PROP_POL, GenericSignerVerifier.EvictionPolicy.REJECT.name());
+        props.put(Protocol.PROP_POL, EvictionPolicy.REJECT.name());
         props.put(Protocol.PROP_DTTL, "600");
         props.put(Protocol.PROP_TS, String.valueOf(now));
         props.put(Protocol.PROP_EXP, String.valueOf(now + 3600));
@@ -66,7 +69,7 @@ class ConfigTrustSecurityTest {
         long now = Instant.now().getEpochSecond();
         Map<String, String> props = new LinkedHashMap<>();
         props.put(Protocol.PROP_MAX, "1");
-        props.put(Protocol.PROP_POL, GenericSignerVerifier.EvictionPolicy.REJECT.name());
+        props.put(Protocol.PROP_POL, EvictionPolicy.REJECT.name());
         props.put(Protocol.PROP_DTTL, "600");
         props.put(Protocol.PROP_TS, String.valueOf(now));
         props.put(Protocol.PROP_EXP, String.valueOf(now + 3600));
@@ -104,7 +107,7 @@ class ConfigTrustSecurityTest {
         long now = Instant.now().getEpochSecond();
         Map<String, String> props = new LinkedHashMap<>();
         props.put(Protocol.PROP_MAX, "1");
-        props.put(Protocol.PROP_POL, GenericSignerVerifier.EvictionPolicy.REJECT.name());
+        props.put(Protocol.PROP_POL, EvictionPolicy.REJECT.name());
         props.put(Protocol.PROP_DTTL, "600");
         props.put(Protocol.PROP_TS, String.valueOf(now));
         props.put(Protocol.PROP_EXP, String.valueOf(now + 3600));
@@ -131,7 +134,7 @@ class ConfigTrustSecurityTest {
         var sv = trust.newSignerVerifier(broker);
 
         // Publish a config with 1 second validity
-        sv.publishConfig(GenericSignerVerifier.ConfigScope.LOCAL, "group1", 1, GenericSignerVerifier.EvictionPolicy.REJECT, 600, 1);
+        sv.publishConfig(ConfigScope.LOCAL, "group1", 1, EvictionPolicy.REJECT, 600, 1);
 
         // Wait 3 seconds so it becomes expired
         Thread.sleep(3000);
@@ -152,7 +155,7 @@ class ConfigTrustSecurityTest {
         var sv = trust.newSignerVerifier(broker);
 
         // Publish local config with maxSessions = 1, REJECT policy
-        sv.publishConfig(GenericSignerVerifier.ConfigScope.LOCAL, "group1", 1, GenericSignerVerifier.EvictionPolicy.REJECT, 600, 3600);
+        sv.publishConfig(ConfigScope.LOCAL, "group1", 1, EvictionPolicy.REJECT, 600, 3600);
 
         // Sign first session
         assertDoesNotThrow(() -> sv.sign("d1", BasicConfigurer.builder().groupId("group1").sequenceId("s1").validity(600).build()));
@@ -182,7 +185,7 @@ class ConfigTrustSecurityTest {
         var sv = new GenericSignerVerifier(broker, authAnchor, trust.signerId, trust.longTermKeyPair.getPrivate());
 
         // Publish config for group-denied
-        sv.publishConfig(GenericSignerVerifier.ConfigScope.LOCAL, "group-denied", 1, GenericSignerVerifier.EvictionPolicy.REJECT, 600, 3600);
+        sv.publishConfig(ConfigScope.LOCAL, "group-denied", 1, EvictionPolicy.REJECT, 600, 3600);
 
         // Sign two sessions. Since isAuthorizedForScope returned false, the config is ignored,
         // so no SessionCapacityExceededException is thrown.
@@ -197,13 +200,13 @@ class ConfigTrustSecurityTest {
         var sv = trust.newSignerVerifier(broker);
 
         // 1. Publish global config: maxSessions = 5, FIFO
-        sv.publishConfig(GenericSignerVerifier.ConfigScope.GLOBAL, null, 5, GenericSignerVerifier.EvictionPolicy.FIFO, 600, 3600);
+        sv.publishConfig(ConfigScope.GLOBAL, null, 5, EvictionPolicy.FIFO, 600, 3600);
 
         // 2. Publish site config for "site-A": maxSessions = 3, FIFO
-        sv.publishConfig(GenericSignerVerifier.ConfigScope.SITE, "site-A", 3, GenericSignerVerifier.EvictionPolicy.FIFO, 600, 3600);
+        sv.publishConfig(ConfigScope.SITE, "site-A", 3, EvictionPolicy.FIFO, 600, 3600);
 
         // 3. Publish local config for "group-X": maxSessions = 2, REJECT
-        sv.publishConfig(GenericSignerVerifier.ConfigScope.LOCAL, "group-X", 2, GenericSignerVerifier.EvictionPolicy.REJECT, 600, 3600);
+        sv.publishConfig(ConfigScope.LOCAL, "group-X", 2, EvictionPolicy.REJECT, 600, 3600);
 
         // 4. Manually publish a valid signed key announcement containing the PROP_SITE = site-A property
         KeyPairGenerator gen = KeyPairGenerator.getInstance("RSA");

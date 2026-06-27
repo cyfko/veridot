@@ -206,7 +206,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `sub` claim appear in public contracts. JWT/RSA is documented as an `@implNote` in
     `GenericSignerVerifier` only.
   - All 5 exception classes now have full Javadoc (causes, context, constructor `@param`).
-  - `GenericSignerVerifier.EvictionPolicy` enum constants are individually documented with
+  - `EvictionPolicy` enum constants are individually documented with
     behaviour descriptions and use-case guidance.
   - `KafkaMetadataBrokerAdapter`, `Constant`, `SignerConfig`, `VerifierConfig` updated with
     architecture overview, env-var tables, and initialization examples.

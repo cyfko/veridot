@@ -1,5 +1,7 @@
 package io.github.cyfko.veridot.core.impl;
 
+import io.github.cyfko.veridot.core.EvictionPolicy;
+
 /**
  * Resolved configuration for a group, obtained from the broker's config hierarchy
  * (local → site → global → constructor default) as defined in Protocol V3 §4.
@@ -8,4 +10,4 @@ package io.github.cyfko.veridot.core.impl;
  * @param policy      eviction policy applied when {@code maxSessions} is reached
  * @param defaultTTL  default TTL in seconds for new sequences; {@code -1} means no default
  */
-record EffectiveConfig(int maxSessions, GenericSignerVerifier.EvictionPolicy policy, long defaultTTL) {}
+record EffectiveConfig(int maxSessions, EvictionPolicy policy, long defaultTTL) {}
