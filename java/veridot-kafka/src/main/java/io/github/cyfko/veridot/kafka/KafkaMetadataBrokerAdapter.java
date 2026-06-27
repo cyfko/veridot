@@ -3,7 +3,7 @@ package io.github.cyfko.veridot.kafka;
 import io.github.cyfko.veridot.core.MetadataBroker;
 import io.github.cyfko.veridot.core.TrustAnchor;
 import io.github.cyfko.veridot.core.impl.TrustedAnnouncement;
-import io.github.cyfko.veridot.core.impl.ProtocolV2;
+import io.github.cyfko.veridot.core.impl.Protocol;
 import java.util.Map;
 import io.github.cyfko.veridot.core.exceptions.BrokerExtractionException;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -568,7 +568,7 @@ public class KafkaMetadataBrokerAdapter implements MetadataBroker, AutoCloseable
 
             if (trustAnchor != null) {
                 try {
-                    Map<String, String> tombstoneMeta = ProtocolV2.parseMetadata(message);
+                    Map<String, String> tombstoneMeta = Protocol.parseMetadata(message);
                     TrustedAnnouncement.verify(key, tombstoneMeta, trustAnchor);
                 } catch (Exception e) {
                     logger.severe("SECURITY: Rejecting invalid/forged background revocation tombstone for group=" 

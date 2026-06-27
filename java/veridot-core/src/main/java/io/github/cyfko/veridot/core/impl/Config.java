@@ -42,7 +42,7 @@ public abstract class Config {
      * <p>This value corresponds to the version prefix embedded in every Protocol V3
      * {@code messageId} (e.g., {@code "3:user-123:session-A"}).</p>
      */
-    public static final int PROTOCOL_VERSION = ProtocolV2.VERSION;
+    public static final int PROTOCOL_VERSION = Protocol.VERSION;
 
     /**
      * The interval in minutes between automatic ephemeral key-pair rotations.
@@ -82,6 +82,16 @@ public abstract class Config {
      * @implNote Currently {@code "rsa"}.
      */
     public static final String DEFAULT_CRYPTO_MODE = "rsa";
+
+    /**
+     * How long resolved configs are cached before re-querying the broker.
+     */
+    public static final long CONFIG_CACHE_TTL_SECONDS = 60;
+
+    /**
+     * Maximum allowed clock drift between signer and verifier (§9.1).
+     */
+    public static final long MAX_CLOCK_DRIFT_SECONDS = 300;
 
     static {
         long parsedRotation = ConstantDefault.KEYS_ROTATION_MINUTES;

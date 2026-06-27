@@ -30,7 +30,7 @@ class SessionCapacityTest {
         sv.sign("d3", BasicConfigurer.builder().groupId("u1").sequenceId("s3").validity(600).build());
 
         var activeKeys = broker.getKeysByPrefix("3:u1:").stream()
-                .filter(k -> !ProtocolV2.isReservedSequence(k)).toList();
+                .filter(k -> !Protocol.isReservedSequence(k)).toList();
         assertEquals(2, activeKeys.size(), "Only 2 sessions must remain after FIFO eviction");
         assertFalse(broker.containsKey("3:u1:s1"), "s1 must be evicted (oldest, FIFO)");
         assertTrue(broker.containsKey("3:u1:s2"), "s2 must still be active");
@@ -48,7 +48,7 @@ class SessionCapacityTest {
         sv.sign("d3", BasicConfigurer.builder().groupId("u1").sequenceId("s3").validity(600).build());
 
         var activeKeys = broker.getKeysByPrefix("3:u1:").stream()
-                .filter(k -> !ProtocolV2.isReservedSequence(k)).toList();
+                .filter(k -> !Protocol.isReservedSequence(k)).toList();
         assertEquals(2, activeKeys.size(), "Only 2 sessions must remain after LIFO eviction");
         assertTrue(broker.containsKey("3:u1:s1"), "s1 must still be active (oldest)");
         assertFalse(broker.containsKey("3:u1:s2"), "s2 must be evicted (newest at time of 3rd sign, LIFO)");
@@ -99,7 +99,7 @@ class SessionCapacityTest {
         assertTrue(broker.containsKey("3:u1:s1"), "u1:s1 must not be affected by u2 eviction");
         // u2 should have exactly 1 session (s3 evicted s2)
         long normalCount = broker.getKeysByPrefix("3:u2:").stream()
-                .filter(k -> !ProtocolV2.isReservedSequence(k)).count();
+                .filter(k -> !Protocol.isReservedSequence(k)).count();
         assertEquals(1, normalCount, "u2 must have exactly 1 active session");
     }
 

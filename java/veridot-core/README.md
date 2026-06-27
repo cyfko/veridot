@@ -97,8 +97,8 @@ java {
 }
 
 dependencies {
-    implementation 'io.github.cyfko:veridot-core:3.0.2'
-    implementation 'io.github.cyfko:veridot-kafka:3.0.2'  // or veridot-databases
+    implementation 'io.github.cyfko:veridot-core:3.1.0'
+    implementation 'io.github.cyfko:veridot-kafka:3.1.0'  // or veridot-databases
 }
 ```
 
@@ -593,17 +593,72 @@ public class VeridotAuthFilter extends OncePerRequestFilter {
 
 ## Distributed configuration (Protocol §5)
 
-Session limits can be pushed dynamically to all nodes via the broker — no redeployment needed.
+Veridot supports dynamic, signed configuration scopes broadcasted through the broker hierarchy. This allows ops to adjust session capacity limits, eviction policies, and default TTLs on-the-fly without redeploying services.
 
-```
-Configuration hierarchy (highest → lowest precedence):
-  1. Local   → 3:<groupId>:__CONFIG__|max:<b64>,pol:<b64>,exp:<b64>
-  2. Site    → 3:__CONFIG__:<siteId>|...
-  3. Global  → 3:__CONFIG__:__ALL__|...
-  4. Default → constructor parameters
+### Configuration Hierarchy
+Precedence is evaluated from highest to lowest:
+1. **Local Scope** (`3:<groupId>:__CONFIG__`): Applies strictly to a specific group (e.g. a high-risk user account or specific customer).
+2. **Site Scope** (`3:__CONFIG__:<siteId>`): Applies to all groups declaring a specific `site` in their token metadata.
+3. **Global Scope** (`3:__CONFIG__:__ALL__`): Applies globally to all groups in the broker namespace.
+4. **Default Scope**: Fallback configuration defined via constructor parameters.
+
+### Security & Authority Validation
+Configurations are **fully authenticated** to prevent denial-of-service (DoS) or configuration injection attacks:
+- **Signature check**: Every configuration announcement must be signed with a long-term key validated by the `TrustAnchor`. Unsigned or invalid configurations are ignored.
+- **Authority authorization**: The signer's identity (`sid`) must be explicitly authorized for the scope key according to the `TrustAnchor.isAuthorizedForScope(sid, configKey)` policy.
+
+### Rich API & Code Example
+
+#### Publishing a Dynamic Config
+Use the `publishConfig` method on `GenericSignerVerifier` to push configurations dynamically:
+
+```java
+// 1. Publish a GLOBAL config: limit all groups to 10 concurrent sessions, LRU eviction
+sv.publishConfig(
+    GenericSignerVerifier.ConfigScope.GLOBAL, 
+    null,                                     // scopeId not needed for GLOBAL
+    10,                                       // maxSessions
+    GenericSignerVerifier.EvictionPolicy.LRU, // evictionPolicy
+    1800,                                     // defaultTtlSeconds (30 min)
+    86400                                     // validitySeconds (expires in 24 hours)
+);
+
+// 2. Publish a LOCAL config for a target group: limit to 2 sessions, REJECT any more
+sv.publishConfig(
+    GenericSignerVerifier.ConfigScope.LOCAL, 
+    "vip-customer-group",                      // target groupId
+    2,                                        // maxSessions
+    GenericSignerVerifier.EvictionPolicy.REJECT, 
+    3600,                                     // defaultTtlSeconds (1 hour)
+    604800                                    // validitySeconds (expires in 7 days)
+);
+
+// 3. Publish a SITE config (applies to a datacenter or region):
+sv.publishConfig(
+    GenericSignerVerifier.ConfigScope.SITE, 
+    "site-europe-west",                       // siteId
+    5,                                        // maxSessions
+    GenericSignerVerifier.EvictionPolicy.FIFO, 
+    7200,                                     // defaultTtlSeconds (2 hours)
+    86400                                     // validitySeconds
+);
 ```
 
-This is useful for multi-tenant scenarios where different customers have different session limits, or for emergency throttling during an incident.
+#### Client Verification & Configuration Resolution
+The verifier automatically resolves configurations at token-signing time to enforce limits. Cache entries are valid for 60 seconds (by default) to avoid hitting the broker on every single request.
+
+```java
+// Inside your application: signing will automatically enforce the config
+// If the limit of "vip-customer-group" is exceeded, it will throw:
+try {
+    String token = sv.sign("VIP Data", BasicConfigurer.builder()
+        .groupId("vip-customer-group")
+        .validity(3600)
+        .build());
+} catch (SessionCapacityExceededException e) {
+    System.out.println("Capacity exceeded: " + e.getMaxSessions() + " sessions maximum.");
+}
+```
 
 ---
 
@@ -682,14 +737,14 @@ non-sealed interface DelegatedVerifier extends TrustAnchor {
 
 ## Migration from v3.0.1
 
-The only breaking change between v3.0.1 and v3.0.2 is the `GenericSignerVerifier` constructor.
+The only breaking change between v3.0.1 and v3.1.0 is the `GenericSignerVerifier` constructor.
 
 ```java
 // ✗ v3.0.1 — salt had no cryptographic value
 var sv = new GenericSignerVerifier(broker, "my-salt");
 var sv = new GenericSignerVerifier(broker, "my-salt", 3, EvictionPolicy.FIFO);
 
-// ✓ v3.0.2 — real cryptographic identity
+// ✓ v3.1.0 — real cryptographic identity
 var sv = new GenericSignerVerifier(broker, anchor, "my-service-id", longTermKey);
 var sv = new GenericSignerVerifier(broker, anchor, "my-service-id", longTermKey, 3, EvictionPolicy.FIFO);
 ```
@@ -745,19 +800,20 @@ var sv = new GenericSignerVerifier(broker, anchor, "my-service-id", longTermKey,
 ./mvnw package -pl veridot-core -DskipTests --no-transfer-progress
 ```
 
-**v3.0.2 unit test results:**
+**v3.1.0 unit test results:**
 
 | Test suite | Tests | Status |
 |------------|------:|--------|
-| `TrustAnchorSecurityTest` | 7 | ✅ |
+| `TrustAnchorSecurityTest` | 9 | ✅ |
+| `ConfigTrustSecurityTest` | 7 | ✅ |
 | `VerificationTest` | 10 | ✅ |
 | `RevocationTest` | 10 | ✅ |
 | `TokenTrackerTest` | 8 | ✅ |
 | `SigningTest` | 9 | ✅ |
 | `SessionCapacityTest` | 14 | ✅ |
 | `MultiInstanceSessionTest` | 4 | ✅ |
-| `ProtocolV2Test` | 27 | ✅ |
-| **Total** | **89** | **0 failures** |
+| `ProtocolTest` | 27 | ✅ |
+| **Total** | **98** | **0 failures** |
 
 ---
 
@@ -767,12 +823,12 @@ var sv = new GenericSignerVerifier(broker, anchor, "my-service-id", longTermKey,
 
 | Threat | Mitigation since |
 |--------|:-----------------|
-| Broker injection (forge key announcement) | TrustAnchor `sig` — v3.0.2 |
-| Tombstone forgery (fake revocation) | Long-term `sig` — v3.0.2 |
-| Tombstone replay | Latest-timestamp-wins — v3.0.2 |
-| Race read-after-write (same node) | `MetadataBroker.sendLocal()` pre-populates RocksDB — v3.0.2 |
-| Expired key accumulation (RocksDB bloat) | TTL compaction task every 5 min — v3.0.2 |
-| Blocking `sign()` on slow broker | 10-second eviction timeout — v3.0.2 |
+| Broker injection (forge key announcement) | TrustAnchor `sig` — v3.1.0 |
+| Tombstone forgery (fake revocation) | Long-term `sig` — v3.1.0 |
+| Tombstone replay | Latest-timestamp-wins — v3.1.0 |
+| Race read-after-write (same node) | `MetadataBroker.sendLocal()` pre-populates RocksDB — v3.1.0 |
+| Expired key accumulation (RocksDB bloat) | TTL compaction task every 5 min — v3.1.0 |
+| Blocking `sign()` on slow broker | 10-second eviction timeout — v3.1.0 |
 | Clock drift | ±5 min timestamp validation — v2.0 |
 | Token replay after expiry | `exp` claim + `timestamp + ttl` enforcement — v2.0 |
 

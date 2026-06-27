@@ -6,9 +6,6 @@ import io.github.cyfko.veridot.core.*;
 import io.github.cyfko.veridot.core.exceptions.BrokerExtractionException;
 import io.github.cyfko.veridot.core.exceptions.DataDeserializationException;
 import io.github.cyfko.veridot.core.exceptions.DataSerializationException;
-import io.github.cyfko.veridot.core.exceptions.SessionCapacityExceededException;
-import io.github.cyfko.veridot.core.exceptions.TrustResolutionException;
-
 
 import java.security.*;
 import java.security.spec.X509EncodedKeySpec;
@@ -16,145 +13,21 @@ import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.Function;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * Reference implementation of {@link DataSigner}, {@link TokenVerifier}, {@link TokenRevoker},
+ * Orchestrator implementing {@link DataSigner}, {@link TokenVerifier}, {@link TokenRevoker},
  * and {@link TokenTracker}, conforming to the Veridot Protocol V3 security model.
  *
- * <p>This class provides the complete token lifecycle — signing, verification, revocation,
- * and active-state tracking — backed by a {@link MetadataBroker} that propagates
- * verification metadata across services in a distributed system.</p>
- *
- * <h2>Trust model (v3.0)</h2>
- * <p>The broker is a <em>transport only</em>. Every key announcement received from the
- * broker is validated through a {@link TrustAnchor} before the ephemeral public key is
- * trusted. This prevents a broker-level attacker from injecting fraudulent keys.</p>
- *
- * <p>Key capabilities include:</p>
- * <ul>
- *   <li>Issuing cryptographically signed tokens and publishing Protocol V3 verification metadata
- *       (with a long-term signature over the announcement) to a {@link MetadataBroker}</li>
- *   <li>Verifying tokens by fetching, validating via {@link TrustAnchor}, and parsing V3 metadata
- *       from the broker</li>
- *   <li>Revoking specific sessions or entire groups via Protocol V3 structured revocation (§5)
- *       with signed tombstones (F7 — replay-safe)</li>
- *   <li>Querying whether active tokens exist for a group, a token, or a Protocol V3 messageId</li>
- *   <li>Enforcing per-group session capacity limits with configurable eviction policies</li>
- *   <li>Resolving distributed configuration from the broker hierarchy:
- *       local → site → global → constructor default (§4)</li>
- *   <li>Detecting clock drift between issuer and verifier, tolerating up to ±5 minutes (§9.1)</li>
- * </ul>
- *
- * <h2>Usage example</h2>
- * <pre>{@code
- * // Production — with a real TrustAnchor backed by a KMS or static long-term key
- * TrustAnchor anchor = (TrustAnchor.PublicKeyResolver) signerId -> loadFromVault(signerId);
- * MetadataBroker broker = new KafkaMetadataBrokerAdapter("localhost:9092");
- * var sv = new GenericSignerVerifier(broker, anchor, "my-service-id", myLongTermPrivateKey);
- *
- * // Sign
- * String token = sv.sign("user@example.com",
- *     BasicConfigurer.builder()
- *         .groupId("user-123")
- *         .sequenceId("session-A")
- *         .validity(3600)
- *         .build());
- *
- * // Verify
- * VerifiedData<String> result = sv.verify(token, s -> s);
- * String email   = result.data();       // "user@example.com"
- * String group   = result.groupId();    // "user-123"
- * String session = result.sequenceId(); // "session-A"
- *
- * // Revoke
- * sv.revoke(group, session);
- * }</pre>
- *
- * @implNote This implementation uses <strong>JWT (JWS Compact Serialization)</strong> as its
- *           signed token format and <strong>ephemeral RSA-3072 key pairs</strong> rotated on a
- *           configurable schedule (default: every 24 hours, overridable via the
- *           {@code VDOT_KEYS_ROTATION_MINUTES} environment variable). These are implementation
- *           details and are not part of the Veridot Protocol V2 specification.
- *
- * @author Frank KOSSI
- * @since 3.0.0
- * @see MetadataBroker
- * @see TrustAnchor
- * @see BasicConfigurer
- * @see VerifiedData
+ * <p>Delegates specialized tasks to {@link KeyRotationService}, {@link MetadataPublisher},
+ * {@link ConfigurationResolver}, {@link SessionManager}, {@link MetadataVerifier},
+ * and {@link RevocationManager}.</p>
  */
 public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRevoker, TokenTracker {
-
-    // ── Eviction policy ───────────────────────────────────────────────────────
-
-    /**
-     * Determines the strategy applied when a new signing attempt would exceed the
-     * {@code maxSessions} limit configured for a group.
-     *
-     * <p>The policy is evaluated at signing time. Only {@link #REJECT} prevents a token
-     * from being issued; all other policies evict an existing session to make room.</p>
-     *
-     * @see GenericSignerVerifier#GenericSignerVerifier(MetadataBroker, TrustAnchor, String, PrivateKey, int, EvictionPolicy)
-     */
-    public enum EvictionPolicy {
-        /**
-         * <strong>First In, First Out</strong> — evicts the session with the earliest
-         * publish timestamp, making room for the new one.
-         * Suitable when older sessions are considered less valuable.
-         */
-        FIFO,
-        /**
-         * <strong>Last In, First Out</strong> — evicts the session with the most recent
-         * publish timestamp, preserving older sessions.
-         * Suitable when older sessions represent more established connections.
-         */
-        LIFO,
-        /**
-         * <strong>Least Recently Used</strong> — in this implementation, evicts the session
-         * with the earliest timestamp (equivalent to {@link #FIFO}).
-         * Future versions may track actual access time.
-         */
-        LRU,
-        /**
-         * <strong>Reject</strong> — refuses the signing attempt with a
-         * {@link io.github.cyfko.veridot.core.exceptions.SessionCapacityExceededException}
-         * instead of evicting any session.
-         * Use when you want strict enforcement without silent eviction.
-         */
-        REJECT
-    }
-
-    /**
-     * Scope of a distributed configuration (§4 of the protocol).
-     */
-    public enum ConfigScope {
-        /** Local scope: applies to a specific groupId. */
-        LOCAL,
-        /** Site scope: applies to a specific siteId. */
-        SITE,
-        /** Global scope: applies to all groups on the broker. */
-        GLOBAL
-    }
-
-    // ── Static state ──────────────────────────────────────────────────────────
 
     private static final Logger logger = Logger.getLogger(GenericSignerVerifier.class.getName());
     private static final KeyFactory keyFactory;
     private static final ObjectMapper objectMapper = new ObjectMapper();
-
-    /** Maximum allowed clock drift between signer and verifier (§9.1). */
-    private static final long MAX_CLOCK_DRIFT_SECONDS = 300; // 5 minutes
-
-    /** How long resolved configs are cached before re-querying the broker. */
-    private static final long CONFIG_CACHE_TTL_SECONDS = 60;
-
-    /**
-     * Timeout for session-eviction broker sends (F8 fix).
-     * Aligned on a reasonable Kafka producer SLA; avoids blocking sign() for minutes.
-     */
-    private static final long EVICTION_SEND_TIMEOUT_SECONDS = 10;
 
     static {
         try {
@@ -164,87 +37,35 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         }
     }
 
-    // ── Instance state ────────────────────────────────────────────────────────
+    public enum EvictionPolicy {
+        FIFO, LIFO, LRU, REJECT
+    }
+
+    public enum ConfigScope {
+        LOCAL, SITE, GLOBAL
+    }
 
     private final MetadataBroker metadataBroker;
     private final TrustAnchor trustAnchor;
     private final String signerId;
     private final PrivateKey longTermPrivateKey;
     private final EffectiveConfig defaultConfig;
-    private final ScheduledExecutorService scheduler;
-    private volatile KeyPair keyPair;
-    private volatile long lastExecutionTime = 0;
 
-    /** Locks for concurrent session validation on sign per groupId */
+    // Delegates
+    private final KeyRotationService keyRotationService;
+    private final MetadataPublisher metadataPublisher;
+    private final ConfigurationResolver configResolver;
+    private final SessionManager sessionManager;
+    private final MetadataVerifier metadataVerifier;
+    private final RevocationManager revocationManager;
+
     private final ConcurrentHashMap<String, Object> groupLocks = new ConcurrentHashMap<>();
 
-    /** Config cache: groupId → resolved config with timestamp. */
-    private final ConcurrentHashMap<String, CachedConfig> configCache = new ConcurrentHashMap<>();
-
-    private record CachedConfig(EffectiveConfig config, long resolvedAt) {
-        boolean isExpired() {
-            return Instant.now().getEpochSecond() - resolvedAt > CONFIG_CACHE_TTL_SECONDS;
-        }
-    }
-
-    // ── Constructors ──────────────────────────────────────────────────────────
-
-    /**
-     * Constructs a {@code GenericSignerVerifier} with no per-group session limit.
-     *
-     * <p>This is the standard constructor for most applications where there is no need
-     * to restrict the number of concurrent sessions per group.</p>
-     *
-     * <pre>{@code
-     * TrustAnchor anchor = (TrustAnchor.PublicKeyResolver) signerId -> loadKey(signerId);
-     * MetadataBroker broker = new KafkaMetadataBrokerAdapter("localhost:9092");
-     * var sv = new GenericSignerVerifier(broker, anchor, "my-service-id", myLongTermPrivateKey);
-     * }</pre>
-     *
-     * @param metadataBroker    the broker used to publish and retrieve verification metadata;
-     *                          must not be {@code null}
-     * @param trustAnchor       the authority used to validate key announcements received from
-     *                          the broker; must not be {@code null}
-     * @param signerId          the stable identifier for this signer's long-term identity;
-     *                          must not be {@code null} or blank
-     * @param longTermPrivateKey the long-term private key used to sign key announcements;
-     *                          must not be {@code null}
-     * @throws IllegalArgumentException if any argument fails validation
-     */
     public GenericSignerVerifier(MetadataBroker metadataBroker, TrustAnchor trustAnchor,
                                  String signerId, PrivateKey longTermPrivateKey) {
         this(metadataBroker, trustAnchor, signerId, longTermPrivateKey, -1, EvictionPolicy.FIFO);
     }
 
-    /**
-     * Constructs a {@code GenericSignerVerifier} with per-group session capacity management.
-     *
-     * <p>Use this constructor when the application must enforce a limit on the number of
-     * concurrent active tokens per group (e.g., maximum 3 simultaneous device sessions
-     * per user). The {@code policy} determines what happens when the limit is reached.</p>
-     *
-     * <pre>{@code
-     * // Allow at most 3 concurrent sessions per user; evict the oldest when exceeded
-     * var sv = new GenericSignerVerifier(broker, anchor, "svc-id", ltKey, 3, EvictionPolicy.FIFO);
-     *
-     * // Allow at most 1 session per user; reject any additional attempt
-     * var sv = new GenericSignerVerifier(broker, anchor, "svc-id", ltKey, 1, EvictionPolicy.REJECT);
-     * }</pre>
-     *
-     * @param metadataBroker     the broker used to publish and retrieve verification metadata;
-     *                           must not be {@code null}
-     * @param trustAnchor        the authority used to validate key announcements received from
-     *                           the broker; must not be {@code null}
-     * @param signerId           the stable identifier for this signer's long-term identity;
-     *                           must not be {@code null} or blank
-     * @param longTermPrivateKey the long-term private key used to sign key announcements;
-     *                           must not be {@code null}
-     * @param maxSessions        maximum number of concurrent active sequences per group;
-     *                           use {@code -1} for no limit
-     * @param policy             the eviction strategy applied when {@code maxSessions} is exceeded;
-     *                           must not be {@code null}
-     * @throws IllegalArgumentException if any argument fails validation
-     */
     public GenericSignerVerifier(MetadataBroker metadataBroker, TrustAnchor trustAnchor,
                                  String signerId, PrivateKey longTermPrivateKey,
                                  int maxSessions, EvictionPolicy policy) {
@@ -259,42 +80,22 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         this.signerId = signerId;
         this.longTermPrivateKey = longTermPrivateKey;
         this.defaultConfig = new EffectiveConfig(maxSessions, policy, -1);
+
         this.metadataBroker.setTrustAnchor(trustAnchor);
 
-        generatedKeysPair();
+        // Instantiate delegates
+        this.keyRotationService = new KeyRotationService();
+        this.metadataPublisher = new MetadataPublisher(metadataBroker, signerId, longTermPrivateKey);
+        this.configResolver = new ConfigurationResolver(metadataBroker, trustAnchor, this.defaultConfig);
+        this.sessionManager = new SessionManager(metadataBroker, configResolver, metadataPublisher);
+        this.metadataVerifier = new MetadataVerifier(metadataBroker, trustAnchor);
+        this.revocationManager = new RevocationManager(metadataBroker, trustAnchor);
 
-        this.scheduler = Executors.newSingleThreadScheduledExecutor();
-        scheduler.scheduleAtFixedRate(
-                this::generatedKeysPair,
-                0,
-                Config.KEYS_ROTATION_MINUTES,
-                TimeUnit.MINUTES
-        );
+        Runtime.getRuntime().addShutdownHook(new Thread(this::close));
     }
 
-    // ── DataSigner ────────────────────────────────────────────────────────────
-
-    /**
-     * {@inheritDoc}
-     *
-     * @implNote This implementation serializes the payload using the configurer's serializer,
-     *           embeds it in a <strong>JWT (JWS Compact Serialization)</strong> signed with an
-     *           ephemeral RSA-3072 private key, then publishes a Protocol V2 metadata message
-     *           (containing the corresponding RSA public key, TTL, timestamp, and a
-     *           <em>long-term signature</em> over the announcement) to the broker under the
-     *           token's {@code messageId}.
-     *           <p>The signed announcement is what a {@link TrustAnchor} will validate on the
-     *           verifier side — ensuring the broker alone cannot forge key announcements.</p>
-     *           <p>The ephemeral key pair is rotated automatically on the configured schedule
-     *           (default: every 24 hours). All tokens signed with the old key remain verifiable
-     *           until their TTL expires or they are revoked.</p>
-     *           <p><strong>F5 fix</strong>: the signer's own local cache is pre-populated
-     *           synchronously before Kafka publication, so that an immediate
-     *           {@code verify()} call on the same node does not suffer a read-after-write race.</p>
-     */
     @Override
     public String sign(Object data, Configurer configurer) throws DataSerializationException {
-        // 1. Validate inputs
         if (data == null) {
             throw new IllegalArgumentException("data must not be null");
         }
@@ -302,23 +103,17 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             throw new IllegalArgumentException("duration must be positive");
         }
 
-        // 2. Validate and resolve groupId
         String groupId = configurer.getGroupId();
-        ProtocolV2.validateIdentifier(groupId, "groupId");
+        Protocol.validateIdentifier(groupId, "groupId");
 
-        // 3. Resolve sequenceId (auto-generate if not provided)
         String sequenceId = configurer.getSequenceId();
         if (sequenceId != null) {
-            ProtocolV2.validateIdentifier(sequenceId, "sequenceId");
+            Protocol.validateIdentifier(sequenceId, "sequenceId");
         } else {
-            // UUID contains only hex digits and '-', fully compatible with identifier pattern
             sequenceId = UUID.randomUUID().toString();
         }
 
-        // 4. Build messageId
-        String messageId = ProtocolV2.buildMessageId(groupId, sequenceId);
-
-        // 5. Build and sign JWT
+        String messageId = Protocol.buildMessageId(groupId, sequenceId);
         Instant now = Instant.now();
         long expiryEpochSecond = now.getEpochSecond() + configurer.getDuration();
 
@@ -331,8 +126,6 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             throw new DataSerializationException("Failed to serialize payload", e);
         }
 
-        KeyPair currentKeyPair = this.keyPair; // capture atomically
-
         String jwt;
         try {
             jwt = JwtMaker.builder()
@@ -340,141 +133,64 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
                     .claim("data", serializedData)
                     .issuedAt(now)
                     .expiration(Instant.ofEpochSecond(expiryEpochSecond))
-                    .signWith(currentKeyPair.getPrivate())
+                    .signWith(keyRotationService.getPrivateKey())
                     .compact();
         } catch (Exception e) {
             throw new RuntimeException("Failed to build signed JWT: " + e.getMessage(), e);
         }
 
-        // 6. Build props map, canonicalize, sign with long-term key (F1)
-        byte[] pubKeyDer = currentKeyPair.getPublic().getEncoded();
-        long timestamp = now.getEpochSecond();
-        long ttl = configurer.getDuration();
-
-        String pubKeyBase64 = Base64.getUrlEncoder()
-                .withoutPadding()
-                .encodeToString(pubKeyDer);
-
-        Map<String, String> props = new LinkedHashMap<>();
-        props.put(ProtocolV2.PROP_ALG, Config.DEFAULT_CRYPTO_MODE);
-        props.put(ProtocolV2.PROP_PK, pubKeyBase64);
-        props.put(ProtocolV2.PROP_TS, String.valueOf(timestamp));
-        props.put(ProtocolV2.PROP_TTL, String.valueOf(ttl));
-        props.put(ProtocolV2.PROP_SID, signerId);
-
-        if (configurer.getDistribution() == DistributionMode.INDIRECT) {
-            props.put(ProtocolV2.PROP_TOKEN, jwt);
-        }
-
-        // Canonicalize (without sig), sign, then add sig
-        String sigB64 = TrustedAnnouncement.sign(messageId, props, longTermPrivateKey);
-        props.put(ProtocolV2.PROP_SIG, sigB64);
-
-        // 8. Resolve effective config from broker hierarchy (§4) and enforce maxSessions
         Object groupLock = groupLocks.computeIfAbsent(groupId, k -> new Object());
         synchronized (groupLock) {
-            EffectiveConfig effectiveConfig = resolveConfig(groupId);
-            if (effectiveConfig.maxSessions() > 0) {
-                enforceSessionLimit(groupId, effectiveConfig);
-            }
-
-            // 9. Build V2 message
-            String v2Message = ProtocolV2.buildMessage(groupId, sequenceId, props);
-
-            // F5 fix: Pre-populate the local cache synchronously, before Kafka publication.
-            // This eliminates the read-after-write race on the signing node itself.
-            metadataBroker.sendLocal(messageId, v2Message);
-
-            // 10. Publish V2 message to broker (F8 fix: short timeout, not 3 minutes)
+            sessionManager.enforceSessionLimit(groupId);
             try {
-                metadataBroker.send(messageId, v2Message).get(30, TimeUnit.SECONDS);
-            } catch (ExecutionException | InterruptedException | TimeoutException e) {
+                metadataPublisher.publishKeyAnnouncement(groupId, sequenceId,
+                        configurer.getDistribution() == DistributionMode.INDIRECT ? jwt : null,
+                        keyRotationService.getPublicKey(), configurer.getDuration());
+            } catch (Exception e) {
                 logger.severe("Failed to send metadata for messageId " + messageId + " to broker: " + e.getMessage());
                 throw new RuntimeException("Broker publication failed", e);
             }
         }
 
-        // 11. Return token based on distribution mode
         return configurer.getDistribution() == DistributionMode.DIRECT ? jwt : messageId;
     }
 
-    // ── TokenVerifier ─────────────────────────────────────────────────────────
-
-    /**
-     * {@inheritDoc}
-     *
-     * @implNote This implementation accepts both a raw JWT (DIRECT mode) and a Protocol V2
-     *           {@code messageId} (INDIRECT mode). In DIRECT mode, the token's protocol subject
-     *           is extracted from the JWT's {@code sub} claim without signature verification;
-     *           the actual RSA signature is then verified in step 9 using the public key
-     *           fetched from the broker.
-     *           <p><strong>v3.0 — TrustAnchor validation</strong>: before the ephemeral public
-     *           key is used to verify the JWT, the key announcement is validated through the
-     *           {@link TrustAnchor}. A broker-level attacker injecting a fake public key will
-     *           fail at this step.</p>
-     */
     @Override
     public <T> VerifiedData<T> verify(String token, Function<String, T> deserializer) throws BrokerExtractionException {
         try {
-            // 1. Resolve messageId and jwtToken
             final String messageId;
             final String jwtToken;
 
-            if (ProtocolV2.isMessageId(token)) {
-                // INDIRECT mode: token is the messageId
+            if (Protocol.isMessageId(token)) {
                 messageId = token;
-                jwtToken = null; // will be resolved from broker
-            } else if (ProtocolV2.isJwt(token)) {
-                // DIRECT mode: token is the JWT itself; extract messageId from "sub" claim
+                jwtToken = null;
+            } else if (Protocol.isJwt(token)) {
                 messageId = extractSubFromJwt(token);
                 jwtToken = token;
             } else {
                 throw new BrokerExtractionException("Unrecognized token format: " + token);
             }
 
-            // 2. Extract groupId and sequenceId from messageId
-            String[] parts = ProtocolV2.parseMessageId(messageId);
+            String[] parts = Protocol.parseMessageId(messageId);
             String groupId = parts[1];
             String sequenceId = parts[2];
 
-            // 3. Fetch V2 message from broker
-            String message = metadataBroker.get(messageId); // throws BrokerExtractionException if absent/revoked
+            Map<String, String> meta = metadataVerifier.verifyKeyAnnouncement(messageId);
+            revocationManager.validateNotRevoked(groupId, sequenceId, meta);
 
-            // 4. Parse metadata
-            Map<String, String> meta = ProtocolV2.parseMetadata(message);
-
-            // 5. Validate clock drift (§9.1)
-            validateClockDrift(meta);
-
-            // 6. Validate temporal validity (TTL)
-            validateTtl(meta);
-
-            // 6b. F7 — Check tombstone: if a signed revocation exists with a newer timestamp,
-            //     reject the token even if the session entry is present in the broker.
-            //     This is the "latest-timestamp-wins" rule that prevents broker-level replay.
-            validateNotRevoked(groupId, sequenceId, meta);
-
-            // 7. Validate key announcement via TrustAnchor (F1 — broker is NOT a root of trust)
-            validateTrustAnchor(meta, messageId);
-
-            // 8. Resolve JWT for INDIRECT mode
             String resolvedJwt = jwtToken;
             if (resolvedJwt == null) {
-                resolvedJwt = meta.get(ProtocolV2.PROP_TOKEN);
+                resolvedJwt = meta.get(Protocol.PROP_TOKEN);
                 if (resolvedJwt == null) {
                     throw new BrokerExtractionException("No token found in broker metadata for: " + messageId);
                 }
             }
 
-            // 9. Rebuild public key
-            String pubkeyEncoded = meta.get(ProtocolV2.PROP_PK);
+            String pubkeyEncoded = meta.get(Protocol.PROP_PK);
             byte[] pubKeyBytes = Base64.getUrlDecoder().decode(pubkeyEncoded);
             PublicKey publicKey = keyFactory.generatePublic(new X509EncodedKeySpec(pubKeyBytes));
 
-            // 10. Verify JWT signature + expiration
             Map<String, Object> claims = JwtVerifier.verifyWith(publicKey).parseSignedClaims(resolvedJwt);
-
-            // 11. Deserialize and return payload with protocol identifiers
             String data = (String) claims.get("data");
             T deserialized = deserializer.apply(data);
             return new VerifiedData<>(groupId, sequenceId, deserialized);
@@ -486,38 +202,23 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         }
     }
 
-    // ── TokenRevoker ──────────────────────────────────────────────────────────
-
-    /**
-     * {@inheritDoc}
-     *
-     * @implNote This implementation publishes a Protocol V2 structured revocation message
-     *           (key: {@code <version>:<groupId>:__REVOKE__}) signed by the long-term key
-     *           (F7 — tombstone signed, replay-safe). The most recent tombstone by timestamp
-     *           always wins: republishing an older announcement after revocation has no effect.
-     */
     @Override
     public void revoke(String groupId, String sequenceId) {
         if (groupId == null || groupId.isBlank()) {
             throw new IllegalArgumentException("groupId must not be null or blank");
         }
-        ProtocolV2.validateIdentifier(groupId, "groupId");
+        Protocol.validateIdentifier(groupId, "groupId");
         if (sequenceId != null) {
-            ProtocolV2.validateIdentifier(sequenceId, "sequenceId");
+            Protocol.validateIdentifier(sequenceId, "sequenceId");
         }
         try {
             if (sequenceId == null) {
-                // 1. Publish formal V2 __REVOKE__ message with target=__ALL__ (§5.4) — signed tombstone
-                String revokeKey = ProtocolV2.buildRevocationKey(groupId);
-                String revokeMsg = buildSignedRevocationMessage(groupId, ProtocolV2.SEQ_ALL);
-                metadataBroker.send(revokeKey, revokeMsg).get(30, TimeUnit.SECONDS);
+                metadataPublisher.publishRevocationTombstone(groupId, Protocol.SEQ_ALL);
 
-                // 2. Delete all individual sequence entries (awaited for consistency)
-                String prefix = ProtocolV2.groupPrefix(groupId);
+                String prefix = Protocol.groupPrefix(groupId);
                 List<String> keys = metadataBroker.getKeysByPrefix(prefix);
                 for (String key : keys) {
-                    // Skip reserved keys (__REVOKE__, __CONFIG__)
-                    if (ProtocolV2.isReservedSequence(key)) continue;
+                    if (Protocol.isReservedSequence(key)) continue;
                     try {
                         metadataBroker.send(key, "").get(30, TimeUnit.SECONDS);
                     } catch (Exception e) {
@@ -525,14 +226,8 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
                     }
                 }
             } else {
-                // 1. Publish formal V2 __REVOKE__ signed tombstone (F7 — §5.2)
-                String revokeKey = ProtocolV2.buildRevocationKey(groupId);
-                String revokeMsg = buildSignedRevocationMessage(groupId, sequenceId);
-                metadataBroker.send(revokeKey, revokeMsg).get(30, TimeUnit.SECONDS);
-
-                // 2. Delete the actual sequence entry — awaited so that an immediate sign()
-                //    on the same group sees the slot as free (no race condition).
-                String messageId = ProtocolV2.buildMessageId(groupId, sequenceId);
+                metadataPublisher.publishRevocationTombstone(groupId, sequenceId);
+                String messageId = Protocol.buildMessageId(groupId, sequenceId);
                 metadataBroker.send(messageId, "").get(30, TimeUnit.SECONDS);
             }
         } catch (Exception e) {
@@ -541,23 +236,6 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         }
     }
 
-    /**
-     * Publishes a signed configuration for the designated scope.
-     *
-     * <p>The configuration is signed with this signer's long-term private key and will
-     * be validated by the {@link TrustAnchor} of any verifier reading it. Unsigned or
-     * invalidly signed configurations are ignored.</p>
-     *
-     * @param scope             LOCAL, SITE, or GLOBAL
-     * @param scopeId           groupId if LOCAL, siteId if SITE, ignored if GLOBAL
-     * @param maxSessions       maximum concurrent active sequences, or {@code -1} for unlimited
-     * @param policy            eviction policy when {@code maxSessions} is reached
-     * @param defaultTtlSeconds default TTL in seconds for new sequences, or {@code -1} for none
-     * @param validitySeconds   validity period in seconds for this configuration
-     * @throws IllegalArgumentException if parameters are invalid
-     * @throws RuntimeException if publication fails (e.g. broker timeout)
-     * @since 3.1.0 (F9)
-     */
     public void publishConfig(ConfigScope scope, String scopeId,
                               int maxSessions, EvictionPolicy policy,
                               long defaultTtlSeconds, long validitySeconds) {
@@ -575,56 +253,25 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         }
 
         String key = switch (scope) {
-            case LOCAL  -> ProtocolV2.buildLocalConfigKey(scopeId);
-            case SITE   -> ProtocolV2.buildSiteConfigKey(scopeId);
-            case GLOBAL -> ProtocolV2.buildGlobalConfigKey();
+            case LOCAL  -> Protocol.buildLocalConfigKey(scopeId);
+            case SITE   -> Protocol.buildSiteConfigKey(scopeId);
+            case GLOBAL -> Protocol.buildGlobalConfigKey();
         };
 
-        long now = Instant.now().getEpochSecond();
-        Map<String, String> props = new LinkedHashMap<>();
-        props.put(ProtocolV2.PROP_MAX, String.valueOf(maxSessions));
-        props.put(ProtocolV2.PROP_POL, policy.name());
-        props.put(ProtocolV2.PROP_DTTL, String.valueOf(defaultTtlSeconds));
-        props.put(ProtocolV2.PROP_TS, String.valueOf(now));
-        props.put(ProtocolV2.PROP_EXP, String.valueOf(now + validitySeconds));
-        props.put(ProtocolV2.PROP_SID, signerId);
-
-        String sigB64 = TrustedAnnouncement.sign(key, props, longTermPrivateKey);
-        props.put(ProtocolV2.PROP_SIG, sigB64);
-
-        String message = ProtocolV2.buildMessage(key, props);
         try {
-            metadataBroker.send(key, message).get(30, TimeUnit.SECONDS);
+            metadataPublisher.publishConfig(key, maxSessions, policy, defaultTtlSeconds, validitySeconds);
         } catch (Exception e) {
             logger.severe("Failed to publish config at " + key + ": " + e.getMessage());
             throw new RuntimeException("Config publication failed: " + e.getMessage(), e);
         }
 
-        // Invalidate configCache to propagate immediately
         if (scope == ConfigScope.LOCAL) {
-            configCache.remove(scopeId);
+            configResolver.invalidateLocal(scopeId);
         } else {
-            configCache.clear();
+            configResolver.invalidateAll();
         }
     }
 
-    // ── TokenTracker ──────────────────────────────────────────────────────────
-
-    /**
-     * {@inheritDoc}
-     *
-     * @implNote The target type is resolved in this order:
-     *           <ol>
-     *             <li>If the string contains three {@code .}-separated parts, it is treated
-     *                 as a <strong>signed JWT</strong>: the protocol subject is extracted
-     *                 from the JWT payload (without signature verification) and then the
-     *                 corresponding broker entry is checked for liveness.</li>
-     *             <li>If the string matches the Protocol V2 {@code messageId} pattern
-     *                 (starts with {@code "<version>:"}), the broker entry is checked directly.</li>
-     *             <li>Otherwise, the string is treated as a <strong>groupId</strong> and all
-     *                 non-reserved broker entries with the matching prefix are scanned.</li>
-     *           </ol>
-     */
     @Override
     public boolean hasActiveToken(Object target) {
         if (!(target instanceof String s)) {
@@ -632,24 +279,22 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
                     + (target == null ? "null" : target.getClass().getName()));
         }
 
-        if (ProtocolV2.isMessageId(s)) {
-            return isMessageIdActive(s);
-        } else if (ProtocolV2.isJwt(s)) {
-            // Extract messageId from JWT sub claim and check that specific sequence
+        if (Protocol.isMessageId(s)) {
+            return sessionManager.isMessageIdActive(s);
+        } else if (Protocol.isJwt(s)) {
             try {
                 String messageId = extractSubFromJwt(s);
-                return isMessageIdActive(messageId);
+                return sessionManager.isMessageIdActive(messageId);
             } catch (Exception e) {
                 return false;
             }
         } else {
-            // Treat as groupId: check if any normal sequence within the group is active
             try {
-                String prefix = ProtocolV2.groupPrefix(s);
+                String prefix = Protocol.groupPrefix(s);
                 List<String> keys = metadataBroker.getKeysByPrefix(prefix);
                 for (String key : keys) {
-                    if (ProtocolV2.isReservedSequence(key)) continue; // skip __REVOKE__, __CONFIG__
-                    if (isMessageIdActive(key)) {
+                    if (Protocol.isReservedSequence(key)) continue;
+                    if (sessionManager.isMessageIdActive(key)) {
                         return true;
                     }
                 }
@@ -661,287 +306,12 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         }
     }
 
-    // ── Distributed configuration resolution (§4) ─────────────────────────────
-
-    /**
-     * Resolves the effective configuration for a group using the broker's config hierarchy:
-     * <ol>
-     *   <li>Local: {@code 2:<groupId>:__CONFIG__}</li>
-     *   <li>Site: {@code 2:__CONFIG__:<siteId>} (if the group declares a site)</li>
-     *   <li>Global: {@code 2:__CONFIG__:__ALL__}</li>
-     *   <li>Default: constructor parameters</li>
-     * </ol>
-     */
-    private EffectiveConfig resolveConfig(String groupId) {
-        CachedConfig cached = configCache.get(groupId);
-        if (cached != null && !cached.isExpired()) {
-            return cached.config();
-        }
-
-        EffectiveConfig resolved = resolveFromBroker(groupId);
-        configCache.put(groupId, new CachedConfig(resolved, Instant.now().getEpochSecond()));
-        return resolved;
-    }
-
-    private EffectiveConfig resolveFromBroker(String groupId) {
-        // Priority 1: Local config
-        EffectiveConfig local = tryParseConfig(ProtocolV2.buildLocalConfigKey(groupId));
-        if (local != null) return local;
-
-        // Priority 2: Site config (if the group declares a site in its messages)
-        String siteId = resolveSiteForGroup(groupId);
-        if (siteId != null) {
-            EffectiveConfig site = tryParseConfig(ProtocolV2.buildSiteConfigKey(siteId));
-            if (site != null) return site;
-        }
-
-        // Priority 3: Global config
-        EffectiveConfig global = tryParseConfig(ProtocolV2.buildGlobalConfigKey());
-        if (global != null) return global;
-
-        // Priority 4: Constructor defaults
-        return defaultConfig;
-    }
-
-    /**
-     * Attempts to read and parse a config message from the broker.
-     * Returns {@code null} if the key is absent, the message is malformed,
-     * or the configuration has expired ({@code validUntil < now}).
-     */
-    private EffectiveConfig tryParseConfig(String configKey) {
-        try {
-            String msg = metadataBroker.get(configKey);
-            if (msg == null || msg.isBlank()) return null;
-            Map<String, String> meta = ProtocolV2.parseMetadata(msg);
-
-            // F9 — authenticity check before trusting config content
-            try {
-                TrustedAnnouncement.verify(configKey, meta, trustAnchor);
-            } catch (TrustResolutionException.SignatureRejected e) {
-                logger.warning("F9: Rejected unsigned/forged config at " + configKey
-                        + " — falling back to next priority level: " + e.getMessage());
-                return null;
-            } catch (TrustResolutionException.Unavailable e) {
-                // Deliberate choice: do NOT block sign() if TrustAnchor is down.
-                // Fall back gracefully to keep the system operational.
-                logger.warning("F9: TrustAnchor unavailable for config at " + configKey
-                        + ", falling back to next priority level: " + e.getMessage());
-                return null;
-            }
-
-            String sid = meta.get(ProtocolV2.PROP_SID);
-            if (sid != null && !trustAnchor.isAuthorizedForScope(sid, configKey)) {
-                logger.severe("SECURITY: sid=" + sid + " not authorized for config scope " + configKey);
-                return null;
-            }
-
-            // Validate: timestamp and validUntil present and config not expired (§4.2.4)
-            String tsStr = meta.get(ProtocolV2.PROP_TS);
-            String vuStr = meta.get(ProtocolV2.PROP_EXP);
-            if (tsStr == null || vuStr == null) return null;
-            long validUntil = Long.parseLong(vuStr);
-            if (Instant.now().getEpochSecond() > validUntil) return null; // config expired
-
-            // Parse optional properties with semantic validation (H2/M8)
-            int ms = defaultConfig.maxSessions();
-            if (meta.containsKey(ProtocolV2.PROP_MAX)) {
-                int brokerMs = Integer.parseInt(meta.get(ProtocolV2.PROP_MAX));
-                if (brokerMs == -1 || brokerMs > 0) {
-                    ms = brokerMs;
-                } else {
-                    logger.warning("Ignoring invalid broker maxSessions=" + brokerMs + " (must be -1 or > 0)");
-                }
-            }
-            EvictionPolicy pol = meta.containsKey(ProtocolV2.PROP_POL)
-                    ? EvictionPolicy.valueOf(meta.get(ProtocolV2.PROP_POL))
-                    : defaultConfig.policy();
-            long dttl = defaultConfig.defaultTTL();
-            if (meta.containsKey(ProtocolV2.PROP_DTTL)) {
-                long brokerTtl = Long.parseLong(meta.get(ProtocolV2.PROP_DTTL));
-                if (brokerTtl > 0) {
-                    dttl = brokerTtl;
-                } else {
-                    logger.warning("Ignoring invalid broker defaultTTL=" + brokerTtl + " (must be > 0)");
-                }
-            }
-
-            return new EffectiveConfig(ms, pol, dttl);
-        } catch (Exception e) {
-            return null; // malformed config → skip
+    public void close() {
+        if (keyRotationService != null) {
+            keyRotationService.close();
         }
     }
 
-    /**
-     * Looks at existing messages for a group to find a declared {@code site} property.
-     */
-    private String resolveSiteForGroup(String groupId) {
-        try {
-            String prefix = ProtocolV2.groupPrefix(groupId);
-            List<String> keys = metadataBroker.getKeysByPrefix(prefix);
-            for (String key : keys) {
-                if (ProtocolV2.isReservedSequence(key)) continue;
-                try {
-                    String msg = metadataBroker.get(key);
-                    if (msg == null || msg.isBlank()) continue;
-                    Map<String, String> meta = ProtocolV2.parseMetadata(msg);
-                    String site = meta.get(ProtocolV2.PROP_SITE);
-                    if (site != null && !site.isBlank()) return site;
-                } catch (Exception ignored) {}
-            }
-        } catch (Exception ignored) {}
-        return null;
-    }
-
-    // ── F7 — Tombstone timestamp check (latest-timestamp-wins) ─────────────────
-
-    /**
-     * Checks whether a signed revocation tombstone exists for the given group
-     * with a timestamp newer than the announcement's own timestamp.
-     *
-     * <p>This is the core of the F7 fix: even if a broker-level attacker re-inserts
-     * a previously deleted session entry, the tombstone's signed timestamp proves
-     * the revocation happened <em>after</em> the announcement — so the session
-     * stays revoked. The rule is simple and total: <strong>the most recent
-     * timestamp, signed by the long-term key, always prevails.</strong></p>
-     *
-     * @param groupId the group to check for revocation
-     * @param sequenceId the sequence ID of the announcement being checked
-     * @param announcementMeta the metadata of the announcement being verified
-     * @throws BrokerExtractionException if a newer tombstone exists
-     */
-    private void validateNotRevoked(String groupId, String sequenceId, Map<String, String> announcementMeta)
-            throws BrokerExtractionException {
-        String revokeKey = ProtocolV2.buildRevocationKey(groupId);
-        String tombstoneMsg;
-        try {
-            tombstoneMsg = metadataBroker.get(revokeKey);
-        } catch (Exception e) {
-            // No tombstone found → not revoked, proceed normally
-            return;
-        }
-
-        if (tombstoneMsg == null || tombstoneMsg.isBlank()) {
-            return; // deleted tombstone entry
-        }
-
-        try {
-            Map<String, String> tombstoneMeta = ProtocolV2.parseMetadata(tombstoneMsg);
-            String tombstoneTimestampStr = tombstoneMeta.get(ProtocolV2.PROP_TS);
-            String announcementTimestampStr = announcementMeta.get(ProtocolV2.PROP_TS);
-            String tombstoneTarget = tombstoneMeta.get(ProtocolV2.PROP_TARGET);
-
-            if (tombstoneTimestampStr == null || announcementTimestampStr == null) {
-                return; // malformed entries — let other validations handle it
-            }
-
-            long tombstoneTs = Long.parseLong(tombstoneTimestampStr);
-            long announcementTs = Long.parseLong(announcementTimestampStr);
-
-            // Verify tombstone signature using TrustAnchor (prevents forged tombstones)
-            String tombstoneSigB64 = tombstoneMeta.get(ProtocolV2.PROP_SIG);
-            String tombstoneSignerId = tombstoneMeta.get(ProtocolV2.PROP_SID);
-            if (tombstoneSigB64 == null || tombstoneSigB64.isEmpty()
-                    || tombstoneSignerId == null || tombstoneTarget == null) {
-                logger.warning("F7: Ignoring unsigned/incomplete tombstone for group=" + groupId);
-                return;
-            }
-
-            try {
-                TrustedAnnouncement.verify(revokeKey, tombstoneMeta, trustAnchor);
-                // Tombstone signature verified — if we reach here and tombstoneTs > announcementTs,
-                // the revocation is cryptographically proven
-                if (tombstoneTs > announcementTs) {
-                    if (ProtocolV2.SEQ_ALL.equals(tombstoneTarget) || sequenceId.equals(tombstoneTarget)) {
-                        logger.info("F7: Rejecting token — verified tombstone (ts=" + tombstoneTs
-                                + ") supersedes announcement (ts=" + announcementTs + ")");
-                        throw new BrokerExtractionException(
-                                "Session revoked: verified tombstone (ts=" + tombstoneTs
-                                        + ") supersedes announcement (ts=" + announcementTs + ")");
-                    }
-                }
-            } catch (BrokerExtractionException e) {
-                throw e;
-            } catch (TrustResolutionException e) {
-                // Tombstone signature invalid — ignore the tombstone (could be forged)
-                logger.warning("F7: Ignoring tombstone with invalid signature for group=" + groupId + ": " + e.getMessage());
-            }
-        } catch (BrokerExtractionException e) {
-            throw e;
-        } catch (Exception e) {
-            // Malformed tombstone — log and proceed (don't block verification on bad tombstones)
-            logger.warning("F7: Failed to parse tombstone for group=" + groupId + ": " + e.getMessage());
-        }
-    }
-
-// ── TrustAnchor validation (F1) ───────────────────────────────────────────
-
-    /**
-     * Validates the key announcement contained in {@code meta} against the configured
-     * {@link TrustAnchor}.
-     *
-     * <p>This is the core of the F1 fix: the ephemeral public key in the metadata is
-     * <em>not</em> trusted just because it came from the broker. It is only trusted after
-     * the long-term signature over the announcement is verified.</p>
-     *
-     * @throws BrokerExtractionException if any trust field is missing, or if the TrustAnchor rejects
-     *                                    the announcement signature
-     */
-    private void validateTrustAnchor(Map<String, String> meta, String messageId) throws BrokerExtractionException {
-        String signerIdMeta = meta.get(ProtocolV2.PROP_SID);
-        String sigB64 = meta.get(ProtocolV2.PROP_SIG);
-
-        if (signerIdMeta == null || sigB64 == null) {
-            throw new BrokerExtractionException(
-                    "Metadata is missing required trust fields (sid, sig)");
-        }
-
-        try {
-            TrustedAnnouncement.verify(messageId, meta, trustAnchor);
-        } catch (TrustResolutionException.Unavailable u) {
-            // Transient infra failure — fail safe: do NOT accept the token
-            logger.warning("TrustAnchor temporarily unavailable for sid=" + signerIdMeta + ": " + u.getMessage());
-            throw new BrokerExtractionException("Trust anchor unavailable: " + u.getMessage());
-        } catch (TrustResolutionException.SignatureRejected r) {
-            // Security event — log at SEVERE and fail
-            logger.severe("SECURITY: Key announcement signature rejected for sid=" + signerIdMeta + ": " + r.getMessage());
-            throw new BrokerExtractionException("Key announcement rejected by trust anchor: " + r.getMessage());
-        } catch (BrokerExtractionException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new BrokerExtractionException("Trust anchor validation failed: " + e.getMessage());
-        }
-    }
-
-    // ── Signed tombstones (F7) ────────────────────────────────────────────────
-
-    /**
-     * Builds a signed revocation tombstone message.
-     *
-     * <p>The tombstone includes the current timestamp (epoch seconds) and a long-term
-     * signature over the canonical bytes. Verifiers apply a simple
-     * "latest timestamp wins" rule — so replaying an older announcement after a tombstone
-     * has been issued has no effect.</p>
-     */
-    private String buildSignedRevocationMessage(String groupId, String target) {
-        long ts = Instant.now().getEpochSecond();
-        String messageId = ProtocolV2.buildRevocationKey(groupId);
-
-        Map<String, String> props = new LinkedHashMap<>();
-        props.put(ProtocolV2.PROP_TARGET, target);
-        props.put(ProtocolV2.PROP_TS, String.valueOf(ts));
-        props.put(ProtocolV2.PROP_SID, signerId);
-
-        // Canonicalize (without sig), sign, then add sig
-        String tombstoneSigB64 = TrustedAnnouncement.sign(messageId, props, longTermPrivateKey);
-        props.put(ProtocolV2.PROP_SIG, tombstoneSigB64);
-        return ProtocolV2.buildMessage(groupId, ProtocolV2.SEQ_REVOKE, props);
-    }
-
-    // ── Private helpers ───────────────────────────────────────────────────────
-
-    /**
-     * Extracts the {@code sub} claim value from a JWT without verifying its signature.
-     */
     private static String extractSubFromJwt(String jwt) throws Exception {
         String[] parts = jwt.split("\\.");
         if (parts.length < 2) {
@@ -954,193 +324,5 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             throw new IllegalArgumentException("JWT has no 'sub' claim");
         }
         return subNode.asText();
-    }
-
-    /**
-     * Validates that the message timestamp is not in the future by more than 5 minutes.
-     * This detects clock skew between signer and verifier (§9.1).
-     */
-    private static void validateClockDrift(Map<String, String> meta) throws BrokerExtractionException {
-        String tsStr = meta.get(ProtocolV2.PROP_TS);
-        if (tsStr == null) return;
-        long timestamp = Long.parseLong(tsStr);
-        long now = Instant.now().getEpochSecond();
-        if (timestamp > now + MAX_CLOCK_DRIFT_SECONDS) {
-            throw new BrokerExtractionException(
-                    "Message timestamp is " + (timestamp - now) + "s in the future (max drift: ±5min)");
-        }
-        // M7: Also reject timestamps far in the past (beyond TTL + drift window)
-        String ttlStr = meta.get(ProtocolV2.PROP_TTL);
-        if (ttlStr != null) {
-            long ttl = Long.parseLong(ttlStr);
-            if (timestamp + ttl + MAX_CLOCK_DRIFT_SECONDS < now) {
-                throw new BrokerExtractionException(
-                        "Message expired: timestamp + ttl + drift = " + (timestamp + ttl + MAX_CLOCK_DRIFT_SECONDS)
-                                + " < now = " + now);
-            }
-        }
-    }
-
-    /**
-     * Validates the temporal validity of a V2 metadata map.
-     * Throws {@link BrokerExtractionException} if the TTL has elapsed.
-     */
-    private static void validateTtl(Map<String, String> meta) throws BrokerExtractionException {
-        String ttlStr = meta.get(ProtocolV2.PROP_TTL);
-        if (ttlStr == null) return; // no TTL = no expiration
-
-        String tsStr = meta.get(ProtocolV2.PROP_TS);
-        if (tsStr == null) return;
-
-        long timestamp = Long.parseLong(tsStr);
-        long ttl = Long.parseLong(ttlStr);
-        if (Instant.now().getEpochSecond() >= timestamp + ttl) {
-            throw new BrokerExtractionException("Token metadata has expired");
-        }
-    }
-
-    /**
-     * Returns true if the broker entry for the given messageId exists, is not expired,
-     * and does not exhibit clock drift beyond ±5 minutes.
-     */
-    private boolean isMessageIdActive(String messageId) {
-        try {
-            String message = metadataBroker.get(messageId);
-            if (message == null || message.isBlank()) return false;
-            Map<String, String> meta = ProtocolV2.parseMetadata(message);
-
-            // Clock drift check (§9.1)
-            String tsStr = meta.get(ProtocolV2.PROP_TS);
-            if (tsStr != null) {
-                long ts = Long.parseLong(tsStr);
-                if (ts > Instant.now().getEpochSecond() + MAX_CLOCK_DRIFT_SECONDS) return false;
-            }
-
-            // TTL check
-            String ttlStr = meta.get(ProtocolV2.PROP_TTL);
-            if (ttlStr == null) return true; // no TTL = never expires
-            if (tsStr == null) return true;
-            long timestamp = Long.parseLong(tsStr);
-            long ttl = Long.parseLong(ttlStr);
-            return Instant.now().getEpochSecond() < timestamp + ttl;
-        } catch (BrokerExtractionException e) {
-            return false; // key not found = not active
-        } catch (Exception e) {
-            logger.severe("Error checking isMessageIdActive for [" + messageId + "]: " + e.getMessage());
-            return false;
-        }
-    }
-
-    /**
-     * Enforces the maxSessions limit for a group before a new signing.
-     * If the active session count is at or above the limit, evicts one sequence.
-     *
-     * <p><strong>F8 fix</strong>: eviction broker sends use a short configurable timeout
-     * ({@code EVICTION_SEND_TIMEOUT_SECONDS}) instead of the old 3-minute blocking {@code .get()}.
-     * The signing hot path can no longer be blocked for minutes by a slow broker.</p>
-     */
-    private void enforceSessionLimit(String groupId, EffectiveConfig config) {
-        try {
-            String prefix = ProtocolV2.groupPrefix(groupId);
-            List<String> allKeys = metadataBroker.getKeysByPrefix(prefix);
-
-            // Filter to non-expired, non-reserved active keys; garbage-collect expired entries
-            List<String> validKeys = new ArrayList<>();
-            for (String key : allKeys) {
-                if (ProtocolV2.isReservedSequence(key)) continue;
-                if (isMessageIdActive(key)) {
-                    validKeys.add(key);
-                } else {
-                    // Lazy GC: remove expired entries from the broker to prevent stale accumulation
-                    try {
-                        metadataBroker.send(key, ""); // fire-and-forget is acceptable for GC
-                    } catch (Exception gc) {
-                        logger.fine("Failed to GC expired key " + key + ": " + gc.getMessage());
-                    }
-                }
-            }
-
-            while (validKeys.size() >= config.maxSessions()) {
-                if (config.policy() == EvictionPolicy.REJECT) {
-                    throw new SessionCapacityExceededException(groupId, config.maxSessions());
-                }
-                String toEvict = selectEvictionTarget(validKeys, config.policy());
-                try {
-                    // Publish formal revocation, then delete — with short timeout (F8)
-                    String[] parts = ProtocolV2.parseMessageId(toEvict);
-                    String revokeKey = ProtocolV2.buildRevocationKey(groupId);
-                    String revokeMsg = buildSignedRevocationMessage(groupId, parts[2]);
-                    metadataBroker.send(revokeKey, revokeMsg); // fire-and-forget for eviction revoke notice
-                    metadataBroker.send(toEvict, "").get(EVICTION_SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-                } catch (TimeoutException te) {
-                    logger.warning("Eviction send timed out for key " + toEvict + " after "
-                            + EVICTION_SEND_TIMEOUT_SECONDS + "s — proceeding anyway");
-                } catch (Exception e) {
-                    logger.severe("Failed to evict key " + toEvict + ": " + e.getMessage());
-                }
-                validKeys.remove(toEvict);
-            }
-        } catch (SessionCapacityExceededException e) {
-            throw e; // must propagate to caller
-        } catch (Exception e) {
-            logger.severe("Error enforcing session limit for group [" + groupId + "]: " + e.getMessage());
-        }
-    }
-
-    /**
-     * Selects the key to evict from a list of active keys according to the given policy.
-     * FIFO and LRU both select the key with the smallest {@code timestamp}.
-     * LIFO selects the key with the largest {@code timestamp}.
-     */
-    private String selectEvictionTarget(List<String> keys, EvictionPolicy policy) {
-        String selected = keys.get(0);
-        long selectedTs = getTimestampForKey(selected);
-
-        for (int i = 1; i < keys.size(); i++) {
-            long ts = getTimestampForKey(keys.get(i));
-            switch (policy) {
-                case FIFO, LRU -> {
-                    if (ts < selectedTs) { selected = keys.get(i); selectedTs = ts; }
-                }
-                case LIFO -> {
-                    if (ts > selectedTs) { selected = keys.get(i); selectedTs = ts; }
-                }
-            }
-        }
-        return selected;
-    }
-
-    /**
-     * Retrieves the {@code timestamp} property from the broker entry for the given key.
-     * Returns {@code 0} if the key is unavailable or malformed.
-     */
-    private long getTimestampForKey(String key) {
-        try {
-            String msg = metadataBroker.get(key);
-            Map<String, String> meta = ProtocolV2.parseMetadata(msg);
-            return Long.parseLong(meta.getOrDefault(ProtocolV2.PROP_TS, "0"));
-        } catch (Exception e) {
-            return 0;
-        }
-    }
-
-    /**
-     * Generates a new ephemeral RSA-3072 key pair if the rotation interval has elapsed.
-     * Invoked once at construction and then on the scheduler interval.
-     */
-    private void generatedKeysPair() {
-        long now = System.currentTimeMillis();
-        if (now - lastExecutionTime >= Config.KEYS_ROTATION_MINUTES * 60 * 1000L || lastExecutionTime == 0) {
-            try {
-                KeyPairGenerator generator = KeyPairGenerator.getInstance(Config.ASYMMETRIC_KEYPAIR_ALGORITHM);
-                generator.initialize(Config.ASYMMETRIC_KEY_SIZE, new SecureRandom()); // F3 fix: explicit 3072
-                keyPair = generator.generateKeyPair();
-                lastExecutionTime = now; // M3: only update on success
-                logger.log(Level.FINEST, "Rotating ephemeral RSA-{0} keys.", Config.ASYMMETRIC_KEY_SIZE);
-            } catch (Exception e) {
-                // M3: Do NOT update lastExecutionTime — retry on next interval
-                logger.log(Level.SEVERE, "Failed to generate key pair: " + e.getMessage());
-            }
-        }
     }
 }

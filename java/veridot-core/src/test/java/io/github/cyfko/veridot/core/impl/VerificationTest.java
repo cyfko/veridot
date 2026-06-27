@@ -127,7 +127,7 @@ class VerificationTest {
         props.put("pk", "dummykey");
         props.put("ts", String.valueOf(futureTs));
         props.put("ttl", "3600");
-        String msg = ProtocolV2.buildMessage("drift-grp", "s1", props);
+        String msg = Protocol.buildMessage("drift-grp", "s1", props);
         broker.send("3:drift-grp:s1", msg);
 
         // Verify must reject due to clock drift > 5 min (§9.1)
@@ -146,7 +146,7 @@ class VerificationTest {
         props.put("ts", String.valueOf(ts));
         props.put("ttl", "3600");
         // Note: deliberately omit sid and sig
-        String msg = ProtocolV2.buildMessage("attack-grp", "evil-session", props);
+        String msg = Protocol.buildMessage("attack-grp", "evil-session", props);
         broker.send("3:attack-grp:evil-session", msg);
 
         // Verify must reject because trust-anchor fields are missing (F1 guard)

@@ -27,7 +27,7 @@ public final class TrustedAnnouncement {
      * Returns the signature encoded as URL-safe Base64 without padding.
      */
     public static String sign(String messageId, Map<String, String> props, PrivateKey longTermKey) {
-        byte[] canonical = ProtocolV2.buildCanonicalBytes(messageId, props);
+        byte[] canonical = Protocol.buildCanonicalBytes(messageId, props);
         try {
             Signature sig = Signature.getInstance("SHA256withRSA");
             sig.initSign(longTermKey);
@@ -48,16 +48,16 @@ public final class TrustedAnnouncement {
      */
     public static void verify(String messageId, Map<String, String> meta, TrustAnchor anchor)
             throws TrustResolutionException {
-        String sid = meta.get(ProtocolV2.PROP_SID);
-        String sigB64 = meta.get(ProtocolV2.PROP_SIG);
+        String sid = meta.get(Protocol.PROP_SID);
+        String sigB64 = meta.get(Protocol.PROP_SIG);
         if (sid == null || sigB64 == null) {
             throw new TrustResolutionException.SignatureRejected("Missing sid/sig in announcement");
         }
 
         Map<String, String> props = new LinkedHashMap<>(meta);
-        props.remove(ProtocolV2.PROP_SIG);
-        props.remove(ProtocolV2.PROP_TOKEN);
-        byte[] canonical = ProtocolV2.buildCanonicalBytes(messageId, props);
+        props.remove(Protocol.PROP_SIG);
+        props.remove(Protocol.PROP_TOKEN);
+        byte[] canonical = Protocol.buildCanonicalBytes(messageId, props);
         byte[] sig = Base64.getUrlDecoder().decode(sigB64);
 
         switch (anchor) {

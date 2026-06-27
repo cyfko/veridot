@@ -55,11 +55,11 @@ class RevocationTest {
         String t3 = sv.sign("d3", BasicConfigurer.builder().groupId("u1").validity(600).build());
 
         long normalCountBefore = broker.getKeysByPrefix("3:u1:").stream()
-                .filter(k -> !ProtocolV2.isReservedSequence(k)).count();
+                .filter(k -> !Protocol.isReservedSequence(k)).count();
         assertEquals(3, normalCountBefore, "Must have 3 active sessions before revokeGroup");
         sv.revoke("u1", null);
         long normalCountAfter = broker.getKeysByPrefix("3:u1:").stream()
-                .filter(k -> !ProtocolV2.isReservedSequence(k)).count();
+                .filter(k -> !Protocol.isReservedSequence(k)).count();
         assertEquals(0, normalCountAfter, "Must have 0 normal sessions after revokeGroup");
         // The __REVOKE__ message itself persists (for interoperability)
         assertTrue(broker.containsKey("3:u1:__REVOKE__"), "Revocation message must persist in broker");
@@ -145,8 +145,8 @@ class RevocationTest {
         // Parse and verify target == __ALL__
         int pipeIdx = revokeMsg.indexOf('|');
         assertTrue(pipeIdx > 0);
-        // Use ProtocolV2 to parse (package-private, accessible from this test class)
-        var meta = ProtocolV2.parseMetadata(revokeMsg);
+        // Use Protocol to parse (package-private, accessible from this test class)
+        var meta = Protocol.parseMetadata(revokeMsg);
         assertEquals("__ALL__", meta.get("target"), "revokeGroup must use target=__ALL__");
     }
 
@@ -164,7 +164,7 @@ class RevocationTest {
         assertTrue(broker.containsKey("3:replay-grp:__REVOKE__"),
                 "Tombstone must be present after revocation");
         String tombstone = broker.getRaw("3:replay-grp:__REVOKE__");
-        var meta = ProtocolV2.parseMetadata(tombstone);
+        var meta = Protocol.parseMetadata(tombstone);
         assertNotNull(meta.get("ts"), "Tombstone must carry a ts (F7)");
         assertNotNull(meta.get("sig"), "Tombstone must carry a long-term signature (F7)");
 
