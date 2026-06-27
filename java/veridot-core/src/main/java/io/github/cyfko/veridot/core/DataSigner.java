@@ -21,7 +21,7 @@ import java.util.function.Function;
  *
  * <h2>Typical usage</h2>
  * <pre>{@code
- * DataSigner signer = new GenericSignerVerifier(broker, "my-salt");
+ * DataSigner signer = new GenericSignerVerifier(broker, trustAnchor, "my-signer", longTermKey);
  *
  * // Issue a token valid for 1 hour (DIRECT mode — token returned directly)
  * String token = signer.sign("user@example.com",

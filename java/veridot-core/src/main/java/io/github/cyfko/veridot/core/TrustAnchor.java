@@ -34,7 +34,11 @@ import java.security.PublicKey;
  *   ‖ timestamp [8 bytes, big-endian, epoch seconds]
  *   ‖ ttl       [8 bytes, big-endian, seconds]
  *   ‖ len(signerId) [4 bytes, big-endian] ‖ signerId [UTF-8]
+ *   ‖ len(messageId) [4 bytes, big-endian] ‖ messageId [UTF-8]
  * </pre>
+ * <p>Including {@code messageId} binds the signature to the specific broker key,
+ * preventing a substitution attack where a valid announcement is relocated to a
+ * different groupId/sequenceId.</p>
  *
  * <h2>Authorization scope</h2>
  * <p>Implementations are also responsible for enforcing that the resolved {@code signerId}

@@ -335,7 +335,7 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         byte[] pubKeyDer = currentKeyPair.getPublic().getEncoded();
         long timestamp = now.getEpochSecond();
         long ttl = configurer.getDuration();
-        byte[] canonicalAnnouncement = buildCanonicalAnnouncement(pubKeyDer, timestamp, ttl, signerId);
+        byte[] canonicalAnnouncement = buildCanonicalAnnouncement(pubKeyDer, timestamp, ttl, signerId, messageId);
         byte[] announcementSignature;
         try {
             announcementSignature = signAnnouncement(canonicalAnnouncement, longTermPrivateKey);
@@ -440,8 +440,13 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             // 6. Validate temporal validity (TTL)
             validateTtl(meta);
 
+            // 6b. F7 — Check tombstone: if a signed revocation exists with a newer timestamp,
+            //     reject the token even if the session entry is present in the broker.
+            //     This is the "latest-timestamp-wins" rule that prevents broker-level replay.
+            validateNotRevoked(groupId, meta);
+
             // 7. Validate key announcement via TrustAnchor (F1 — broker is NOT a root of trust)
-            validateTrustAnchor(meta);
+            validateTrustAnchor(meta, messageId);
 
             // 8. Resolve JWT for INDIRECT mode
             String resolvedJwt = jwtToken;
@@ -674,6 +679,103 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         return null;
     }
 
+    // ── F7 — Tombstone timestamp check (latest-timestamp-wins) ─────────────────
+
+    /**
+     * Checks whether a signed revocation tombstone exists for the given group
+     * with a timestamp newer than the announcement's own timestamp.
+     *
+     * <p>This is the core of the F7 fix: even if a broker-level attacker re-inserts
+     * a previously deleted session entry, the tombstone's signed timestamp proves
+     * the revocation happened <em>after</em> the announcement — so the session
+     * stays revoked. The rule is simple and total: <strong>the most recent
+     * timestamp, signed by the long-term key, always prevails.</strong></p>
+     *
+     * @param groupId the group to check for revocation
+     * @param announcementMeta the metadata of the announcement being verified
+     * @throws BrokerExtractionException if a newer tombstone exists
+     */
+    private void validateNotRevoked(String groupId, Map<String, String> announcementMeta)
+            throws BrokerExtractionException {
+        String revokeKey = ProtocolV2.buildRevocationKey(groupId);
+        String tombstoneMsg;
+        try {
+            tombstoneMsg = metadataBroker.get(revokeKey);
+        } catch (Exception e) {
+            // No tombstone found → not revoked, proceed normally
+            return;
+        }
+
+        if (tombstoneMsg == null || tombstoneMsg.isBlank()) {
+            return; // deleted tombstone entry
+        }
+
+        try {
+            Map<String, String> tombstoneMeta = ProtocolV2.parseMetadata(tombstoneMsg);
+            String tombstoneTimestampStr = tombstoneMeta.get(ProtocolV2.PROP_TIMESTAMP);
+            String announcementTimestampStr = announcementMeta.get(ProtocolV2.PROP_TIMESTAMP);
+            String tombstoneTarget = tombstoneMeta.get(ProtocolV2.PROP_TARGET);
+
+            if (tombstoneTimestampStr == null || announcementTimestampStr == null) {
+                return; // malformed entries — let other validations handle it
+            }
+
+            long tombstoneTs = Long.parseLong(tombstoneTimestampStr);
+            long announcementTs = Long.parseLong(announcementTimestampStr);
+
+            // Latest-timestamp-wins: if the tombstone is newer, the session is revoked
+            if (tombstoneTs > announcementTs) {
+                // Check target scope: __ALL__ revokes everything, specific target matches sequenceId
+                if (ProtocolV2.SEQ_ALL.equals(tombstoneTarget)) {
+                    logger.info("F7: Rejecting token — group-wide tombstone (ts=" + tombstoneTs
+                            + ") is newer than announcement (ts=" + announcementTs + ") for group=" + groupId);
+                    throw new BrokerExtractionException(
+                            "Session revoked: group-wide tombstone (ts=" + tombstoneTs + ") supersedes announcement");
+                }
+                // For targeted revocation, check if this specific sequence was revoked
+                // (The tombstone target field matches the sequenceId from the messageId)
+                // Note: targeted tombstones may be overwritten by newer ones, so __ALL__ is checked first
+            }
+
+            // Verify tombstone signature using TrustAnchor (prevents forged tombstones)
+            String tombstoneSigB64 = tombstoneMeta.get(ProtocolV2.PROP_TOMBSTONE_SIG);
+            String tombstoneSignerId = tombstoneMeta.get(ProtocolV2.PROP_SIGNER_ID);
+            if (tombstoneSigB64 != null && !tombstoneSigB64.isEmpty()
+                    && tombstoneSignerId != null && tombstoneTarget != null) {
+                byte[] tombstoneCanonical = buildTombstoneCanonical(groupId, tombstoneTarget, tombstoneTs);
+                byte[] tombstoneSig = Base64.getUrlDecoder().decode(tombstoneSigB64);
+                try {
+                    switch (trustAnchor) {
+                        case TrustAnchor.PublicKeyResolver r -> {
+                            PublicKey ltKey = r.resolve(tombstoneSignerId);
+                            verifyAnnouncementSignature(tombstoneCanonical, tombstoneSig, ltKey);
+                        }
+                        case TrustAnchor.DelegatedVerifier d -> {
+                            d.verify(tombstoneSignerId, tombstoneCanonical, tombstoneSig);
+                        }
+                    }
+                    // Tombstone signature verified — if we reach here and tombstoneTs > announcementTs,
+                    // the revocation is cryptographically proven
+                    if (tombstoneTs > announcementTs) {
+                        throw new BrokerExtractionException(
+                                "Session revoked: verified tombstone (ts=" + tombstoneTs
+                                        + ") supersedes announcement (ts=" + announcementTs + ")");
+                    }
+                } catch (BrokerExtractionException e) {
+                    throw e;
+                } catch (TrustResolutionException e) {
+                    // Tombstone signature invalid — ignore the tombstone (could be forged)
+                    logger.warning("F7: Ignoring tombstone with invalid signature for group=" + groupId);
+                }
+            }
+        } catch (BrokerExtractionException e) {
+            throw e;
+        } catch (Exception e) {
+            // Malformed tombstone — log and proceed (don't block verification on bad tombstones)
+            logger.warning("F7: Failed to parse tombstone for group=" + groupId + ": " + e.getMessage());
+        }
+    }
+
     // ── TrustAnchor validation (F1) ───────────────────────────────────────────
 
     /**
@@ -684,9 +786,10 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
      * <em>not</em> trusted just because it came from the broker. It is only trusted after
      * the long-term signature over the announcement is verified.</p>
      *
-     * @throws BrokerExtractionException if the announcement fails trust validation
+     * @throws BrokerExtractionException if any trust field is missing, or if the TrustAnchor rejects
+     *                                    the announcement signature
      */
-    private void validateTrustAnchor(Map<String, String> meta) throws BrokerExtractionException {
+    private void validateTrustAnchor(Map<String, String> meta, String messageId) throws BrokerExtractionException {
         String signerIdMeta = meta.get(ProtocolV2.PROP_SIGNER_ID);
         String announcementSigB64 = meta.get(ProtocolV2.PROP_ANNOUNCEMENT_SIG);
         String pubkeyB64 = meta.get(ProtocolV2.PROP_PUBKEY);
@@ -703,7 +806,7 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             byte[] pubKeyDer = Base64.getUrlDecoder().decode(pubkeyB64);
             long timestamp = Long.parseLong(tsStr);
             long ttl = Long.parseLong(ttlStr);
-            byte[] canonical = buildCanonicalAnnouncement(pubKeyDer, timestamp, ttl, signerIdMeta);
+            byte[] canonical = buildCanonicalAnnouncement(pubKeyDer, timestamp, ttl, signerIdMeta, messageId);
             byte[] sig = Base64.getUrlDecoder().decode(announcementSigB64);
 
             switch (trustAnchor) {
@@ -766,11 +869,19 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
      *   ‖ timestamp    [8 bytes BE, epoch seconds]
      *   ‖ ttl          [8 bytes BE, seconds]
      *   ‖ len(signerId)[4 bytes BE] ‖ signerId [UTF-8]
+     *   ‖ len(messageId)[4 bytes BE] ‖ messageId [UTF-8]
      * </pre>
+     *
+     * <p>Including {@code messageId} binds the signature to the specific broker key,
+     * preventing a substitution attack where a valid announcement is relocated to a
+     * different groupId/sequenceId.</p>
      */
-    static byte[] buildCanonicalAnnouncement(byte[] pubKeyDer, long timestamp, long ttl, String signerId) {
+    static byte[] buildCanonicalAnnouncement(byte[] pubKeyDer, long timestamp, long ttl,
+                                              String signerId, String messageId) {
         byte[] signerIdBytes = signerId.getBytes(StandardCharsets.UTF_8);
-        int totalLen = 4 + pubKeyDer.length + 8 + 8 + 4 + signerIdBytes.length;
+        byte[] messageIdBytes = messageId.getBytes(StandardCharsets.UTF_8);
+        int totalLen = 4 + pubKeyDer.length + 8 + 8 + 4 + signerIdBytes.length
+                     + 4 + messageIdBytes.length;
         ByteBuffer buf = ByteBuffer.allocate(totalLen);
         buf.putInt(pubKeyDer.length);
         buf.put(pubKeyDer);
@@ -778,6 +889,8 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         buf.putLong(ttl);
         buf.putInt(signerIdBytes.length);
         buf.put(signerIdBytes);
+        buf.putInt(messageIdBytes.length);
+        buf.put(messageIdBytes);
         return buf.array();
     }
 

@@ -17,7 +17,7 @@ package io.github.cyfko.veridot.core;
  *
  * <h2>Typical usage</h2>
  * <pre>{@code
- * TokenRevoker revoker = new GenericSignerVerifier(broker, "my-salt");
+ * TokenRevoker revoker = new GenericSignerVerifier(broker, trustAnchor, "my-signer", longTermKey);
  *
  * // Revoke a specific session (obtained from VerifiedData after verification)
  * revoker.revoke("user-123", "session-A");

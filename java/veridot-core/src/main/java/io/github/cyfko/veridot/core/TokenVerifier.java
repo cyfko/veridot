@@ -21,7 +21,7 @@ import java.util.function.Function;
  *
  * <h2>Typical usage</h2>
  * <pre>{@code
- * TokenVerifier verifier = new GenericSignerVerifier(broker, "my-salt");
+ * TokenVerifier verifier = new GenericSignerVerifier(broker, trustAnchor, "my-signer", longTermKey);
  *
  * // Verify and extract the payload
  * VerifiedData<String> result = verifier.verify(token, s -> s);

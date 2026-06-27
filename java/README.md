@@ -19,7 +19,7 @@ Java implementation of the Veridot distributed token verification protocol.
 | [`veridot-databases`](veridot-databases/) | `io.github.cyfko:veridot-databases:3.0.2` | 17+ | `MetadataBroker` backed by SQL (PostgreSQL, MySQL…) |
 | [`veridot-tests`](veridot-tests/) | _(internal)_ | 25+ | Integration tests across all brokers |
 
-> **Start reading here**: [`veridot-core/README.md`](veridot-core/README.md) — self-contained reference for all developers. No external site required.
+> **Start reading here**: [`veridot-core/README.md`](veridot-core/README.md) — self-contained reference for all developers.
 
 ---
 

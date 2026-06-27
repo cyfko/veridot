@@ -162,7 +162,7 @@ class TrustAnchorSecurityTest {
                 .encodeToString(fakeKp.getPublic().getEncoded());
 
         byte[] canonical = GenericSignerVerifier.buildCanonicalAnnouncement(
-                fakeKp.getPublic().getEncoded(), ts, 3600L, "unknown-signer");
+                fakeKp.getPublic().getEncoded(), ts, 3600L, "unknown-signer", "2:victim:unknown-attack");
         java.security.Signature sig = java.security.Signature.getInstance("SHA256withRSA");
         sig.initSign(fakeKp.getPrivate()); // sign with its own key (not the legitimate long-term)
         sig.update(canonical);
@@ -197,8 +197,8 @@ class TrustAnchorSecurityTest {
         long ttl = 3600L;
         String signerId = "svc-A";
 
-        byte[] a1 = GenericSignerVerifier.buildCanonicalAnnouncement(dummyDer, ts, ttl, signerId);
-        byte[] a2 = GenericSignerVerifier.buildCanonicalAnnouncement(dummyDer, ts, ttl, signerId);
+        byte[] a1 = GenericSignerVerifier.buildCanonicalAnnouncement(dummyDer, ts, ttl, signerId, "2:test:seq1");
+        byte[] a2 = GenericSignerVerifier.buildCanonicalAnnouncement(dummyDer, ts, ttl, signerId, "2:test:seq1");
         assertArrayEquals(a1, a2, "buildCanonicalAnnouncement must be deterministic");
     }
 
@@ -213,16 +213,20 @@ class TrustAnchorSecurityTest {
         long ttl = 3600L;
         String signerId = "svc-A";
 
-        byte[] base = GenericSignerVerifier.buildCanonicalAnnouncement(der, ts, ttl, signerId);
-        byte[] diffDer = GenericSignerVerifier.buildCanonicalAnnouncement(new byte[]{0x01, 0x02, 0x04}, ts, ttl, signerId);
-        byte[] diffTs = GenericSignerVerifier.buildCanonicalAnnouncement(der, ts + 1, ttl, signerId);
-        byte[] diffTtl = GenericSignerVerifier.buildCanonicalAnnouncement(der, ts, ttl + 1, signerId);
-        byte[] diffSigner = GenericSignerVerifier.buildCanonicalAnnouncement(der, ts, ttl, "svc-B");
+        byte[] base = GenericSignerVerifier.buildCanonicalAnnouncement(der, ts, ttl, signerId, "2:g:s");
+        byte[] diffDer = GenericSignerVerifier.buildCanonicalAnnouncement(new byte[]{0x01, 0x02, 0x04}, ts, ttl, signerId, "2:g:s");
+        byte[] diffTs = GenericSignerVerifier.buildCanonicalAnnouncement(der, ts + 1, ttl, signerId, "2:g:s");
+        byte[] diffTtl = GenericSignerVerifier.buildCanonicalAnnouncement(der, ts, ttl + 1, signerId, "2:g:s");
+        byte[] diffSigner = GenericSignerVerifier.buildCanonicalAnnouncement(der, ts, ttl, "svc-B", "2:g:s");
 
         assertFalse(java.util.Arrays.equals(base, diffDer), "Different pubkey DER must change canonical bytes");
         assertFalse(java.util.Arrays.equals(base, diffTs), "Different timestamp must change canonical bytes");
         assertFalse(java.util.Arrays.equals(base, diffTtl), "Different TTL must change canonical bytes");
         assertFalse(java.util.Arrays.equals(base, diffSigner), "Different signerId must change canonical bytes");
+
+        // Also verify that different messageId changes canonical bytes (anti-substitution)
+        byte[] diffMsgId = GenericSignerVerifier.buildCanonicalAnnouncement(der, ts, ttl, signerId, "2:g:other");
+        assertFalse(java.util.Arrays.equals(base, diffMsgId), "Different messageId must change canonical bytes");
     }
 
     /**

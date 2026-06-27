@@ -19,7 +19,7 @@ package io.github.cyfko.veridot.core;
  *
  * <h2>Typical usage</h2>
  * <pre>{@code
- * TokenTracker tracker = new GenericSignerVerifier(broker, "my-salt");
+ * TokenTracker tracker = new GenericSignerVerifier(broker, trustAnchor, "my-signer", longTermKey);
  *
  * // Check if a user has any active session
  * boolean userIsLoggedIn = tracker.hasActiveToken("user-123");
