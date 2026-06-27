@@ -13,6 +13,10 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>
  * Thread-safe via {@link ConcurrentHashMap}. Sending an empty message removes the entry (revocation).
  * </p>
+ *
+ * <p><strong>F5 fix</strong>: {@link #sendLocal} is equivalent to a full {@link #send}
+ * in this in-memory implementation, since there is no distinction between local and
+ * remote writes.</p>
  */
 public class InMemoryMetadataBroker implements MetadataBroker {
 
@@ -29,6 +33,20 @@ public class InMemoryMetadataBroker implements MetadataBroker {
             store.put(key, message);
         }
         return CompletableFuture.completedFuture(null);
+    }
+
+    /**
+     * In the in-memory implementation, a local write is equivalent to a full distributed
+     * write. This satisfies the F5 contract (same-node read-after-write) trivially.
+     */
+    @Override
+    public void sendLocal(String key, String message) {
+        if (key == null || key.isBlank() || message == null) return;
+        if (message.isBlank()) {
+            store.remove(key);
+        } else {
+            store.put(key, message);
+        }
     }
 
     @Override

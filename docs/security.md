@@ -1,455 +1,380 @@
 ---
 layout: page
-title: Security Best Practices
+title: Security Model & Best Practices
 permalink: /docs/security/
 nav_order: 5
 ---
 
-# Security Best Practices
+# Security Model & Best Practices
 
-Veridot is designed with security as a first principle. This guide covers essential security considerations, threat models, and best practices for production deployments.
+Veridot est conçu avec la sécurité comme premier principe. Cette page documente le modèle de menace complet, l'architecture de confiance v3.0, et les recommandations de durcissement pour un déploiement en production.
 
-## Cryptographic Foundation
+---
 
-### Supported Algorithms
+## 1. Architecture de confiance (v3.0)
 
-#### Java Implementation
-- **Algorithm**: RSA-2048 with SHA-256
-- **Security Level**: >112-bit equivalent
-- **Standards Compliance**: FIPS 140-2 Level 1
-- **Key Rotation**: Configurable (default: 60 minutes)
+### 1.1 Principe fondamental : le broker est un transport, jamais une autorité
 
-#### Node.js Implementation  
-- **Algorithm**: ECDSA P-256 (ES256)
-- **Security Level**: 128-bit equivalent
-- **Standards Compliance**: NIST P-256, FIPS 186-4
-- **Key Rotation**: Configurable (default: 60 minutes)
+Avant v3.0, Veridot accordait une confiance implicite à toute annonce de clé reçue du broker. Tout nœud avec accès en écriture au topic Kafka pouvait injecter une clé frauduleuse et obtenir une vérification valide.
 
-### Why Ephemeral Keys?
+**v3.0 ferme cette faille.** Chaque annonce de clé est validée de manière indépendante par un `TrustAnchor` avant que la clé éphémère soit acceptée. Le broker est réduit à un transport binaire pur.
 
-Traditional JWT implementations use long-lived shared secrets, creating several security risks:
+```
+Nœud signataire
+  ├─ génère paire de clés RSA-3072 éphémère
+  ├─ signe l'annonce avec sa clé long-terme        ← v3.0
+  └─ publie sur le broker (pubkey + announcementSig + signerId)
 
-```diff
-- Shared Secret JWT (Traditional)
-- ❌ Single point of compromise
-- ❌ Key distribution complexity  
-- ❌ No forward secrecy
-- ❌ Difficult key rotation
-
-+ Ephemeral Asymmetric Keys (Veridot)
-+ ✅ Distributed key generation
-+ ✅ Automatic key rotation
-+ ✅ Forward secrecy guaranteed
-+ ✅ Zero shared secrets
+Nœud vérificateur
+  ├─ reçoit l'annonce du broker
+  ├─ résout la clé publique long-terme via TrustAnchor  ← NOUVEAU v3.0
+  ├─ vérifie announcementSig avec la clé long-terme     ← NOUVEAU v3.0
+  └─ vérifie le JWT avec la clé éphémère
 ```
 
-## Threat Model & Mitigations
+**Voir** : [ADR-001 — TrustAnchor](adr/adr-001-trust-anchor/)
 
-### 1. Token Replay Attacks
+### 1.2 Implémentations TrustAnchor
 
-**Threat**: Attacker intercepts and reuses valid tokens.
-
-**Mitigations**:
-- Short token lifetimes (5-60 minutes recommended)
-- Unique tracking IDs for correlation and revocation
-- Network-level TLS encryption
-- Token binding to client certificates (advanced)
+#### Option A — Clé publique statique (fichier PEM / Vault KV)
 
 ```java
-// Java: Short-lived tokens
-BasicConfigurer config = BasicConfigurer.builder()
-    .validity(300)  // 5 minutes for sensitive operations
-    .trackedBy(request.getSessionId().hashCode())
-    .build();
+TrustAnchor anchor = (TrustAnchor.PublicKeyResolver) signerId -> {
+    Path keyFile = Paths.get("/etc/veridot/trust/" + signerId + ".pub.pem");
+    return PemUtils.loadPublicKey(Files.readAllBytes(keyFile));
+};
+
+var sv = new GenericSignerVerifier(broker, anchor, "my-service-id", longTermPrivateKey);
 ```
 
-```typescript
-// Node.js: Short-lived tokens
-const { token } = await dverify.sign(sensitiveData, 300); // 5 minutes
-```
+**Profil de sécurité** : la clé privée long-terme est détenue par le service signataire (Vault-injected, Kubernetes Secret). La clé publique est distribuée en lecture seule aux vérificateurs — elle n'est pas sensible.
 
-### 2. Key Compromise
-
-**Threat**: Private keys are compromised through memory dumps, side-channel attacks, or insider threats.
-
-**Mitigations**:
-- Automatic key rotation limits exposure window
-- Ephemeral keys are never persisted to disk
-- Memory protection through secure coding practices
-- Hardware Security Module (HSM) integration (roadmap)
+#### Option B — Vault Transit / KMS (la clé ne quitte jamais le périmètre)
 
 ```java
-// Java: Frequent rotation for high-security environments
-GenericSignerVerifier verifier = new GenericSignerVerifier(broker) {
-    // Override default rotation interval
-    private static final long ROTATION_MINUTES = 15; // 15 minutes
+TrustAnchor anchor = (TrustAnchor.DelegatedVerifier) (signerId, canonical, sig) -> {
+    boolean valid = vaultTransit.verify(signerId, canonical, sig);
+    if (!valid) {
+        throw new TrustResolutionException.SignatureRejected(
+            "Vault Transit rejected signature for signerId=" + signerId);
+    }
 };
 ```
 
-### 3. Man-in-the-Middle (MITM) Attacks
+**Profil de sécurité** : la clé privée long-terme ne quitte jamais le KMS. Recommandé pour les environnements avec des contrôles stricts sur les matériaux cryptographiques (HSM, hardware-backed KMS).
 
-**Threat**: Attackers intercept and modify broker communications.
+### 1.3 Sémantique d'échec du TrustAnchor
 
-**Mitigations**:
-- Mandatory TLS for all broker communications
-- Certificate pinning for critical environments
-- VPN or private networks for broker traffic
-- Message authentication codes (MACs) for metadata integrity
+La hiérarchie `sealed` de `TrustResolutionException` force un traitement explicite des deux modes d'échec :
+
+| Sous-type | Signification | Réponse correcte |
+|-----------|--------------|------------------|
+| `Unavailable` | Infrastructure transitoirement injoignable (KMS down, réseau) | **Fail safe : rejeter le token.** Ne jamais accepter. Alerter les ops. |
+| `SignatureRejected` | Rejet cryptographique définitif | **Événement de sécurité : rejeter + alerter.** Logger à SEVERE. |
+
+> **⚠️ Critique** : une erreur `Unavailable` ne doit **jamais** être silencieusement catchée et traitée comme « impossible à vérifier → accepter quand même ». Ce pattern réduirait le TrustAnchor à un no-op sous une défaillance d'infrastructure — exactement la fenêtre qu'un attaquant exploiterait.
+
+---
+
+## 2. Fondations cryptographiques
+
+### 2.1 Clés éphémères de signature
+
+| Propriété | Valeur | Notes |
+|-----------|--------|-------|
+| Algorithme | RSA | `Config.ASYMMETRIC_KEYPAIR_ALGORITHM` |
+| Taille | **3072 bits** | Hausse de 2048 implicite en v3.0.1 (NIST SP 800-57) |
+| Rotation | 24h par défaut | Configurable via `VDOT_KEYS_ROTATION_MINUTES` |
+| Persistance | **Jamais** | Clés en mémoire uniquement, jamais écrites sur disque |
+| Niveau de sécurité | 128 bits équivalent | Identique à AES-128, ECDSA P-256 |
+
+**Voir** : [ADR-002 — RSA-3072](adr/adr-002-rsa-3072/)
+
+### 2.2 Clés d'identité long-terme
+
+| Propriété | Valeur |
+|-----------|--------|
+| Algorithme | RSA (≥ 2048 bits ; 3072+ recommandé) |
+| Signature d'annonce | `SHA256withRSA` sur les bytes canoniques de l'annonce |
+| Signature de tombstone | `SHA256withRSA` sur les bytes canoniques du tombstone |
+| Stockage | Hors Veridot : Vault, KMS, HSM, Kubernetes Secret |
+
+### 2.3 Encodage canonique de l'annonce
+
+Les signatures utilisent un **encodage length-prefixed** pour éliminer toute ambiguïté (pas de concaténation naïve) :
+
+```
+len(pubkeyDER)  [4 octets, big-endian] ‖ pubkeyDER
+‖ timestamp     [8 octets, big-endian, epoch seconds]
+‖ ttl           [8 octets, big-endian, secondes]
+‖ len(signerId) [4 octets, big-endian] ‖ signerId [UTF-8]
+```
+
+---
+
+## 3. Modèle de menaces
+
+### 3.1 Menace : Accès en écriture au broker (injection de clé)
+
+**Avant v3.0** : tout nœud avec accès en écriture Kafka pouvait forger une annonce de clé et passer la vérification.
+
+**Mitigation v3.0** : validation `TrustAnchor`. Une annonce forgée échoue sauf si l'attaquant détient également la clé privée long-terme légitime.
+
+**Risque résiduel** : si la clé long-terme est compromise, toutes les annonces signées avec elle sont rétroactivement attaquables. Rotation immédiate de la clé long-terme + invalidation de tous les tokens actifs.
+
+### 3.2 Menace : Replay de tombstone
+
+**Avant v3.0** : un tombstone non signé pouvait être rejoué ou forgé.
+
+**Mitigation v3.0** : tombstones signés (ADR-003). Chaque message `__REVOKE__` porte un `tombstoneSig` (signature RSA long-terme) et un `timestamp` monotone. La règle latest-timestamp-wins rend le replay d'anciens tombstones valides inoffensif.
+
+**Voir** : [ADR-003 — Tombstones signés](adr/adr-003-tombstone-signed/)
+
+### 3.3 Menace : Race read-after-write (même nœud)
+
+**Avant v3.0** : un appel `verify()` immédiatement après `sign()` sur la même JVM pouvait échouer si la boucle consommateur Kafka n'avait pas encore traité les métadonnées signées.
+
+**Mitigation v3.0** : `MetadataBroker.sendLocal()` pré-alimente le RocksDB local avant l'envoi Kafka asynchrone. La vérification sur le même nœud est désormais instantanée.
+
+### 3.4 Menace : Croissance illimitée de RocksDB
+
+**Avant v3.0** : les entrées de métadonnées expirées n'étaient supprimées que de manière lazy lors des appels `enforceSessionLimit`. Un groupe à faible trafic pouvait accumuler des entrées périmées indéfiniment.
+
+**Mitigation v3.0** : tâche de compaction périodique (toutes les 5 min) qui purge toutes les entrées où `timestamp + ttl + 300 < now`.
+
+### 3.5 Menace : Blocage indéfini de sign() par un broker lent
+
+**Avant v3.0** : l'envoi d'éviction dans `enforceSessionLimit` utilisait un `CompletableFuture.get()` non borné, pouvant bloquer le hot path de signature indéfiniment.
+
+**Mitigation v3.0** : timeout de **10 secondes** sur tous les envois d'éviction. Un broker lent produit un log d'avertissement, pas un blocage.
+
+### 3.6 Menace : Dérive d'horloge
+
+**Depuis v2.1** : les annonces avec un `timestamp` supérieur de plus de 5 minutes à l'heure locale sont rejetées (§9.1). Cela prévient qu'une mauvaise configuration NTP fasse accepter silencieusement des tokens expirés.
+
+### 3.7 Menace : Replay de token après expiration
+
+**Mitigations** (inchangées depuis v2.x) :
+- Claim JWT `exp` vérifié au moment de la vérification.
+- `timestamp + ttl` vérifié dans les métadonnées broker.
+- La révocation permet une invalidation immédiate avant l'expiration du TTL.
+
+---
+
+## 4. Durcissement en production
+
+### 4.1 Gestion des clés long-terme
+
+```yaml
+# Kubernetes Secret pour la clé privée long-terme
+apiVersion: v1
+kind: Secret
+metadata:
+  name: veridot-signer-key
+  namespace: my-service
+type: Opaque
+data:
+  private.key: <base64-encoded PKCS#8 RSA-3072 private key>
+  signer.id: <base64-encoded service identifier>
+```
 
 ```java
-// Java: Secure Kafka configuration
+// Chargement depuis un secret monté en fichier
+byte[] pkcs8 = Files.readAllBytes(Paths.get("/var/secrets/veridot/private.key"));
+KeyFactory kf = KeyFactory.getInstance("RSA");
+PrivateKey longTermKey = kf.generatePrivate(new PKCS8EncodedKeySpec(pkcs8));
+String signerId = Files.readString(Paths.get("/var/secrets/veridot/signer.id")).strip();
+
+TrustAnchor anchor = (TrustAnchor.PublicKeyResolver) id -> loadLongTermPublicKey(id);
+var sv = new GenericSignerVerifier(broker, anchor, signerId, longTermKey);
+```
+
+### 4.2 Sécurité Kafka
+
+```java
 Properties props = new Properties();
+props.setProperty("bootstrap.servers", "kafka1:9092,kafka2:9092");
 props.setProperty("security.protocol", "SASL_SSL");
-props.setProperty("ssl.truststore.location", "/path/to/truststore.jks");
-props.setProperty("ssl.truststore.password", "truststore-password");
-props.setProperty("ssl.keystore.location", "/path/to/keystore.jks");
-props.setProperty("ssl.keystore.password", "keystore-password");
+props.setProperty("sasl.mechanism", "SCRAM-SHA-512");
+props.setProperty("sasl.jaas.config",
+    "org.apache.kafka.common.security.scram.ScramLoginModule required " +
+    "username=\"veridot-svc\" password=\"${KAFKA_PASSWORD}\";");
+props.setProperty("ssl.endpoint.identification.algorithm", "https");
+props.setProperty("ssl.protocol", "TLSv1.3");
+props.setProperty("ssl.truststore.location", "/etc/ssl/kafka.truststore.jks");
+props.setProperty("ssl.truststore.password", System.getenv("TRUSTSTORE_PASSWORD"));
 ```
 
-### 4. Metadata Tampering
+### 4.3 ACL Kafka recommandées
 
-**Threat**: Attackers modify public key metadata in transit or storage.
+```bash
+# Services signataires : produire uniquement
+kafka-acls.sh --add --allow-principal User:veridot-signer \
+  --operation Write --topic token-verifier
 
-**Mitigations**:
-- Cryptographic signing of metadata messages
-- Broker-level access controls and authentication
-- Network segmentation for broker infrastructure
-- Integrity checks on metadata retrieval
+# Services vérificateurs : consommer uniquement
+kafka-acls.sh --add --allow-principal User:veridot-verifier \
+  --operation Read --topic token-verifier
 
-### 5. Denial of Service (DoS)
+# Aucun service ne doit avoir Describe sur les consumer groups d'autres services
+```
 
-**Threat**: Resource exhaustion through excessive signing/verification requests.
-
-**Mitigations**:
-- Rate limiting on token operations
-- Connection pooling and circuit breakers
-- Resource monitoring and alerting
-- Graceful degradation strategies
+### 4.4 Gestion des sessions
 
 ```java
-// Java: Circuit breaker pattern
-@CircuitBreaker(name = "veridot-sign", fallbackMethod = "fallbackSign")
-public String signWithProtection(Object data, Configurer config) {
-    return dataSigner.sign(data, config);
-}
+// Refuser tout dépassement (1 session active max par utilisateur)
+var sv = new GenericSignerVerifier(
+    broker, anchor, signerId, longTermKey,
+    1, GenericSignerVerifier.EvictionPolicy.REJECT);
 
-public String fallbackSign(Object data, Configurer config, Exception ex) {
-    // Return cached token or simplified authentication
-    log.warn("Veridot signing failed, using fallback: {}", ex.getMessage());
-    return generateFallbackToken(data);
-}
+// Éviction FIFO (3 sessions max, la plus ancienne évincée)
+var sv = new GenericSignerVerifier(
+    broker, anchor, signerId, longTermKey,
+    3, GenericSignerVerifier.EvictionPolicy.FIFO);
 ```
 
-## Production Security Configuration
+---
 
-### Network Security
+## 5. Surveillance et alertes
 
-#### Kafka Cluster Security
-```yaml
-# docker-compose.yml - Production Kafka
-kafka:
-  image: confluentinc/cp-kafka:latest
-  environment:
-    # Enable SASL_SSL
-    KAFKA_SECURITY_INTER_BROKER_PROTOCOL: SASL_SSL
-    KAFKA_SASL_MECHANISM_INTER_BROKER_PROTOCOL: PLAIN
-    KAFKA_SASL_ENABLED_MECHANISMS: PLAIN
-    
-    # SSL Configuration
-    KAFKA_SSL_KEYSTORE_FILENAME: kafka.keystore.jks
-    KAFKA_SSL_KEYSTORE_CREDENTIALS: keystore_creds
-    KAFKA_SSL_KEY_CREDENTIALS: key_creds
-    KAFKA_SSL_TRUSTSTORE_FILENAME: kafka.truststore.jks
-    KAFKA_SSL_TRUSTSTORE_CREDENTIALS: truststore_creds
-    
-    # Client authentication
-    KAFKA_SSL_CLIENT_AUTH: required
-  volumes:
-    - ./secrets:/etc/kafka/secrets
-```
+### 5.1 Niveaux de log à surveiller
 
-#### Database Security (PostgreSQL)
-```yaml
-postgres:
-  image: postgres:15
-  environment:
-    POSTGRES_SSL_MODE: require
-    POSTGRES_SSL_CERT: /var/lib/postgresql/server.crt
-    POSTGRES_SSL_KEY: /var/lib/postgresql/server.key
-    POSTGRES_SSL_CA: /var/lib/postgresql/ca.crt
-  volumes:
-    - ./certs:/var/lib/postgresql/certs:ro
-```
+| Niveau | Message | Action requise |
+|--------|---------|----------------|
+| `SEVERE` | `SECURITY: Key announcement signature rejected for signerId=X` | **Alerte immédiate** — tentative d'injection potentielle |
+| `SEVERE` | `Compaction: purged N expired RocksDB entries` | Surveiller N > baseline attendu |
+| `SEVERE` | `Failed to send metadata for messageId X to broker` | Problème de connectivité broker |
+| `WARNING` | `TrustAnchor temporarily unavailable for signerId=X` | Problème d'infrastructure KMS |
+| `WARNING` | `Eviction send timed out for key X after 10s` | Broker sous pression |
 
-### Application Security
-
-#### Java Security Configuration
-```java
-@Configuration
-@EnableWebSecurity
-public class VeridotSecurityConfig {
-    
-    @Bean
-    public MetadataBroker secureMetadataBroker() {
-        Properties props = new Properties();
-        
-        // Kafka security
-        props.setProperty("security.protocol", "SASL_SSL");
-        props.setProperty("sasl.mechanism", "SCRAM-SHA-512");
-        props.setProperty("sasl.jaas.config", createJaasConfig());
-        
-        // SSL configuration
-        props.setProperty("ssl.truststore.location", 
-            environment.getProperty("veridot.ssl.truststore"));
-        props.setProperty("ssl.truststore.password", 
-            environment.getProperty("veridot.ssl.truststore.password"));
-        
-        // Security enhancements
-        props.setProperty("ssl.endpoint.identification.algorithm", "https");
-        props.setProperty("ssl.protocol", "TLSv1.3");
-        
-        return KafkaMetadataBrokerAdapter.of(props);
-    }
-    
-    private String createJaasConfig() {
-        return String.format(
-            "org.apache.kafka.common.security.scram.ScramLoginModule required " +
-            "username=\"%s\" password=\"%s\";",
-            environment.getProperty("veridot.kafka.username"),
-            environment.getProperty("veridot.kafka.password")
-        );
-    }
-}
-```
-
-#### Node.js Security Configuration
-```typescript
-// Secure environment configuration
-const secureConfig = {
-  kafka: {
-    clientId: 'veridot-secure',
-    brokers: [process.env.KAFKA_BROKER_SECURE!],
-    ssl: {
-      rejectUnauthorized: true,
-      ca: [fs.readFileSync('./certs/ca.pem')],
-      key: fs.readFileSync('./certs/client-key.pem'),
-      cert: fs.readFileSync('./certs/client-cert.pem'),
-    },
-    sasl: {
-      mechanism: 'scram-sha-512',
-      username: process.env.KAFKA_USERNAME!,
-      password: process.env.KAFKA_PASSWORD!,
-    },
-  },
-  lmdb: {
-    path: process.env.SECURE_DB_PATH!,
-    compression: true,
-    encryption: true, // Custom implementation
-  }
-};
-```
-
-## Security Monitoring
-
-### Metrics to Monitor
-
-```java
-// Java: Security metrics with Micrometer
-@Component
-public class VeridotSecurityMetrics {
-    
-    private final Counter tokenSignFailures;
-    private final Counter tokenVerifyFailures;
-    private final Counter keyRotationEvents;
-    private final Timer verificationLatency;
-    
-    public VeridotSecurityMetrics(MeterRegistry registry) {
-        this.tokenSignFailures = Counter.builder("veridot.sign.failures")
-            .description("Failed token signing attempts")
-            .tag("type", "security")
-            .register(registry);
-            
-        this.tokenVerifyFailures = Counter.builder("veridot.verify.failures")
-            .description("Failed token verification attempts")
-            .tag("reason", "expired")
-            .register(registry);
-            
-        this.keyRotationEvents = Counter.builder("veridot.key.rotations")
-            .description("Key rotation events")
-            .register(registry);
-    }
-    
-    public void recordSignFailure(String reason) {
-        tokenSignFailures.increment(Tags.of("reason", reason));
-    }
-    
-    public void recordVerifyFailure(String reason) {
-        tokenVerifyFailures.increment(Tags.of("reason", reason));
-    }
-}
-```
-
-### Alerting Rules
+### 5.2 Règles Prometheus
 
 ```yaml
-# Prometheus alerting rules
 groups:
   - name: veridot-security
     rules:
-      - alert: VeridotHighFailureRate
-        expr: rate(veridot_verify_failures_total[5m]) > 0.1
-        for: 2m
-        labels:
-          severity: warning
-        annotations:
-          summary: "High Veridot token verification failure rate"
-          
-      - alert: VeridotKeyRotationFailed
-        expr: increase(veridot_key_rotations_total[1h]) == 0
-        for: 2h
+      - alert: VeridotTrustAnchorRejection
+        expr: increase(veridot_trust_anchor_rejected_total[5m]) > 0
         labels:
           severity: critical
         annotations:
-          summary: "Veridot key rotation appears to have stopped"
-          
+          summary: "Possible tentative d'injection de clé broker détectée"
+          description: "Au moins une annonce de clé a été rejetée par le TrustAnchor"
+
+      - alert: VeridotTrustAnchorUnavailable
+        expr: increase(veridot_trust_anchor_unavailable_total[5m]) > 3
+        labels:
+          severity: warning
+        annotations:
+          summary: "Infrastructure TrustAnchor dégradée"
+
       - alert: VeridotBrokerDown
         expr: up{job="veridot-broker"} == 0
         for: 1m
         labels:
           severity: critical
         annotations:
-          summary: "Veridot metadata broker is down"
+          summary: "Le broker de métadonnées Veridot est indisponible"
 ```
 
-## Security Audit Checklist
+---
 
-### Pre-Production Checklist
+## 6. Checklist d'audit (v3.0+)
 
-- [ ] **Cryptographic Configuration**
-  - [ ] Strong algorithms selected (RSA-2048+ or ECDSA P-256+)
-  - [ ] Appropriate key rotation intervals configured
-  - [ ] No hardcoded cryptographic materials
+### Configuration cryptographique
 
-- [ ] **Network Security**
-  - [ ] TLS enabled for all broker communications
-  - [ ] Certificate validation enabled
-  - [ ] Network segmentation implemented
-  - [ ] Access controls configured
+- [ ] Paire de clés RSA long-terme générée (≥ 3072 bits recommandé)
+- [ ] Clé privée long-terme dans Vault, KMS, ou Kubernetes Secret — **jamais dans le code source ou les variables d'environnement**
+- [ ] `TrustAnchor` configuré — pas le no-op par défaut
+- [ ] `signerId` est un identifiant stable, unique, non-devinable pour le service signataire
+- [ ] Intervalle de rotation des clés éphémères configuré (24h par défaut ; envisager plus court pour les environnements haute sécurité)
 
-- [ ] **Application Security**
-  - [ ] Input validation on all token operations
-  - [ ] Proper error handling without information leakage
-  - [ ] Rate limiting implemented
-  - [ ] Security logging enabled
+### Sécurité broker
 
-- [ ] **Operational Security**
-  - [ ] Security monitoring configured
-  - [ ] Incident response procedures documented
-  - [ ] Regular security updates scheduled
-  - [ ] Backup and recovery procedures tested
+- [ ] TLS activé pour toutes les communications Kafka (`SASL_SSL`)
+- [ ] ACL Kafka restreignent l'écriture aux seuls services signataires
+- [ ] Consumer group IDs uniques par déploiement
+- [ ] Chemin RocksDB sur un volume chiffré
 
-### Runtime Security Checks
+### Sécurité applicative
 
-```java
-// Java: Runtime security validation
-@Component
-public class VeridotSecurityValidator {
-    
-    @EventListener
-    public void validateSecurityConfiguration(ApplicationReadyEvent event) {
-        // Check TLS configuration
-        if (!isTlsEnabled()) {
-            throw new SecurityException("TLS must be enabled in production");
-        }
-        
-        // Validate key rotation settings
-        if (getKeyRotationInterval() > Duration.ofHours(4)) {
-            log.warn("Key rotation interval exceeds recommended maximum");
-        }
-        
-        // Check broker connectivity with security
-        validateSecureBrokerConnection();
-    }
-    
-    private boolean isTlsEnabled() {
-        String protocol = environment.getProperty("veridot.kafka.security.protocol");
-        return protocol != null && protocol.contains("SSL");
-    }
-}
-```
+- [ ] `TrustResolutionException.Unavailable` **ne jamais** être silencieusement acceptée comme « token valide »
+- [ ] `TrustResolutionException.SignatureRejected` loggée à SEVERE et déclenche une alerte sécurité
+- [ ] TTL des tokens configurés correctement (≤ 15 min pour les opérations sensibles, ≤ 1h pour l'usage normal)
+- [ ] Limites de sessions configurées pour les tokens utilisateurs (`maxSessions` + `EvictionPolicy`)
+- [ ] Validation des entrées sur tous les `groupId` et `sequenceId`
 
-## Compliance Considerations
+### Sécurité opérationnelle
 
-### GDPR Compliance
-- Token contents should not include personal data directly
-- Implement data minimization in token payloads
-- Provide mechanisms for token revocation (right to be forgotten)
-- Log retention policies for security events
+- [ ] Logs d'événements de sécurité acheminés vers SIEM
+- [ ] Règles d'alerte configurées pour les événements `SignatureRejected`
+- [ ] Procédure de réponse aux incidents documentée pour la compromission d'une clé long-terme
+- [ ] Procédure de rotation des clés long-terme testée
+
+---
+
+## 7. Conformité réglementaire
+
+### RGPD
+
+- Les payloads des tokens doivent contenir des références (IDs utilisateurs), pas des données personnelles directement.
+- Implémenter la minimisation des données : signer uniquement ce dont le vérificateur a besoin.
+- `revoke(groupId, null)` implémente le « droit à l'oubli » au niveau session pour tous les tokens actifs d'un utilisateur.
+- Politiques de rétention des logs d'événements de sécurité à définir.
 
 ### SOC 2 Type II
-- Comprehensive access logging
-- Change management for security configurations
-- Regular security assessments
-- Incident response documentation
 
-### HIPAA (Healthcare)
-- Encrypt tokens containing PHI references
-- Audit all access to health-related tokens
-- Implement business associate agreements
-- Regular risk assessments
+- La ligne de log `SECURITY: Key announcement signature rejected` constitue une piste d'audit pour les tentatives d'injection non autorisées.
+- Les événements de rotation de clés peuvent être instrumentés avec Micrometer pour la journalisation d'audit.
 
-## Emergency Response
+### FIPS 140-2
 
-### Security Incident Response
+- RSA-3072 avec `SHA256withRSA` satisfait les exigences FIPS 140-2 Level 1.
+- Pour Level 2+, utiliser `DelegatedVerifier` avec un HSM validé FIPS.
 
-1. **Immediate Response**
-   ```bash
-   # Revoke all tokens for affected user/system
-   curl -X POST /api/admin/revoke \
-     -H "Authorization: Bearer $ADMIN_TOKEN" \
-     -d '{"trackingId": 12345}'
-   ```
+---
 
-2. **Key Rotation**
-   ```java
-   // Force immediate key rotation
-   @Autowired
-   private GenericSignerVerifier veridot;
-   
-   public void emergencyKeyRotation() {
-       veridot.forceKeyRotation(); // Custom implementation
-       log.error("Emergency key rotation completed");
-   }
-   ```
+## 8. Réponse aux incidents
 
-3. **Broker Isolation**
-   ```yaml
-   # Temporarily isolate compromised broker
-   kafka:
-     security.protocol: SSL
-     ssl.client.auth: required
-     # Update client certificates
-   ```
+### Compromission d'une clé long-terme
 
-### Recovery Procedures
+```bash
+# 1. Révoquer immédiatement toutes les sessions actives pour tous les groupes
+#    gérés par la clé compromise (par groupe connu) :
+for GROUP_ID in $(list-all-active-groups); do
+  veridot-admin revoke --group "$GROUP_ID" --all-sessions
+done
 
-1. **Assess Impact**: Determine scope of compromise
-2. **Isolate Systems**: Prevent further damage
-3. **Rotate Keys**: Generate new key pairs
-4. **Update Configurations**: Apply security patches
-5. **Monitor**: Enhanced monitoring post-incident
-6. **Document**: Lessons learned and improvements
+# 2. Générer une nouvelle paire de clés RSA-3072
+openssl genrsa -out new-private.pem 3072
+openssl rsa -in new-private.pem -pubout -out new-public.pem
 
-## Future Security Enhancements
+# 3. Mettre à jour le trust store (Vault, KMS) avec la nouvelle clé publique
+vault kv put secret/veridot/trust/my-service-id public_key=@new-public.pem
 
-### Roadmap Items
-- **Post-Quantum Cryptography**: Migration to quantum-resistant algorithms
-- **Hardware Security Modules**: HSM integration for key protection
-- **Zero-Trust Architecture**: Enhanced identity verification
-- **Homomorphic Encryption**: Computation on encrypted tokens
+# 4. Mettre à jour le secret de la clé privée dans le service signataire
+kubectl create secret generic veridot-signer-key \
+  --from-file=private.key=new-private.pem \
+  --dry-run=client -o yaml | kubectl apply -f -
 
-### Research Areas
-- Token binding to hardware attestation
-- Confidential computing integration
-- Advanced threat detection using ML
-- Blockchain-based key distribution
+# 5. Redémarrer les instances du service signataire
+kubectl rollout restart deployment/my-auth-service
+
+# 6. Surveiller les logs SignatureRejected (les anciennes signatures échoueront gracieusement)
+```
+
+### Compromission du broker
+
+1. Rotation des credentials Kafka et certificats TLS.
+2. Révision des ACL Kafka — ajouter des DENY explicites pour les principals compromis.
+3. Surveiller les logs `SECURITY: Key announcement signature rejected` — un attaquant niveau broker déclenchera ces entrées.
+4. Aucun token Veridot n'a besoin d'être révoqué : le `TrustAnchor` empêche toute annonce forgée de passer la vérification.
+
+---
+
+## Feuille de route sécurité
+
+- **Signatures post-quantiques** : migration vers CRYSTALS-Dilithium (FIPS 204) pour les clés long-terme, remplaçant RSA pour la signature d'annonces.
+- **Révocation globale par signerId** : révoquer toutes les sessions associées à un signerId compromis en une seule opération.
+- **Clés éphémères ECDSA P-384** : offrir ECDSA comme alternative à RSA pour la génération de clés éphémères (signatures plus courtes, même niveau de sécurité).
+- **Attestation matérielle** : lier les clés long-terme à TPM 2.0 ou à l'attestation SGX enclave.

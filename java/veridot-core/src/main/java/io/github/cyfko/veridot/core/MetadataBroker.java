@@ -78,6 +78,31 @@ public interface MetadataBroker {
     String get(String key) throws BrokerExtractionException;
 
     /**
+     * Synchronously stores the metadata message in the local (in-process) cache,
+     * without propagating it to remote peers.
+     *
+     * <p>This method is called by the signer immediately after building a V2 metadata
+     * message, <em>before</em> the asynchronous {@link #send} call. It eliminates the
+     * read-after-write race on the signing node itself: a {@link TokenVerifier#verify}
+     * call on the same JVM process immediately after {@link DataSigner#sign} will find
+     * the entry in the local cache rather than having to wait for the broker
+     * round-trip.</p>
+     *
+     * <p>Implementations backed by an in-process store (e.g., {@code InMemoryMetadataBroker})
+     * can treat this as equivalent to a full {@link #send}. Implementations backed by a
+     * remote broker (e.g., {@code KafkaMetadataBrokerAdapter}) must store the entry in
+     * their embedded local DB (e.g., RocksDB) only, without producing to the remote topic.
+     * The default implementation is a no-op, preserving backwards compatibility for
+     * implementations that do not distinguish local from remote writes.</p>
+     *
+     * @param key     the Protocol V2 {@code messageId}; must not be {@code null}
+     * @param message the V2 metadata message to cache locally; must not be {@code null}
+     */
+    default void sendLocal(String key, String message) {
+        // No-op by default — implementations may override for local-cache pre-population.
+    }
+
+    /**
      * Returns all keys stored in the broker whose string representation starts with the
      * given prefix.
      *

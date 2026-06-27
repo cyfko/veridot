@@ -20,7 +20,7 @@ class VerificationTest {
     @BeforeEach
     void setUp() {
         broker = new InMemoryMetadataBroker();
-        sv = new GenericSignerVerifier(broker, "test-salt");
+        sv = TestTrustSetup.create().newSignerVerifier(broker);
     }
 
     @Test
@@ -134,5 +134,24 @@ class VerificationTest {
         assertThrows(BrokerExtractionException.class,
                 () -> sv.verify("2:drift-grp:s1", s -> s),
                 "Must reject messages with timestamp > 5min in the future");
+    }
+
+    @Test
+    void verify_tampered_metadata_without_trust_anchor_fields_throws() {
+        // Manually inject broker entry with no signerId/announcementSig (simulates broker injection attack)
+        long ts = java.time.Instant.now().getEpochSecond();
+        var props = new java.util.LinkedHashMap<String, String>();
+        props.put("mode", Config.DEFAULT_CRYPTO_MODE);
+        props.put("pubkey", "ZHVtbXlrZXk"); // base64url of "dummykey"
+        props.put("timestamp", String.valueOf(ts));
+        props.put("ttl", "3600");
+        // Note: deliberately omit signerId and announcementSig
+        String msg = ProtocolV2.buildMessage("attack-grp", "evil-session", props);
+        broker.send("2:attack-grp:evil-session", msg);
+
+        // Verify must reject because trust-anchor fields are missing (F1 guard)
+        assertThrows(BrokerExtractionException.class,
+                () -> sv.verify("2:attack-grp:evil-session", s -> s),
+                "Must reject metadata missing trust-anchor fields");
     }
 }

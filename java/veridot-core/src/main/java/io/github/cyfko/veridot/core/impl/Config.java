@@ -3,6 +3,7 @@ package io.github.cyfko.veridot.core.impl;
 /// Provide defaults to some constants.
 abstract class ConstantDefault {
     static final long KEYS_ROTATION_MINUTES = 1440; // 24 hours
+    static final int  ASYMMETRIC_KEY_SIZE   = 3072;  // RSA-3072 (NIST recommendation post-2030)
 }
 
 /// Defines environment variable names.
@@ -59,6 +60,18 @@ public abstract class Config {
      *           {@code GenericSignerVerifier} and is not mandated by the protocol specification.
      */
     public static final String ASYMMETRIC_KEYPAIR_ALGORITHM = "RSA";
+
+    /**
+     * The RSA key size in bits used when generating ephemeral signing key pairs.
+     *
+     * <p>Veridot uses <strong>RSA-3072</strong> by default. RSA-2048 was the previous
+     * implicit default, but is scheduled for deprecation by NIST around 2030-2035.
+     * By targeting 3072 now we avoid a second breaking change when that deprecation
+     * becomes effective.</p>
+     *
+     * @implNote Value: {@code 3072}.
+     */
+    public static final int ASYMMETRIC_KEY_SIZE = ConstantDefault.ASYMMETRIC_KEY_SIZE;
 
     /**
      * The default cryptographic mode identifier embedded in Protocol V2 metadata messages.

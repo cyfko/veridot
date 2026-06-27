@@ -46,6 +46,14 @@ class ProtocolV2 {
     static final String PROP_SITE = "site";
     static final String PROP_TARGET = "target";
 
+    // ── Trust-anchor fields (v3.0 — F1 + F7) ─────────────────────────────────
+    /** Identity of the long-term signer that certified this key announcement. */
+    static final String PROP_SIGNER_ID = "signerId";
+    /** Base64url-encoded long-term signature over the canonical announcement bytes. */
+    static final String PROP_ANNOUNCEMENT_SIG = "announcementSig";
+    /** Base64url-encoded long-term signature over the canonical tombstone bytes (F7). */
+    static final String PROP_TOMBSTONE_SIG = "tombstoneSig";
+
     // ── Configuration property names (§7.4.2 Config) ─────────────────────────
     static final String PROP_MAX_SESSIONS = "maxSessions";
     static final String PROP_POLICY = "policy";

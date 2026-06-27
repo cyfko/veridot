@@ -17,6 +17,11 @@ import static org.junit.jupiter.api.Assertions.*;
  * <p>This test proves that the session-limited signer does NOT interfere with the
  * unlimited signer when both share the same {@link io.github.cyfko.veridot.core.MetadataBroker},
  * provided they are correctly instantiated as separate Java objects.</p>
+ *
+ * <p><strong>v3.0 note</strong>: both signers share the same {@link TestTrustSetup} (same
+ * long-term key pair), which is realistic for a deployment where all service instances
+ * share the same identity. A multi-signer-id scenario would require a {@code TrustAnchor}
+ * that resolves multiple signerIds.</p>
  */
 class MultiInstanceSessionTest {
 
@@ -31,12 +36,13 @@ class MultiInstanceSessionTest {
     @BeforeEach
     void setUp() {
         broker = new InMemoryMetadataBroker();
+        TestTrustSetup trust = TestTrustSetup.create();
 
         // Limited signer: maxSessions=1, REJECT (for access tokens)
-        limitedSigner = new GenericSignerVerifier(broker, "salt-limited", 1, GenericSignerVerifier.EvictionPolicy.REJECT);
+        limitedSigner = trust.newSignerVerifier(broker, 1, GenericSignerVerifier.EvictionPolicy.REJECT);
 
         // Unlimited signer: no session limit (for refresh tokens)
-        unlimitedSigner = new GenericSignerVerifier(broker, "salt-unlimited");
+        unlimitedSigner = trust.newSignerVerifier(broker);
     }
 
     // ── Core scenario: access + refresh token coexistence ────────────────────

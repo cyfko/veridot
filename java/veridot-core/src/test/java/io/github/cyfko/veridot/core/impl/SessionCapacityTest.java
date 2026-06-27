@@ -11,15 +11,17 @@ import static org.junit.jupiter.api.Assertions.*;
 class SessionCapacityTest {
 
     private InMemoryMetadataBroker broker;
+    private TestTrustSetup trust;
 
     @BeforeEach
     void setUp() {
         broker = new InMemoryMetadataBroker();
+        trust = TestTrustSetup.create();
     }
 
     @Test
     void maxSessions_fifo_evicts_oldest() throws InterruptedException {
-        var sv = new GenericSignerVerifier(broker, "salt", 2, GenericSignerVerifier.EvictionPolicy.FIFO);
+        var sv = trust.newSignerVerifier(broker, 2, GenericSignerVerifier.EvictionPolicy.FIFO);
 
         sv.sign("d1", BasicConfigurer.builder().groupId("u1").sequenceId("s1").validity(600).build());
         Thread.sleep(1100); // wait > 1s so timestamps differ at second precision
@@ -37,7 +39,7 @@ class SessionCapacityTest {
 
     @Test
     void maxSessions_lifo_evicts_newest() throws InterruptedException {
-        var sv = new GenericSignerVerifier(broker, "salt", 2, GenericSignerVerifier.EvictionPolicy.LIFO);
+        var sv = trust.newSignerVerifier(broker, 2, GenericSignerVerifier.EvictionPolicy.LIFO);
 
         sv.sign("d1", BasicConfigurer.builder().groupId("u1").sequenceId("s1").validity(600).build());
         Thread.sleep(1100); // wait > 1s so timestamps differ at second precision
@@ -55,7 +57,7 @@ class SessionCapacityTest {
 
     @Test
     void maxSessions_no_limit_keeps_all_sessions() {
-        var sv = new GenericSignerVerifier(broker, "salt"); // no maxSessions
+        var sv = trust.newSignerVerifier(broker); // no maxSessions
 
         sv.sign("d1", BasicConfigurer.builder().groupId("u1").validity(600).build());
         sv.sign("d2", BasicConfigurer.builder().groupId("u1").validity(600).build());
@@ -69,9 +71,9 @@ class SessionCapacityTest {
 
     @Test
     void maxSessions_after_revoke_does_not_evict_unnecessarily() {
-        var sv = new GenericSignerVerifier(broker, "salt", 2, GenericSignerVerifier.EvictionPolicy.FIFO);
+        var sv = trust.newSignerVerifier(broker, 2, GenericSignerVerifier.EvictionPolicy.FIFO);
 
-        String t1 = sv.sign("d1", BasicConfigurer.builder().groupId("u1").sequenceId("s1").validity(600).build());
+        sv.sign("d1", BasicConfigurer.builder().groupId("u1").sequenceId("s1").validity(600).build());
         sv.sign("d2", BasicConfigurer.builder().groupId("u1").sequenceId("s2").validity(600).build());
 
         // After revocation, count = 1 (below maxSessions)
@@ -87,7 +89,7 @@ class SessionCapacityTest {
 
     @Test
     void maxSessions_groups_are_isolated() {
-        var sv = new GenericSignerVerifier(broker, "salt", 1, GenericSignerVerifier.EvictionPolicy.FIFO);
+        var sv = trust.newSignerVerifier(broker, 1, GenericSignerVerifier.EvictionPolicy.FIFO);
 
         sv.sign("d1", BasicConfigurer.builder().groupId("u1").sequenceId("s1").validity(600).build());
         sv.sign("d2", BasicConfigurer.builder().groupId("u2").sequenceId("s2").validity(600).build());
@@ -103,7 +105,7 @@ class SessionCapacityTest {
 
     @Test
     void maxSessions_evicted_session_cannot_be_verified() throws Exception {
-        var sv = new GenericSignerVerifier(broker, "salt", 1, GenericSignerVerifier.EvictionPolicy.FIFO);
+        var sv = trust.newSignerVerifier(broker, 1, GenericSignerVerifier.EvictionPolicy.FIFO);
 
         String t1 = sv.sign("d1", BasicConfigurer.builder().groupId("u1").sequenceId("s1").validity(600).build());
         sv.sign("d2", BasicConfigurer.builder().groupId("u1").sequenceId("s2").validity(600).build());
@@ -118,7 +120,7 @@ class SessionCapacityTest {
     @Test
     void resolveConfig_localOverridesDefault() throws InterruptedException {
         // Default: no limit (maxSessions=-1)
-        var sv = new GenericSignerVerifier(broker, "salt");
+        var sv = trust.newSignerVerifier(broker);
 
         // Publish a local config with maxSessions=1
         long now = java.time.Instant.now().getEpochSecond();
@@ -142,7 +144,7 @@ class SessionCapacityTest {
 
     @Test
     void resolveConfig_globalFallback() throws InterruptedException {
-        var sv = new GenericSignerVerifier(broker, "salt");
+        var sv = trust.newSignerVerifier(broker);
 
         // Publish a global config with maxSessions=1
         long now = java.time.Instant.now().getEpochSecond();
@@ -168,7 +170,7 @@ class SessionCapacityTest {
 
     @Test
     void reject_policy_throws_when_limit_reached() {
-        var sv = new GenericSignerVerifier(broker, "salt", 2, GenericSignerVerifier.EvictionPolicy.REJECT);
+        var sv = trust.newSignerVerifier(broker, 2, GenericSignerVerifier.EvictionPolicy.REJECT);
 
         sv.sign("d1", BasicConfigurer.builder().groupId("rej").sequenceId("s1").validity(600).build());
         sv.sign("d2", BasicConfigurer.builder().groupId("rej").sequenceId("s2").validity(600).build());
@@ -183,9 +185,9 @@ class SessionCapacityTest {
 
     @Test
     void reject_policy_allows_signing_after_manual_revocation() {
-        var sv = new GenericSignerVerifier(broker, "salt", 1, GenericSignerVerifier.EvictionPolicy.REJECT);
+        var sv = trust.newSignerVerifier(broker, 1, GenericSignerVerifier.EvictionPolicy.REJECT);
 
-        String jwt = sv.sign("d1", BasicConfigurer.builder().groupId("rej2").sequenceId("s1").validity(600).build());
+        sv.sign("d1", BasicConfigurer.builder().groupId("rej2").sequenceId("s1").validity(600).build());
 
         // Limit reached → 2nd sign throws
         assertThrows(SessionCapacityExceededException.class,
@@ -207,16 +209,11 @@ class SessionCapacityTest {
      * fully synchronous: a {@code sign()} call issued <em>immediately</em> after
      * {@code revoke()} — with zero sleep — must succeed because the broker deletion
      * is guaranteed to be committed before {@code enforceSessionLimit} runs.</p>
-     *
-     * <p>Before the fix, the deletion inside {@code revoke()} was fire-and-forget
-     * ({@code send(key, "")} without {@code .get()}), so a concurrent
-     * {@code enforceSessionLimit} could still observe the deleted entry as active,
-     * causing a spurious {@link SessionCapacityExceededException}.</p>
      */
     @Test
     void revoke_then_sign_immediately_no_race_condition() {
         // maxSessions=1, REJECT: strictly one session at a time
-        var sv = new GenericSignerVerifier(broker, "salt", 1, GenericSignerVerifier.EvictionPolicy.REJECT);
+        var sv = trust.newSignerVerifier(broker, 1, GenericSignerVerifier.EvictionPolicy.REJECT);
         String groupId = "race-condition-regression";
 
         // ── Step 1: fill the slot ────────────────────────────────────────────
@@ -238,9 +235,6 @@ class SessionCapacityTest {
                 "Slot must be full before revoke");
 
         // ── Step 3: revoke + immediate sign with NO Thread.sleep() ───────────
-        //    Before the fix: revoke() was async → enforceSessionLimit could still
-        //    see the old entry → SessionCapacityExceededException was thrown here.
-        //    After the fix:  revoke() is synchronous → slot is guaranteed free.
         sv.revoke(groupId, "old-session");
 
         String newToken = assertDoesNotThrow(
@@ -262,11 +256,9 @@ class SessionCapacityTest {
                 "New token issued after revoke must be verifiable");
     }
 
-
-
     @Test
     void reject_policy_does_not_evict_existing_sessions() {
-        var sv = new GenericSignerVerifier(broker, "salt", 2, GenericSignerVerifier.EvictionPolicy.REJECT);
+        var sv = trust.newSignerVerifier(broker, 2, GenericSignerVerifier.EvictionPolicy.REJECT);
 
         String t1 = sv.sign("d1", BasicConfigurer.builder().groupId("rej3").sequenceId("s1").validity(600).build());
         String t2 = sv.sign("d2", BasicConfigurer.builder().groupId("rej3").sequenceId("s2").validity(600).build());
@@ -282,7 +274,7 @@ class SessionCapacityTest {
 
     @Test
     void reject_policy_allows_signing_when_all_sessions_expired() throws InterruptedException {
-        var sv = new GenericSignerVerifier(broker, "salt", 1, GenericSignerVerifier.EvictionPolicy.REJECT);
+        var sv = trust.newSignerVerifier(broker, 1, GenericSignerVerifier.EvictionPolicy.REJECT);
 
         // Sign with TTL=1 second
         sv.sign("d1", BasicConfigurer.builder().groupId("rej-exp").sequenceId("s1").validity(1).build());
@@ -298,7 +290,7 @@ class SessionCapacityTest {
 
     @Test
     void expired_sessions_are_garbage_collected_on_next_sign() throws InterruptedException {
-        var sv = new GenericSignerVerifier(broker, "salt", 2, GenericSignerVerifier.EvictionPolicy.FIFO);
+        var sv = trust.newSignerVerifier(broker, 2, GenericSignerVerifier.EvictionPolicy.FIFO);
 
         // Sign 2 sessions with very short TTL
         sv.sign("d1", BasicConfigurer.builder().groupId("gc").sequenceId("s1").validity(1).build());
