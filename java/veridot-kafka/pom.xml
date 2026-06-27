@@ -6,7 +6,7 @@
 
     <groupId>io.github.cyfko</groupId>
     <artifactId>veridot-kafka</artifactId>
-    <version>3.0.1</version>
+    <version>3.0.2</version>
     <packaging>jar</packaging>
 
     <name>Veridot Kafka - Distributed Token Verification</name>
