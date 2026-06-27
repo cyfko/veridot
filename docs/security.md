@@ -23,12 +23,12 @@ Avant v3.0, Veridot accordait une confiance implicite à toute annonce de clé r
 Nœud signataire
   ├─ génère paire de clés RSA-3072 éphémère
   ├─ signe l'annonce avec sa clé long-terme        ← v3.0
-  └─ publie sur le broker (pubkey + announcementSig + signerId)
+  └─ publie sur le broker (pk + sig + sid)
 
 Nœud vérificateur
   ├─ reçoit l'annonce du broker
   ├─ résout la clé publique long-terme via TrustAnchor  ← NOUVEAU v3.0
-  ├─ vérifie announcementSig avec la clé long-terme     ← NOUVEAU v3.0
+  ├─ vérifie sig avec la clé long-terme                 ← NOUVEAU v3.0
   └─ vérifie le JWT avec la clé éphémère
 ```
 
@@ -95,19 +95,19 @@ La hiérarchie `sealed` de `TrustResolutionException` force un traitement explic
 | Propriété | Valeur |
 |-----------|--------|
 | Algorithme | RSA (≥ 2048 bits ; 3072+ recommandé) |
-| Signature d'annonce | `SHA256withRSA` sur les bytes canoniques de l'annonce |
-| Signature de tombstone | `SHA256withRSA` sur les bytes canoniques du tombstone |
+| Signature d'annonce | `SHA256withRSA` sur les bytes canoniques universels |
+| Signature de tombstone | `SHA256withRSA` sur les bytes canoniques universels |
 | Stockage | Hors Veridot : Vault, KMS, HSM, Kubernetes Secret |
 
-### 2.3 Encodage canonique de l'annonce
+### 2.3 Encodage canonique universel
 
-Les signatures utilisent un **encodage length-prefixed** pour éliminer toute ambiguïté (pas de concaténation naïve) :
+Les signatures utilisent un **encodage length-prefixed** universel pour éliminer toute ambiguïté (pas de concaténation naïve) :
 
 ```
-len(pubkeyDER)  [4 octets, big-endian] ‖ pubkeyDER
-‖ timestamp     [8 octets, big-endian, epoch seconds]
-‖ ttl           [8 octets, big-endian, secondes]
-‖ len(signerId) [4 octets, big-endian] ‖ signerId [UTF-8]
+len(messageId)  [4 octets, big-endian] ‖ messageId [UTF-8]
+‖ pour chaque (clé, valeur) trié par ordre lexicographique (excluant 'sig' et 'token') :
+    len(clé)    [4 octets, big-endian] ‖ clé [UTF-8]
+    ‖ len(val)  [4 octets, big-endian] ‖ valeur [UTF-8]
 ```
 
 ---
@@ -126,7 +126,7 @@ len(pubkeyDER)  [4 octets, big-endian] ‖ pubkeyDER
 
 **Avant v3.0** : un tombstone non signé pouvait être rejoué ou forgé.
 
-**Mitigation v3.0** : tombstones signés (ADR-003). Chaque message `__REVOKE__` porte un `tombstoneSig` (signature RSA long-terme) et un `timestamp` monotone. La règle latest-timestamp-wins rend le replay d'anciens tombstones valides inoffensif.
+**Mitigation v3.0** : tombstones signés (ADR-003). Chaque message `__REVOKE__` porte un `sig` (signature RSA long-terme) et un `ts` monotone. La règle latest-timestamp-wins rend le replay d'anciens tombstones valides inoffensif.
 
 **Voir** : [ADR-003 — Tombstones signés](adr/adr-003-tombstone-signed/)
 
@@ -241,10 +241,10 @@ var sv = new GenericSignerVerifier(
 
 | Niveau | Message | Action requise |
 |--------|---------|----------------|
-| `SEVERE` | `SECURITY: Key announcement signature rejected for signerId=X` | **Alerte immédiate** — tentative d'injection potentielle |
+| `SEVERE` | `SECURITY: Key announcement signature rejected for sid=X` | **Alerte immédiate** — tentative d'injection potentielle |
 | `SEVERE` | `Compaction: purged N expired RocksDB entries` | Surveiller N > baseline attendu |
 | `SEVERE` | `Failed to send metadata for messageId X to broker` | Problème de connectivité broker |
-| `WARNING` | `TrustAnchor temporarily unavailable for signerId=X` | Problème d'infrastructure KMS |
+| `WARNING` | `TrustAnchor temporarily unavailable for sid=X` | Problème d'infrastructure KMS |
 | `WARNING` | `Eviction send timed out for key X after 10s` | Broker sous pression |
 
 ### 5.2 Règles Prometheus
@@ -286,7 +286,7 @@ groups:
 - [ ] Paire de clés RSA long-terme générée (≥ 3072 bits recommandé)
 - [ ] Clé privée long-terme dans Vault, KMS, ou Kubernetes Secret — **jamais dans le code source ou les variables d'environnement**
 - [ ] `TrustAnchor` configuré — pas le no-op par défaut
-- [ ] `signerId` est un identifiant stable, unique, non-devinable pour le service signataire
+- [ ] `sid` est un identifiant stable, unique, non-devinable pour le service signataire
 - [ ] Intervalle de rotation des clés éphémères configuré (24h par défaut ; envisager plus court pour les environnements haute sécurité)
 
 ### Sécurité broker

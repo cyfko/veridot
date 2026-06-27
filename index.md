@@ -8,7 +8,7 @@ title: Enterprise-Grade Distributed Token Verification
 [![Java](https://img.shields.io/badge/Java-25%2B-ED8B00.svg)](https://openjdk.java.net/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.cyfko/veridot-core)](https://central.sonatype.com/search?q=io.github.cyfko.veridot)
-[![Protocol V2](https://img.shields.io/badge/Protocol-V2-green.svg)](PROTOCOL_V2.html)
+[![Protocol V3](https://img.shields.io/badge/Protocol-V3-green.svg)](PROTOCOL_V3.html)
 [![Trust Architecture](https://img.shields.io/badge/Trust-TrustAnchor%20v3.0-purple.svg)](docs/adr/)
 
 **Veridot** is a production-ready Java library for **secure, distributed token verification** in microservices architectures. It eliminates shared secrets, enables instant network-wide revocation, and enforces a zero-trust key-announcement model — without a centralized authentication chokepoint.
@@ -118,8 +118,8 @@ sv.revoke("user-123", null); // revoke all sessions for the group
     <p>ADR-001 TrustAnchor · ADR-002 RSA-3072 · ADR-003 Signed Tombstones</p>
   </a>
 
-  <a href="{{ '/PROTOCOL_V2' | relative_url }}" class="doc-link">
-    <h3>📐 Protocol V2 Specification</h3>
+  <a href="{{ '/PROTOCOL_V3' | relative_url }}" class="doc-link">
+    <h3>📐 Protocol V3 Specification</h3>
     <p>Message format, revocation semantics, configuration hierarchy, ABNF grammar</p>
   </a>
 </div>

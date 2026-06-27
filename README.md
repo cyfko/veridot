@@ -1,7 +1,7 @@
 # Veridot — Distributed Token Verification Protocol
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Protocol V2](https://img.shields.io/badge/Protocol-V2.1-green.svg)](PROTOCOL_V2.md)
+[![Protocol V3](https://img.shields.io/badge/Protocol-V3.0-green.svg)](PROTOCOL_V3.md)
 [![Java](https://img.shields.io/badge/Java-25%2B-orange.svg)](java/veridot-core)
 [![Trust Architecture](https://img.shields.io/badge/Trust-TrustAnchor%20v3.0-purple.svg)](docs/adr/)
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.cyfko/veridot-core)](https://central.sonatype.com/search?q=io.github.cyfko.veridot)
@@ -37,11 +37,11 @@ cat java/veridot-core/README.md   # ← exhaustive reference
 
 ---
 
-## Protocol V2 specification → [`PROTOCOL_V2.md`](PROTOCOL_V2.md)
+## Protocol V3 specification → [`PROTOCOL_V3.md`](PROTOCOL_V3.md)
 
 Binary-safe canonical message format enabling cross-language interoperability. Any conforming implementation — regardless of language — can verify tokens produced by any other.
 
-Current version: **2.1** — adds signed key announcements and signed revocation tombstones.
+Current version: **3.0** — adds universal signature over length-prefixed canonical encoding and shortened property names.
 
 ---
 

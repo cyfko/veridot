@@ -25,23 +25,22 @@ import java.security.PublicKey;
  *       leaves that boundary. This is the highest-security option.</li>
  * </ul>
  *
- * <h2>Canonical announcement encoding</h2>
- * <p>The {@code canonicalAnnouncement} bytes passed to
+ * <h2>Universal canonical encoding</h2>
+ * <p>The {@code canonicalBytes} passed to
  * {@link DelegatedVerifier#verify} follow the length-prefixed layout defined
- * in Protocol V2 §F1:</p>
+ * in Protocol V3 §11.5:</p>
  * <pre>
- *   len(pubkeyDER) [4 bytes, big-endian] ‖ pubkeyDER
- *   ‖ timestamp [8 bytes, big-endian, epoch seconds]
- *   ‖ ttl       [8 bytes, big-endian, seconds]
- *   ‖ len(signerId) [4 bytes, big-endian] ‖ signerId [UTF-8]
- *   ‖ len(messageId) [4 bytes, big-endian] ‖ messageId [UTF-8]
+ *   len(messageId) [4 bytes, big-endian] ‖ messageId [UTF-8]
+ *   ‖ for each (key, value) sorted alphabetically (excluding 'sig' and 'token'):
+ *       len(key)   [4 bytes, big-endian] ‖ key   [UTF-8]
+ *       ‖ len(val) [4 bytes, big-endian] ‖ value [UTF-8]
  * </pre>
  * <p>Including {@code messageId} binds the signature to the specific broker key,
  * preventing a substitution attack where a valid announcement is relocated to a
  * different groupId/sequenceId.</p>
  *
  * <h2>Authorization scope</h2>
- * <p>Implementations are also responsible for enforcing that the resolved {@code signerId}
+ * <p>Implementations are also responsible for enforcing that the resolved {@code sid}
  * is authorized to certify keys for the {@code groupId} prefix it claims. A compromised
  * signing identity must remain confined to its authorized {@code groupId} prefixes.</p>
  *
@@ -53,11 +52,11 @@ public sealed interface TrustAnchor
         permits TrustAnchor.PublicKeyResolver, TrustAnchor.DelegatedVerifier {
 
     /**
-     * Resolves the long-term identity of {@code signerId} into the public key that the
+     * Resolves the long-term identity of {@code sid} into the public key that the
      * caller must use to verify the key-announcement signature.
      *
      * <p>The implementation is responsible for fetching and returning the key associated
-     * with the given {@code signerId} from a trust store that is entirely independent of
+     * with the given {@code sid} from a trust store that is entirely independent of
      * the Veridot broker (e.g., a Vault KV store, a local trust store, a service mesh's
      * certificate authority, etc.).</p>
      *
@@ -68,18 +67,18 @@ public sealed interface TrustAnchor
     non-sealed interface PublicKeyResolver extends TrustAnchor {
 
         /**
-         * Resolves the long-term {@link PublicKey} associated with {@code signerId}.
+         * Resolves the long-term {@link PublicKey} associated with {@code sid}.
          *
-         * @param signerId the identifier of the signer whose long-term key is requested;
-         *                 never {@code null} or blank
+         * @param sid the identifier of the signer whose long-term key is requested;
+         *            never {@code null} or blank
          * @return the long-term public key to use for verifying the announcement signature;
          *         never {@code null}
          * @throws TrustResolutionException.Unavailable       if the trust store is
          *         temporarily unreachable (network failure, timeout, etc.)
-         * @throws TrustResolutionException.SignatureRejected  if {@code signerId} is
+         * @throws TrustResolutionException.SignatureRejected  if {@code sid} is
          *         unknown or has been revoked in the trust store
          */
-        PublicKey resolve(String signerId) throws TrustResolutionException;
+        PublicKey resolve(String sid) throws TrustResolutionException;
     }
 
     /**
@@ -97,21 +96,20 @@ public sealed interface TrustAnchor
 
         /**
          * Asks the external trust boundary to verify that {@code signature} was produced
-         * by the long-term key of {@code signerId} over {@code canonicalAnnouncement}.
+         * by the long-term key of {@code sid} over {@code canonicalBytes}.
          *
          * <p>On success, this method returns normally. On failure, it throws the
          * appropriate subtype of {@link TrustResolutionException}.</p>
          *
-         * @param signerId              the claimed identity of the announcer; never {@code null}
-         * @param canonicalAnnouncement the byte representation of the key announcement
-         *                              (length-prefixed format defined in Protocol V2 §F1)
-         * @param signature             the signature bytes to verify
+         * @param sid            the claimed identity of the announcer; never {@code null}
+         * @param canonicalBytes the canonical bytes to verify (format defined in Protocol V3 §11.5)
+         * @param signature      the signature bytes to verify
          * @throws TrustResolutionException.Unavailable      if the external boundary is
          *         temporarily unreachable
          * @throws TrustResolutionException.SignatureRejected if the signature is invalid
-         *         or {@code signerId} is unknown / revoked
+         *         or {@code sid} is unknown / revoked
          */
-        void verify(String signerId, byte[] canonicalAnnouncement, byte[] signature)
+        void verify(String sid, byte[] canonicalBytes, byte[] signature)
                 throws TrustResolutionException;
     }
 }

@@ -361,4 +361,4 @@ public enum DistributionMode {
 - [Java Guide]({{ '/docs/java-guide' | relative_url }}) — guide d'utilisation complet
 - [Modèle de sécurité]({{ '/docs/security' | relative_url }}) — TrustAnchor, menaces, checklist
 - [ADR-001 TrustAnchor]({{ '/docs/adr/001-trust-anchor' | relative_url }}) — décision architecturale
-- [Protocol V2]({{ '/PROTOCOL_V2' | relative_url }}) — format des messages
+- [Protocol V3]({{ '/PROTOCOL_V3' | relative_url }}) — format des messages

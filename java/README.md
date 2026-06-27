@@ -4,7 +4,7 @@
 [![Java 25+](https://img.shields.io/badge/Java-25%2B-orange.svg)](https://openjdk.org/)
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.cyfko/veridot-core.svg)](https://central.sonatype.com/artifact/io.github.cyfko/veridot-core)
 [![Build](https://img.shields.io/badge/tests-89%20passed-brightgreen.svg)](veridot-core/)
-[![Protocol V2.1](https://img.shields.io/badge/Protocol-V2.1-green.svg)](../PROTOCOL_V2.md)
+[![Protocol V3.0](https://img.shields.io/badge/Protocol-V3.0-green.svg)](../PROTOCOL_V3.md)
 
 Java implementation of the Veridot distributed token verification protocol.
 
@@ -14,7 +14,7 @@ Java implementation of the Veridot distributed token verification protocol.
 
 | Module | Artifact | Java | Role |
 |--------|----------|:----:|------|
-| [`veridot-core`](veridot-core/) | `io.github.cyfko:veridot-core:3.0.2` | 25+ | Core API, `GenericSignerVerifier`, `TrustAnchor`, Protocol V2 |
+| [`veridot-core`](veridot-core/) | `io.github.cyfko:veridot-core:3.0.2` | 25+ | Core API, `GenericSignerVerifier`, `TrustAnchor`, Protocol V3 |
 | [`veridot-kafka`](veridot-kafka/) | `io.github.cyfko:veridot-kafka:3.0.2` | 17+ | `MetadataBroker` backed by Kafka + RocksDB |
 | [`veridot-databases`](veridot-databases/) | `io.github.cyfko:veridot-databases:3.0.2` | 17+ | `MetadataBroker` backed by SQL (PostgreSQL, MySQL…) |
 | [`veridot-tests`](veridot-tests/) | _(internal)_ | 25+ | Integration tests across all brokers |

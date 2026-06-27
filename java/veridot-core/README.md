@@ -5,7 +5,7 @@
 [![Java 25+](https://img.shields.io/badge/Java-25%2B-orange.svg)](https://openjdk.org/)
 [![Build](https://img.shields.io/badge/tests-89%20passed-brightgreen.svg)]()
 
-Core module of **Veridot** — the Java implementation of the [Protocol V2.1](../../PROTOCOL_V2.md) distributed token verification protocol.
+Core module of **Veridot** — the Java implementation of the [Protocol V3.0](../../PROTOCOL_V3.md) distributed token verification protocol.
 
 This README is the **self-contained reference** for using Veridot in Java. You do not need to visit any external website to get started.
 
@@ -125,7 +125,7 @@ dependencies {
 
 > Before v3.0, any node with Kafka write-access could inject a fraudulent key announcement and obtain valid verification results. **TrustAnchor closes this gap entirely.**
 
-Every key announcement now carries `signerId` and `announcementSig` — a long-term RSA signature. Verifiers check this signature via a `TrustAnchor` **independently** of the broker. Broker write-access alone cannot produce a valid announcement.
+Every key announcement now carries `sid` and `sig` — a long-term RSA signature. Verifiers check this signature via a `TrustAnchor` **independently** of the broker. Broker write-access alone cannot produce a valid announcement.
 
 `TrustAnchor` is a `sealed` interface with two permitted implementations:
 
@@ -134,10 +134,10 @@ Every key announcement now carries `signerId` and `announcementSig` — a long-t
 Best for: public keys stored in files, Vault KV, ConfigMaps, or any key-value store.
 
 ```java
-TrustAnchor anchor = (TrustAnchor.PublicKeyResolver) signerId -> {
-    // Load the long-term public key for this signerId from your trust store.
-    // Called once per unique signerId, result may be cached by your implementation.
-    byte[] pem = Files.readAllBytes(Paths.get("/etc/veridot/trust/" + signerId + ".pub.pem"));
+TrustAnchor anchor = (TrustAnchor.PublicKeyResolver) sid -> {
+    // Load the long-term public key for this sid from your trust store.
+    // Called once per unique sid, result may be cached by your implementation.
+    byte[] pem = Files.readAllBytes(Paths.get("/etc/veridot/trust/" + sid + ".pub.pem"));
     return parsePemPublicKey(pem);
 };
 ```
@@ -148,12 +148,12 @@ Best for: Vault Transit Engine, AWS KMS, Google Cloud KMS, Azure Key Vault, HSMs
 The long-term private key never leaves the KMS.
 
 ```java
-TrustAnchor anchor = (TrustAnchor.DelegatedVerifier) (signerId, canonicalBytes, signature) -> {
+TrustAnchor anchor = (TrustAnchor.DelegatedVerifier) (sid, canonicalBytes, signature) -> {
     // Your KMS verifies the RSA signature. Throw TrustResolutionException on failure.
-    boolean valid = vaultTransit.verify(signerId, canonicalBytes, signature);
+    boolean valid = vaultTransit.verify(sid, canonicalBytes, signature);
     if (!valid) {
         throw new TrustResolutionException.SignatureRejected(
-            "KMS rejected announcement signature for signerId=" + signerId);
+            "KMS rejected announcement signature for sid=" + sid);
     }
 };
 ```
@@ -597,9 +597,9 @@ Session limits can be pushed dynamically to all nodes via the broker — no rede
 
 ```
 Configuration hierarchy (highest → lowest precedence):
-  1. Local   → 2:<groupId>:__CONFIG__|maxSessions:<b64>,policy:<b64>,validUntil:<b64>
-  2. Site    → 2:__CONFIG__:<siteId>|...
-  3. Global  → 2:__CONFIG__:__ALL__|...
+  1. Local   → 3:<groupId>:__CONFIG__|max:<b64>,pol:<b64>,exp:<b64>
+  2. Site    → 3:__CONFIG__:<siteId>|...
+  3. Global  → 3:__CONFIG__:__ALL__|...
   4. Default → constructor parameters
 ```
 
@@ -621,10 +621,10 @@ This is useful for multi-tenant scenarios where different customers have differe
 
 ```java
 // Minimal — no session limit
-new GenericSignerVerifier(MetadataBroker, TrustAnchor, String signerId, PrivateKey)
+new GenericSignerVerifier(MetadataBroker, TrustAnchor, String sid, PrivateKey)
 
 // With session capacity management
-new GenericSignerVerifier(MetadataBroker, TrustAnchor, String signerId, PrivateKey, int maxSessions, EvictionPolicy)
+new GenericSignerVerifier(MetadataBroker, TrustAnchor, String sid, PrivateKey, int maxSessions, EvictionPolicy)
 ```
 
 ### `BasicConfigurer` builder methods
@@ -669,11 +669,11 @@ sealed interface TrustAnchor
     permits TrustAnchor.PublicKeyResolver, TrustAnchor.DelegatedVerifier
 
 non-sealed interface PublicKeyResolver extends TrustAnchor {
-    PublicKey resolve(String signerId) throws TrustResolutionException;
+    PublicKey resolve(String sid) throws TrustResolutionException;
 }
 
 non-sealed interface DelegatedVerifier extends TrustAnchor {
-    void verify(String signerId, byte[] canonicalBytes, byte[] signature)
+    void verify(String sid, byte[] canonicalBytes, byte[] signature)
         throws TrustResolutionException;
 }
 ```
@@ -767,8 +767,8 @@ var sv = new GenericSignerVerifier(broker, anchor, "my-service-id", longTermKey,
 
 | Threat | Mitigation since |
 |--------|:-----------------|
-| Broker injection (forge key announcement) | TrustAnchor `announcementSig` — v3.0.2 |
-| Tombstone forgery (fake revocation) | Long-term `tombstoneSig` — v3.0.2 |
+| Broker injection (forge key announcement) | TrustAnchor `sig` — v3.0.2 |
+| Tombstone forgery (fake revocation) | Long-term `sig` — v3.0.2 |
 | Tombstone replay | Latest-timestamp-wins — v3.0.2 |
 | Race read-after-write (same node) | `MetadataBroker.sendLocal()` pre-populates RocksDB — v3.0.2 |
 | Expired key accumulation (RocksDB bloat) | TTL compaction task every 5 min — v3.0.2 |

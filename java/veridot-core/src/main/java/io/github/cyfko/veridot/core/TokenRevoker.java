@@ -3,7 +3,7 @@ package io.github.cyfko.veridot.core;
 /**
  * Contract for invalidating previously issued tokens.
  *
- * <p>Revocation is expressed in terms of Protocol V2 identifiers ({@code groupId} and
+ * <p>Revocation is expressed in terms of Protocol V3 identifiers ({@code groupId} and
  * {@code sequenceId}) rather than opaque token strings, ensuring that the revocation is
  * broker-centric — any service sharing the same {@link MetadataBroker} will immediately
  * stop accepting the revoked token, regardless of which service issued it.</p>
