@@ -95,7 +95,7 @@ class VerificationTest {
     @Test
     void verify_unknown_messageId_throws() {
         assertThrows(BrokerExtractionException.class,
-                () -> sv.verify("2:unknown:session", s -> s));
+                () -> sv.verify("3:unknown:session", s -> s));
     }
 
     @Test
@@ -123,35 +123,35 @@ class VerificationTest {
         // Manually inject a broker entry with a timestamp 10 minutes in the future
         long futureTs = java.time.Instant.now().getEpochSecond() + 600; // +10 min
         var props = new java.util.LinkedHashMap<String, String>();
-        props.put("mode", Config.DEFAULT_CRYPTO_MODE);
-        props.put("pubkey", "dummykey");
-        props.put("timestamp", String.valueOf(futureTs));
+        props.put("alg", Config.DEFAULT_CRYPTO_MODE);
+        props.put("pk", "dummykey");
+        props.put("ts", String.valueOf(futureTs));
         props.put("ttl", "3600");
         String msg = ProtocolV2.buildMessage("drift-grp", "s1", props);
-        broker.send("2:drift-grp:s1", msg);
+        broker.send("3:drift-grp:s1", msg);
 
         // Verify must reject due to clock drift > 5 min (§9.1)
         assertThrows(BrokerExtractionException.class,
-                () -> sv.verify("2:drift-grp:s1", s -> s),
+                () -> sv.verify("3:drift-grp:s1", s -> s),
                 "Must reject messages with timestamp > 5min in the future");
     }
 
     @Test
     void verify_tampered_metadata_without_trust_anchor_fields_throws() {
-        // Manually inject broker entry with no signerId/announcementSig (simulates broker injection attack)
+        // Manually inject broker entry with no sid/sig (simulates broker injection attack)
         long ts = java.time.Instant.now().getEpochSecond();
         var props = new java.util.LinkedHashMap<String, String>();
-        props.put("mode", Config.DEFAULT_CRYPTO_MODE);
-        props.put("pubkey", "ZHVtbXlrZXk"); // base64url of "dummykey"
-        props.put("timestamp", String.valueOf(ts));
+        props.put("alg", Config.DEFAULT_CRYPTO_MODE);
+        props.put("pk", "ZHVtbXlrZXk"); // base64url of "dummykey"
+        props.put("ts", String.valueOf(ts));
         props.put("ttl", "3600");
-        // Note: deliberately omit signerId and announcementSig
+        // Note: deliberately omit sid and sig
         String msg = ProtocolV2.buildMessage("attack-grp", "evil-session", props);
-        broker.send("2:attack-grp:evil-session", msg);
+        broker.send("3:attack-grp:evil-session", msg);
 
         // Verify must reject because trust-anchor fields are missing (F1 guard)
         assertThrows(BrokerExtractionException.class,
-                () -> sv.verify("2:attack-grp:evil-session", s -> s),
+                () -> sv.verify("3:attack-grp:evil-session", s -> s),
                 "Must reject metadata missing trust-anchor fields");
     }
 }

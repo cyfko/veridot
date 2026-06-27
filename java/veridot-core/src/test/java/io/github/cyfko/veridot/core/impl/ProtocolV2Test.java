@@ -11,33 +11,33 @@ class ProtocolV2Test {
 
     @Test
     void buildMessageId_valid() {
-        assertEquals("2:user123:session001", ProtocolV2.buildMessageId("user123", "session001"));
+        assertEquals("3:user123:session001", ProtocolV2.buildMessageId("user123", "session001"));
     }
 
     @Test
     void buildMessage_containsHeaderAndMetadata() {
         Map<String, String> props = new LinkedHashMap<>();
-        props.put("mode", "rsa");
-        props.put("timestamp", "1706712000");
+        props.put("alg", "rsa");
+        props.put("ts", "1706712000");
         String msg = ProtocolV2.buildMessage("grp", "seq", props);
-        assertTrue(msg.startsWith("2:grp:seq|"), "Message must start with header");
-        assertTrue(msg.contains("mode:"), "Must contain mode property");
-        assertTrue(msg.contains("timestamp:"), "Must contain timestamp property");
+        assertTrue(msg.startsWith("3:grp:seq|"), "Message must start with header");
+        assertTrue(msg.contains("alg:"), "Must contain alg property");
+        assertTrue(msg.contains("ts:"), "Must contain ts property");
         assertFalse(msg.contains("rsa"), "Raw values must not appear un-encoded");
     }
 
     @Test
     void parseMessageId_fromBareId() {
-        String[] parts = ProtocolV2.parseMessageId("2:user123:session001");
-        assertEquals("2", parts[0]);
+        String[] parts = ProtocolV2.parseMessageId("3:user123:session001");
+        assertEquals("3", parts[0]);
         assertEquals("user123", parts[1]);
         assertEquals("session001", parts[2]);
     }
 
     @Test
     void parseMessageId_fromFullMessage() {
-        String[] parts = ProtocolV2.parseMessageId("2:grp:seq|mode:cnNh");
-        assertEquals("2", parts[0]);
+        String[] parts = ProtocolV2.parseMessageId("3:grp:seq|alg:cnNh");
+        assertEquals("3", parts[0]);
         assertEquals("grp", parts[1]);
         assertEquals("seq", parts[2]);
     }
@@ -45,36 +45,36 @@ class ProtocolV2Test {
     @Test
     void parseMessageId_invalidVersion_throws() {
         assertThrows(IllegalArgumentException.class,
-                () -> ProtocolV2.parseMessageId("1:grp:seq"));
+                () -> ProtocolV2.parseMessageId("2:grp:seq"));
     }
 
     @Test
     void parseMessageId_tooFewParts_throws() {
         assertThrows(IllegalArgumentException.class,
-                () -> ProtocolV2.parseMessageId("2:onlyone"));
+                () -> ProtocolV2.parseMessageId("3:onlyone"));
     }
 
     @Test
     void parseMetadata_decodesValues() {
         // Build a message with known property, then parse
         Map<String, String> props = new LinkedHashMap<>();
-        props.put("mode", "rsa");
+        props.put("alg", "rsa");
         String msg = ProtocolV2.buildMessage("g", "s", props);
         Map<String, String> meta = ProtocolV2.parseMetadata(msg);
-        assertEquals("rsa", meta.get("mode"));
+        assertEquals("rsa", meta.get("alg"));
     }
 
     @Test
     void parseMetadata_multipleProperties() {
         Map<String, String> props = new LinkedHashMap<>();
-        props.put("mode", "rsa");
+        props.put("alg", "rsa");
         props.put("ttl", "3600");
-        props.put("timestamp", "1706712000");
+        props.put("ts", "1706712000");
         String msg = ProtocolV2.buildMessage("g", "s", props);
         Map<String, String> meta = ProtocolV2.parseMetadata(msg);
-        assertEquals("rsa", meta.get("mode"));
+        assertEquals("rsa", meta.get("alg"));
         assertEquals("3600", meta.get("ttl"));
-        assertEquals("1706712000", meta.get("timestamp"));
+        assertEquals("1706712000", meta.get("ts"));
     }
 
     @Test
@@ -137,7 +137,7 @@ class ProtocolV2Test {
 
     @Test
     void isMessageId_true() {
-        assertTrue(ProtocolV2.isMessageId("2:grp:seq"));
+        assertTrue(ProtocolV2.isMessageId("3:grp:seq"));
     }
 
     @Test
@@ -157,7 +157,7 @@ class ProtocolV2Test {
 
     @Test
     void isJwt_false_for_messageId() {
-        assertFalse(ProtocolV2.isJwt("2:grp:seq"));
+        assertFalse(ProtocolV2.isJwt("3:grp:seq"));
     }
 
     @Test
@@ -167,15 +167,15 @@ class ProtocolV2Test {
 
     @Test
     void groupPrefix_format() {
-        assertEquals("2:user123:", ProtocolV2.groupPrefix("user123"));
+        assertEquals("3:user123:", ProtocolV2.groupPrefix("user123"));
     }
 
     @Test
     void buildRevocationMessage_format() {
         String msg = ProtocolV2.buildRevocationMessage("user123", "session001");
-        assertTrue(msg.startsWith("2:user123:__REVOKE__|"), "Must have __REVOKE__ header");
+        assertTrue(msg.startsWith("3:user123:__REVOKE__|"), "Must have __REVOKE__ header");
         assertTrue(msg.contains("target:"), "Must contain target property");
-        assertTrue(msg.contains("timestamp:"), "Must contain timestamp property");
+        assertTrue(msg.contains("ts:"), "Must contain ts property");
 
         // Decode target to verify it matches
         var meta = ProtocolV2.parseMetadata(msg);
@@ -184,17 +184,17 @@ class ProtocolV2Test {
 
     @Test
     void buildLocalConfigKey_format() {
-        assertEquals("2:myGroup:__CONFIG__", ProtocolV2.buildLocalConfigKey("myGroup"));
-        assertEquals("2:__CONFIG__:mySite", ProtocolV2.buildSiteConfigKey("mySite"));
-        assertEquals("2:__CONFIG__:__ALL__", ProtocolV2.buildGlobalConfigKey());
+        assertEquals("3:myGroup:__CONFIG__", ProtocolV2.buildLocalConfigKey("myGroup"));
+        assertEquals("3:__CONFIG__:mySite", ProtocolV2.buildSiteConfigKey("mySite"));
+        assertEquals("3:__CONFIG__:__ALL__", ProtocolV2.buildGlobalConfigKey());
     }
 
     @Test
     void isReservedSequence_detection() {
-        assertTrue(ProtocolV2.isReservedSequence("2:grp:__REVOKE__"), "__REVOKE__ is reserved");
-        assertTrue(ProtocolV2.isReservedSequence("2:grp:__CONFIG__"), "__CONFIG__ is reserved");
-        assertTrue(ProtocolV2.isReservedSequence("2:grp:__ALL__"), "__ALL__ is reserved");
-        assertFalse(ProtocolV2.isReservedSequence("2:grp:session001"), "Normal sequence is not reserved");
+        assertTrue(ProtocolV2.isReservedSequence("3:grp:__REVOKE__"), "__REVOKE__ is reserved");
+        assertTrue(ProtocolV2.isReservedSequence("3:grp:__CONFIG__"), "__CONFIG__ is reserved");
+        assertTrue(ProtocolV2.isReservedSequence("3:grp:__ALL__"), "__ALL__ is reserved");
+        assertFalse(ProtocolV2.isReservedSequence("3:grp:session001"), "Normal sequence is not reserved");
         assertFalse(ProtocolV2.isReservedSequence("invalid"), "Non-messageId is not reserved");
     }
 }

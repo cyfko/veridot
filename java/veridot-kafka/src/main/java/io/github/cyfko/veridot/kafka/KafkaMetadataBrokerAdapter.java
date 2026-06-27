@@ -97,7 +97,7 @@ public class KafkaMetadataBrokerAdapter implements MetadataBroker, AutoCloseable
 
     /**
      * Grace window (in seconds) added to TTL when purging expired RocksDB entries (F6).
-     * Absorbs the ±5min clock tolerance admitted by Protocol V2 §9.1.
+     * Absorbs the ±5min clock tolerance admitted by Protocol V3 §9.1.
      */
     private static final long PURGE_GRACE_WINDOW_SECONDS = 300; // 5 minutes
 
@@ -242,9 +242,9 @@ public class KafkaMetadataBrokerAdapter implements MetadataBroker, AutoCloseable
      * the entry will be deleted from all consumers' RocksDB stores when the message
      * is processed.</p>
      *
-     * @param key     the Protocol V2 {@code messageId} or reserved revocation/config key;
+     * @param key     the Protocol V3 {@code messageId} or reserved revocation/config key;
      *                must not be {@code null} or blank
-     * @param message the Protocol V2 metadata message to publish; an empty string signals
+     * @param message the Protocol V3 metadata message to publish; an empty string signals
      *                revocation
      * @return a {@link java.util.concurrent.CompletableFuture} that completes when Kafka
      *         acknowledges the message, or completes exceptionally on producer error
@@ -272,8 +272,8 @@ public class KafkaMetadataBrokerAdapter implements MetadataBroker, AutoCloseable
      * so that a {@code verify()} call on the same JVM immediately after {@code sign()} can
      * serve from the local RocksDB without waiting for the Kafka consumer loop.</p>
      *
-     * @param key     the Protocol V2 {@code messageId}; must not be {@code null}
-     * @param message the V2 metadata message to cache locally; must not be {@code null}
+     * @param key     the Protocol V3 {@code messageId}; must not be {@code null}
+     * @param message the V3 metadata message to cache locally; must not be {@code null}
      */
     @Override
     public void sendLocal(String key, String message) {
@@ -298,7 +298,7 @@ public class KafkaMetadataBrokerAdapter implements MetadataBroker, AutoCloseable
      * a network round-trip. If the entry was revoked (empty-string send), it will have
      * been deleted from RocksDB and this method will throw.</p>
      *
-     * @param keyId the Protocol V2 {@code messageId} or reserved key; must not be {@code null}
+     * @param keyId the Protocol V3 {@code messageId} or reserved key; must not be {@code null}
      * @return the verification metadata message stored for {@code keyId}
      * @throws BrokerExtractionException if the key does not exist in RocksDB, or if a
      *                                   database access error occurs
@@ -362,7 +362,7 @@ public class KafkaMetadataBrokerAdapter implements MetadataBroker, AutoCloseable
      * prefix boundary. Internal metadata keys (e.g., the consumer group ID persistence key)
      * are excluded from the results.</p>
      *
-     * @param prefix the key prefix to search for (e.g., {@code "2:user-123:"})
+     * @param prefix the key prefix to search for (e.g., {@code "3:user-123:"})
      * @return a list of matching keys; empty if none found (never {@code null})
      * @throws BrokerExtractionException if the RocksDB iterator fails
      */
@@ -472,7 +472,7 @@ public class KafkaMetadataBrokerAdapter implements MetadataBroker, AutoCloseable
      * loop iteration, before normal data messages. This bounds revocation propagation
      * latency at the poll-interval level (≈1s for the combined consumer).</p>
      *
-     * <p>Handles Protocol V2 __REVOKE__ messages (§5) by deleting targeted sequences from RocksDB.
+     * <p>Handles Protocol V3 __REVOKE__ messages (§5) by deleting targeted sequences from RocksDB.
      * </p>
      *
      * @param consumer the KafkaConsumer instance.
@@ -525,16 +525,16 @@ public class KafkaMetadataBrokerAdapter implements MetadataBroker, AutoCloseable
     }
 
     /**
-     * Processes a V2 __REVOKE__ message: parses the {@code target} property and
+     * Processes a V3 __REVOKE__ message: parses the {@code target} property and
      * deletes the corresponding sequences from RocksDB.
      *
-     * @param key     the revocation key, e.g. {@code "2:user123:__REVOKE__"}
-     * @param message the full V2 revocation message with metadata
+     * @param key     the revocation key, e.g. {@code "3:user123:__REVOKE__"}
+     * @param message the full V3 revocation message with metadata
      * @param db      the RocksDB instance
      */
     private void processRevocationMessage(String key, String message, RocksDB db) {
         try {
-            // Parse groupId from key: "2:groupId:__REVOKE__"
+            // Parse groupId from key: "3:groupId:__REVOKE__"
             String[] keyParts = key.split(":", 3);
             if (keyParts.length < 3) return;
             String groupId = keyParts[1];
@@ -558,7 +558,7 @@ public class KafkaMetadataBrokerAdapter implements MetadataBroker, AutoCloseable
 
             if ("__ALL__".equals(target)) {
                 // Delete all normal sequences for this group
-                String prefix = "2:" + groupId + ":";
+                String prefix = "3:" + groupId + ":";
                 try (RocksIterator it = db.newIterator()) {
                     byte[] prefixBytes = prefix.getBytes(StandardCharsets.UTF_8);
                     for (it.seek(prefixBytes); it.isValid(); it.next()) {
@@ -573,7 +573,7 @@ public class KafkaMetadataBrokerAdapter implements MetadataBroker, AutoCloseable
                 }
             } else {
                 // Delete specific sequence
-                String targetKey = "2:" + groupId + ":" + target;
+                String targetKey = "3:" + groupId + ":" + target;
                 db.delete(targetKey.getBytes(StandardCharsets.UTF_8));
             }
             logger.info("Processed __REVOKE__ for group " + groupId + ", target=" + target);
@@ -587,7 +587,7 @@ public class KafkaMetadataBrokerAdapter implements MetadataBroker, AutoCloseable
      *
      * <p>Iterates all keys in RocksDB and deletes any entry where
      * {@code timestamp + ttl + graceWindow < now}. The grace window absorbs the ±5min
-     * clock tolerance already admitted by Protocol V2 §9.1, preventing premature deletion
+     * clock tolerance already admitted by Protocol V3 §9.1, preventing premature deletion
      * of entries that are marginally expired on the local clock but still valid on the
      * issuer's clock.</p>
      *
@@ -617,9 +617,9 @@ public class KafkaMetadataBrokerAdapter implements MetadataBroker, AutoCloseable
                     if (valueBytes == null) continue;
                     String message = new String(valueBytes, StandardCharsets.UTF_8);
 
-                    // Parse timestamp and ttl from V2 metadata
+                    // Parse ts and ttl from V3 metadata
                     int pipeIdx = message.indexOf('|');
-                    if (pipeIdx < 0) continue; // not a V2 message, skip
+                    if (pipeIdx < 0) continue; // not a V3 message, skip
                     String metaPart = message.substring(pipeIdx + 1);
 
                     long timestamp = -1;
@@ -635,7 +635,7 @@ public class KafkaMetadataBrokerAdapter implements MetadataBroker, AutoCloseable
                         } catch (Exception ignored) {
                             continue;
                         }
-                        if ("timestamp".equals(name)) {
+                        if ("ts".equals(name)) {
                             try { timestamp = Long.parseLong(value); } catch (NumberFormatException ignored) {}
                         } else if ("ttl".equals(name)) {
                             try { ttl = Long.parseLong(value); } catch (NumberFormatException ignored) {}

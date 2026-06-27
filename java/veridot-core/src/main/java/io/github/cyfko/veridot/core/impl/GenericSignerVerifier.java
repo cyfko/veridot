@@ -9,8 +9,7 @@ import io.github.cyfko.veridot.core.exceptions.DataSerializationException;
 import io.github.cyfko.veridot.core.exceptions.SessionCapacityExceededException;
 import io.github.cyfko.veridot.core.exceptions.TrustResolutionException;
 
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
+
 import java.security.*;
 import java.security.spec.X509EncodedKeySpec;
 import java.time.Instant;
@@ -334,38 +333,37 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             throw new RuntimeException("Failed to build signed JWT: " + e.getMessage(), e);
         }
 
-        // 6. Build canonical announcement bytes and sign with long-term key (F1)
+        // 6. Build props map, canonicalize, sign with long-term key (F1)
         byte[] pubKeyDer = currentKeyPair.getPublic().getEncoded();
         long timestamp = now.getEpochSecond();
         long ttl = configurer.getDuration();
-        byte[] canonicalAnnouncement = buildCanonicalAnnouncement(pubKeyDer, timestamp, ttl, signerId, messageId);
-        byte[] announcementSignature;
-        try {
-            announcementSignature = signAnnouncement(canonicalAnnouncement, longTermPrivateKey);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to sign key announcement with long-term key: " + e.getMessage(), e);
-        }
 
-        // 7. Build V2 metadata properties map
         String pubKeyBase64 = Base64.getUrlEncoder()
                 .withoutPadding()
                 .encodeToString(pubKeyDer);
-        String signerIdEncoded = signerId;
-        String announcementSigBase64 = Base64.getUrlEncoder()
-                .withoutPadding()
-                .encodeToString(announcementSignature);
 
         Map<String, String> props = new LinkedHashMap<>();
-        props.put(ProtocolV2.PROP_MODE, Config.DEFAULT_CRYPTO_MODE);
-        props.put(ProtocolV2.PROP_PUBKEY, pubKeyBase64);
-        props.put(ProtocolV2.PROP_TIMESTAMP, String.valueOf(timestamp));
+        props.put(ProtocolV2.PROP_ALG, Config.DEFAULT_CRYPTO_MODE);
+        props.put(ProtocolV2.PROP_PK, pubKeyBase64);
+        props.put(ProtocolV2.PROP_TS, String.valueOf(timestamp));
         props.put(ProtocolV2.PROP_TTL, String.valueOf(ttl));
-        props.put(ProtocolV2.PROP_SIGNER_ID, signerIdEncoded);
-        props.put(ProtocolV2.PROP_ANNOUNCEMENT_SIG, announcementSigBase64);
+        props.put(ProtocolV2.PROP_SID, signerId);
 
         if (configurer.getDistribution() == DistributionMode.INDIRECT) {
             props.put(ProtocolV2.PROP_TOKEN, jwt);
         }
+
+        // Canonicalize (without sig), sign, then add sig
+        byte[] canonical = ProtocolV2.buildCanonicalBytes(messageId, props);
+        byte[] signature;
+        try {
+            signature = signCanonical(canonical, longTermPrivateKey);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to sign key announcement with long-term key: " + e.getMessage(), e);
+        }
+        props.put(ProtocolV2.PROP_SIG, Base64.getUrlEncoder()
+                .withoutPadding()
+                .encodeToString(signature));
 
         // 8. Resolve effective config from broker hierarchy (§4) and enforce maxSessions
         Object groupLock = groupLocks.computeIfAbsent(groupId, k -> new Object());
@@ -464,7 +462,7 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             }
 
             // 9. Rebuild public key
-            String pubkeyEncoded = meta.get(ProtocolV2.PROP_PUBKEY);
+            String pubkeyEncoded = meta.get(ProtocolV2.PROP_PK);
             byte[] pubKeyBytes = Base64.getUrlDecoder().decode(pubkeyEncoded);
             PublicKey publicKey = keyFactory.generatePublic(new X509EncodedKeySpec(pubKeyBytes));
 
@@ -645,28 +643,28 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             Map<String, String> meta = ProtocolV2.parseMetadata(msg);
 
             // Validate: timestamp and validUntil present and config not expired (§4.2.4)
-            String tsStr = meta.get(ProtocolV2.PROP_TIMESTAMP);
-            String vuStr = meta.get(ProtocolV2.PROP_VALID_UNTIL);
+            String tsStr = meta.get(ProtocolV2.PROP_TS);
+            String vuStr = meta.get(ProtocolV2.PROP_EXP);
             if (tsStr == null || vuStr == null) return null;
             long validUntil = Long.parseLong(vuStr);
             if (Instant.now().getEpochSecond() > validUntil) return null; // config expired
 
             // Parse optional properties with semantic validation (H2/M8)
             int ms = defaultConfig.maxSessions();
-            if (meta.containsKey(ProtocolV2.PROP_MAX_SESSIONS)) {
-                int brokerMs = Integer.parseInt(meta.get(ProtocolV2.PROP_MAX_SESSIONS));
+            if (meta.containsKey(ProtocolV2.PROP_MAX)) {
+                int brokerMs = Integer.parseInt(meta.get(ProtocolV2.PROP_MAX));
                 if (brokerMs == -1 || brokerMs > 0) {
                     ms = brokerMs;
                 } else {
                     logger.warning("Ignoring invalid broker maxSessions=" + brokerMs + " (must be -1 or > 0)");
                 }
             }
-            EvictionPolicy pol = meta.containsKey(ProtocolV2.PROP_POLICY)
-                    ? EvictionPolicy.valueOf(meta.get(ProtocolV2.PROP_POLICY))
+            EvictionPolicy pol = meta.containsKey(ProtocolV2.PROP_POL)
+                    ? EvictionPolicy.valueOf(meta.get(ProtocolV2.PROP_POL))
                     : defaultConfig.policy();
             long dttl = defaultConfig.defaultTTL();
-            if (meta.containsKey(ProtocolV2.PROP_DEFAULT_TTL)) {
-                long brokerTtl = Long.parseLong(meta.get(ProtocolV2.PROP_DEFAULT_TTL));
+            if (meta.containsKey(ProtocolV2.PROP_DTTL)) {
+                long brokerTtl = Long.parseLong(meta.get(ProtocolV2.PROP_DTTL));
                 if (brokerTtl > 0) {
                     dttl = brokerTtl;
                 } else {
@@ -735,8 +733,8 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
 
         try {
             Map<String, String> tombstoneMeta = ProtocolV2.parseMetadata(tombstoneMsg);
-            String tombstoneTimestampStr = tombstoneMeta.get(ProtocolV2.PROP_TIMESTAMP);
-            String announcementTimestampStr = announcementMeta.get(ProtocolV2.PROP_TIMESTAMP);
+            String tombstoneTimestampStr = tombstoneMeta.get(ProtocolV2.PROP_TS);
+            String announcementTimestampStr = announcementMeta.get(ProtocolV2.PROP_TS);
             String tombstoneTarget = tombstoneMeta.get(ProtocolV2.PROP_TARGET);
 
             if (tombstoneTimestampStr == null || announcementTimestampStr == null) {
@@ -764,17 +762,20 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             }
 
             // Verify tombstone signature using TrustAnchor (prevents forged tombstones)
-            String tombstoneSigB64 = tombstoneMeta.get(ProtocolV2.PROP_TOMBSTONE_SIG);
-            String tombstoneSignerId = tombstoneMeta.get(ProtocolV2.PROP_SIGNER_ID);
+            String tombstoneSigB64 = tombstoneMeta.get(ProtocolV2.PROP_SIG);
+            String tombstoneSignerId = tombstoneMeta.get(ProtocolV2.PROP_SID);
             if (tombstoneSigB64 != null && !tombstoneSigB64.isEmpty()
                     && tombstoneSignerId != null && tombstoneTarget != null) {
-                byte[] tombstoneCanonical = buildTombstoneCanonical(groupId, tombstoneTarget, tombstoneTs);
+                // Reconstruct tombstone props (all fields except sig) for canonical bytes
+                Map<String, String> tombstoneProps = new LinkedHashMap<>(tombstoneMeta);
+                tombstoneProps.remove(ProtocolV2.PROP_SIG);
+                byte[] tombstoneCanonical = ProtocolV2.buildCanonicalBytes(revokeKey, tombstoneProps);
                 byte[] tombstoneSig = Base64.getUrlDecoder().decode(tombstoneSigB64);
                 try {
                     switch (trustAnchor) {
                         case TrustAnchor.PublicKeyResolver r -> {
                             PublicKey ltKey = r.resolve(tombstoneSignerId);
-                            verifyAnnouncementSignature(tombstoneCanonical, tombstoneSig, ltKey);
+                            verifySignature(tombstoneCanonical, tombstoneSig, ltKey);
                         }
                         case TrustAnchor.DelegatedVerifier d -> {
                             d.verify(tombstoneSignerId, tombstoneCanonical, tombstoneSig);
@@ -818,30 +819,27 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
      *                                    the announcement signature
      */
     private void validateTrustAnchor(Map<String, String> meta, String messageId) throws BrokerExtractionException {
-        String signerIdMeta = meta.get(ProtocolV2.PROP_SIGNER_ID);
-        String announcementSigB64 = meta.get(ProtocolV2.PROP_ANNOUNCEMENT_SIG);
-        String pubkeyB64 = meta.get(ProtocolV2.PROP_PUBKEY);
-        String tsStr = meta.get(ProtocolV2.PROP_TIMESTAMP);
-        String ttlStr = meta.get(ProtocolV2.PROP_TTL);
+        String signerIdMeta = meta.get(ProtocolV2.PROP_SID);
+        String sigB64 = meta.get(ProtocolV2.PROP_SIG);
 
-        if (signerIdMeta == null || announcementSigB64 == null || pubkeyB64 == null
-                || tsStr == null || ttlStr == null) {
+        if (signerIdMeta == null || sigB64 == null) {
             throw new BrokerExtractionException(
-                    "Metadata is missing required trust fields (signerId, announcementSig, pubkey, timestamp, ttl)");
+                    "Metadata is missing required trust fields (sid, sig)");
         }
 
         try {
-            byte[] pubKeyDer = Base64.getUrlDecoder().decode(pubkeyB64);
-            long timestamp = Long.parseLong(tsStr);
-            long ttl = Long.parseLong(ttlStr);
-            byte[] canonical = buildCanonicalAnnouncement(pubKeyDer, timestamp, ttl, signerIdMeta, messageId);
-            byte[] sig = Base64.getUrlDecoder().decode(announcementSigB64);
+            // Reconstruct props from meta (all fields except sig and token) for canonical bytes
+            Map<String, String> propsFromMeta = new LinkedHashMap<>(meta);
+            propsFromMeta.remove(ProtocolV2.PROP_SIG);
+            propsFromMeta.remove(ProtocolV2.PROP_TOKEN);
+            byte[] canonical = ProtocolV2.buildCanonicalBytes(messageId, propsFromMeta);
+            byte[] sig = Base64.getUrlDecoder().decode(sigB64);
 
             switch (trustAnchor) {
                 case TrustAnchor.PublicKeyResolver r -> {
-                    // Resolve the long-term key and verify the announcement signature locally
+                    // Resolve the long-term key and verify the signature locally
                     PublicKey ltKey = r.resolve(signerIdMeta);
-                    verifyAnnouncementSignature(canonical, sig, ltKey);
+                    verifySignature(canonical, sig, ltKey);
                 }
                 case TrustAnchor.DelegatedVerifier d -> {
                     // Delegate both resolution and verification to the external boundary
@@ -850,11 +848,11 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             }
         } catch (TrustResolutionException.Unavailable u) {
             // Transient infra failure — fail safe: do NOT accept the token
-            logger.warning("TrustAnchor temporarily unavailable for signerId=" + signerIdMeta + ": " + u.getMessage());
+            logger.warning("TrustAnchor temporarily unavailable for sid=" + signerIdMeta + ": " + u.getMessage());
             throw new BrokerExtractionException("Trust anchor unavailable: " + u.getMessage());
         } catch (TrustResolutionException.SignatureRejected r) {
             // Security event — log at SEVERE and fail
-            logger.severe("SECURITY: Key announcement signature rejected for signerId=" + signerIdMeta + ": " + r.getMessage());
+            logger.severe("SECURITY: Key announcement signature rejected for sid=" + signerIdMeta + ": " + r.getMessage());
             throw new BrokerExtractionException("Key announcement rejected by trust anchor: " + r.getMessage());
         } catch (BrokerExtractionException e) {
             throw e;
@@ -868,7 +866,7 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
      *
      * @throws TrustResolutionException.SignatureRejected if the signature is invalid
      */
-    private static void verifyAnnouncementSignature(byte[] canonical, byte[] signature, PublicKey ltKey)
+    private static void verifySignature(byte[] canonical, byte[] signature, PublicKey ltKey)
             throws TrustResolutionException.SignatureRejected {
         try {
             java.security.Signature sig = java.security.Signature.getInstance("SHA256withRSA");
@@ -876,56 +874,20 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             sig.update(canonical);
             if (!sig.verify(signature)) {
                 throw new TrustResolutionException.SignatureRejected(
-                        "Announcement signature verification failed");
+                        "Signature verification failed");
             }
         } catch (TrustResolutionException.SignatureRejected e) {
             throw e;
         } catch (Exception e) {
             throw new TrustResolutionException.SignatureRejected(
-                    "Announcement signature verification error: " + e.getMessage());
+                    "Signature verification error: " + e.getMessage());
         }
     }
 
-    // ── Canonical announcement encoding (F1) ──────────────────────────────────
-
     /**
-     * Builds the canonical byte representation of a key announcement.
-     *
-     * <p>Format (length-prefixed, never raw concatenation — avoids ambiguity attacks):</p>
-     * <pre>
-     *   len(pubkeyDER) [4 bytes BE] ‖ pubkeyDER
-     *   ‖ timestamp    [8 bytes BE, epoch seconds]
-     *   ‖ ttl          [8 bytes BE, seconds]
-     *   ‖ len(signerId)[4 bytes BE] ‖ signerId [UTF-8]
-     *   ‖ len(messageId)[4 bytes BE] ‖ messageId [UTF-8]
-     * </pre>
-     *
-     * <p>Including {@code messageId} binds the signature to the specific broker key,
-     * preventing a substitution attack where a valid announcement is relocated to a
-     * different groupId/sequenceId.</p>
+     * Signs the canonical bytes with the given private key using SHA256withRSA.
      */
-    static byte[] buildCanonicalAnnouncement(byte[] pubKeyDer, long timestamp, long ttl,
-                                              String signerId, String messageId) {
-        byte[] signerIdBytes = signerId.getBytes(StandardCharsets.UTF_8);
-        byte[] messageIdBytes = messageId.getBytes(StandardCharsets.UTF_8);
-        int totalLen = 4 + pubKeyDer.length + 8 + 8 + 4 + signerIdBytes.length
-                     + 4 + messageIdBytes.length;
-        ByteBuffer buf = ByteBuffer.allocate(totalLen);
-        buf.putInt(pubKeyDer.length);
-        buf.put(pubKeyDer);
-        buf.putLong(timestamp);
-        buf.putLong(ttl);
-        buf.putInt(signerIdBytes.length);
-        buf.put(signerIdBytes);
-        buf.putInt(messageIdBytes.length);
-        buf.put(messageIdBytes);
-        return buf.array();
-    }
-
-    /**
-     * Signs the canonical announcement bytes with the given private key using SHA256withRSA.
-     */
-    private static byte[] signAnnouncement(byte[] canonical, PrivateKey privateKey) throws Exception {
+    private static byte[] signCanonical(byte[] canonical, PrivateKey privateKey) throws Exception {
         java.security.Signature sig = java.security.Signature.getInstance("SHA256withRSA");
         sig.initSign(privateKey);
         sig.update(canonical);
@@ -938,41 +900,30 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
      * Builds a signed revocation tombstone message.
      *
      * <p>The tombstone includes the current timestamp (epoch seconds) and a long-term
-     * signature over {@code groupId ‖ target ‖ timestamp}. Verifiers apply a simple
+     * signature over the canonical bytes. Verifiers apply a simple
      * "latest timestamp wins" rule — so replaying an older announcement after a tombstone
      * has been issued has no effect.</p>
      */
     private String buildSignedRevocationMessage(String groupId, String target) {
         long ts = Instant.now().getEpochSecond();
-        byte[] tombstoneBytes = buildTombstoneCanonical(groupId, target, ts);
+        String messageId = ProtocolV2.buildRevocationKey(groupId);
+
+        Map<String, String> props = new LinkedHashMap<>();
+        props.put(ProtocolV2.PROP_TARGET, target);
+        props.put(ProtocolV2.PROP_TS, String.valueOf(ts));
+        props.put(ProtocolV2.PROP_SID, signerId);
+
+        // Canonicalize (without sig), sign, then add sig
+        byte[] canonical = ProtocolV2.buildCanonicalBytes(messageId, props);
         String tombstoneSigB64;
         try {
-            byte[] tombstoneSig = signAnnouncement(tombstoneBytes, longTermPrivateKey);
+            byte[] tombstoneSig = signCanonical(canonical, longTermPrivateKey);
             tombstoneSigB64 = Base64.getUrlEncoder().withoutPadding().encodeToString(tombstoneSig);
         } catch (Exception e) {
             throw new RuntimeException("SECURITY: Cannot sign revocation tombstone — refusing to publish unsigned tombstone", e);
         }
-
-        Map<String, String> props = new LinkedHashMap<>();
-        props.put(ProtocolV2.PROP_TARGET, target);
-        props.put(ProtocolV2.PROP_TIMESTAMP, String.valueOf(ts));
-        props.put(ProtocolV2.PROP_SIGNER_ID, signerId);
-        props.put(ProtocolV2.PROP_TOMBSTONE_SIG, tombstoneSigB64);
+        props.put(ProtocolV2.PROP_SIG, tombstoneSigB64);
         return ProtocolV2.buildMessage(groupId, ProtocolV2.SEQ_REVOKE, props);
-    }
-
-    /** Canonical bytes for a signed revocation tombstone. */
-    private static byte[] buildTombstoneCanonical(String groupId, String target, long timestamp) {
-        byte[] groupBytes = groupId.getBytes(StandardCharsets.UTF_8);
-        byte[] targetBytes = target.getBytes(StandardCharsets.UTF_8);
-        int totalLen = 4 + groupBytes.length + 4 + targetBytes.length + 8;
-        ByteBuffer buf = ByteBuffer.allocate(totalLen);
-        buf.putInt(groupBytes.length);
-        buf.put(groupBytes);
-        buf.putInt(targetBytes.length);
-        buf.put(targetBytes);
-        buf.putLong(timestamp);
-        return buf.array();
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
@@ -999,7 +950,7 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
      * This detects clock skew between signer and verifier (§9.1).
      */
     private static void validateClockDrift(Map<String, String> meta) throws BrokerExtractionException {
-        String tsStr = meta.get(ProtocolV2.PROP_TIMESTAMP);
+        String tsStr = meta.get(ProtocolV2.PROP_TS);
         if (tsStr == null) return;
         long timestamp = Long.parseLong(tsStr);
         long now = Instant.now().getEpochSecond();
@@ -1027,7 +978,7 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         String ttlStr = meta.get(ProtocolV2.PROP_TTL);
         if (ttlStr == null) return; // no TTL = no expiration
 
-        String tsStr = meta.get(ProtocolV2.PROP_TIMESTAMP);
+        String tsStr = meta.get(ProtocolV2.PROP_TS);
         if (tsStr == null) return;
 
         long timestamp = Long.parseLong(tsStr);
@@ -1048,7 +999,7 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             Map<String, String> meta = ProtocolV2.parseMetadata(message);
 
             // Clock drift check (§9.1)
-            String tsStr = meta.get(ProtocolV2.PROP_TIMESTAMP);
+            String tsStr = meta.get(ProtocolV2.PROP_TS);
             if (tsStr != null) {
                 long ts = Long.parseLong(tsStr);
                 if (ts > Instant.now().getEpochSecond() + MAX_CLOCK_DRIFT_SECONDS) return false;
@@ -1156,7 +1107,7 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         try {
             String msg = metadataBroker.get(key);
             Map<String, String> meta = ProtocolV2.parseMetadata(msg);
-            return Long.parseLong(meta.getOrDefault(ProtocolV2.PROP_TIMESTAMP, "0"));
+            return Long.parseLong(meta.getOrDefault(ProtocolV2.PROP_TS, "0"));
         } catch (Exception e) {
             return 0;
         }

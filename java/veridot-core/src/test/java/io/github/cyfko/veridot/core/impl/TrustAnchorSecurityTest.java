@@ -60,19 +60,19 @@ class TrustAnchorSecurityTest {
         String attackerPubKey = Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(attackerKp.getPublic().getEncoded());
         Map<String, String> props = new LinkedHashMap<>();
-        props.put(ProtocolV2.PROP_MODE, Config.DEFAULT_CRYPTO_MODE);
-        props.put(ProtocolV2.PROP_PUBKEY, attackerPubKey);
-        props.put(ProtocolV2.PROP_TIMESTAMP, String.valueOf(ts));
+        props.put(ProtocolV2.PROP_ALG, Config.DEFAULT_CRYPTO_MODE);
+        props.put(ProtocolV2.PROP_PK, attackerPubKey);
+        props.put(ProtocolV2.PROP_TS, String.valueOf(ts));
         props.put(ProtocolV2.PROP_TTL, "3600");
-        props.put(ProtocolV2.PROP_SIGNER_ID, trust.signerId); // claims to be the legitimate signer
+        props.put(ProtocolV2.PROP_SID, trust.signerId); // claims to be the legitimate signer
         // Note: no announcementSig!
         String forgedMsg = ProtocolV2.buildMessage("victim-group", "evil-session", props);
-        broker.sendLocal("2:victim-group:evil-session", forgedMsg);
+        broker.sendLocal("3:victim-group:evil-session", forgedMsg);
 
-        // Verify must reject because announcementSig is absent
+        // Verify must reject because sig is absent
         assertThrows(BrokerExtractionException.class,
-                () -> sv.verify("2:victim-group:evil-session", s -> s),
-                "Missing announcementSig must cause rejection (F1)");
+                () -> sv.verify("3:victim-group:evil-session", s -> s),
+                "Missing sig must cause rejection (F1)");
     }
 
     /**
@@ -102,18 +102,18 @@ class TrustAnchorSecurityTest {
         String fakeSigB64 = Base64.getUrlEncoder().withoutPadding().encodeToString(fakeSignature);
 
         Map<String, String> props = new LinkedHashMap<>();
-        props.put(ProtocolV2.PROP_MODE, Config.DEFAULT_CRYPTO_MODE);
-        props.put(ProtocolV2.PROP_PUBKEY, attackerPubKeyB64);
-        props.put(ProtocolV2.PROP_TIMESTAMP, String.valueOf(ts));
+        props.put(ProtocolV2.PROP_ALG, Config.DEFAULT_CRYPTO_MODE);
+        props.put(ProtocolV2.PROP_PK, attackerPubKeyB64);
+        props.put(ProtocolV2.PROP_TS, String.valueOf(ts));
         props.put(ProtocolV2.PROP_TTL, String.valueOf(ttl));
-        props.put(ProtocolV2.PROP_SIGNER_ID, trust.signerId); // claims to be the legitimate signer
-        props.put(ProtocolV2.PROP_ANNOUNCEMENT_SIG, fakeSigB64); // fake signature
+        props.put(ProtocolV2.PROP_SID, trust.signerId); // claims to be the legitimate signer
+        props.put(ProtocolV2.PROP_SIG, fakeSigB64); // fake signature
         String forgedMsg = ProtocolV2.buildMessage("victim-group2", "evil-session2", props);
-        broker.sendLocal("2:victim-group2:evil-session2", forgedMsg);
+        broker.sendLocal("3:victim-group2:evil-session2", forgedMsg);
 
         // Verify must reject because the RSA signature does not match the legitimate long-term key
         assertThrows(BrokerExtractionException.class,
-                () -> sv.verify("2:victim-group2:evil-session2", s -> s),
+                () -> sv.verify("3:victim-group2:evil-session2", s -> s),
                 "Forged announcement signature must be rejected by TrustAnchor (F1)");
     }
 
@@ -161,8 +161,13 @@ class TrustAnchorSecurityTest {
         String fakePubKeyB64 = Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(fakeKp.getPublic().getEncoded());
 
-        byte[] canonical = GenericSignerVerifier.buildCanonicalAnnouncement(
-                fakeKp.getPublic().getEncoded(), ts, 3600L, "unknown-signer", "2:victim:unknown-attack");
+        Map<String, String> canonProps = new LinkedHashMap<>();
+        canonProps.put(ProtocolV2.PROP_ALG, Config.DEFAULT_CRYPTO_MODE);
+        canonProps.put(ProtocolV2.PROP_PK, fakePubKeyB64);
+        canonProps.put(ProtocolV2.PROP_TS, String.valueOf(ts));
+        canonProps.put(ProtocolV2.PROP_TTL, String.valueOf(3600L));
+        canonProps.put(ProtocolV2.PROP_SID, "unknown-signer");
+        byte[] canonical = ProtocolV2.buildCanonicalBytes("3:victim:unknown-attack", canonProps);
         java.security.Signature sig = java.security.Signature.getInstance("SHA256withRSA");
         sig.initSign(fakeKp.getPrivate()); // sign with its own key (not the legitimate long-term)
         sig.update(canonical);
@@ -170,17 +175,17 @@ class TrustAnchorSecurityTest {
         String fakeSigB64 = Base64.getUrlEncoder().withoutPadding().encodeToString(fakeSig);
 
         Map<String, String> props = new LinkedHashMap<>();
-        props.put(ProtocolV2.PROP_MODE, Config.DEFAULT_CRYPTO_MODE);
-        props.put(ProtocolV2.PROP_PUBKEY, fakePubKeyB64);
-        props.put(ProtocolV2.PROP_TIMESTAMP, String.valueOf(ts));
+        props.put(ProtocolV2.PROP_ALG, Config.DEFAULT_CRYPTO_MODE);
+        props.put(ProtocolV2.PROP_PK, fakePubKeyB64);
+        props.put(ProtocolV2.PROP_TS, String.valueOf(ts));
         props.put(ProtocolV2.PROP_TTL, "3600");
-        props.put(ProtocolV2.PROP_SIGNER_ID, "unknown-signer"); // not in trust store
-        props.put(ProtocolV2.PROP_ANNOUNCEMENT_SIG, fakeSigB64);
+        props.put(ProtocolV2.PROP_SID, "unknown-signer"); // not in trust store
+        props.put(ProtocolV2.PROP_SIG, fakeSigB64);
         String msg = ProtocolV2.buildMessage("victim", "unknown-attack", props);
-        broker.sendLocal("2:victim:unknown-attack", msg);
+        broker.sendLocal("3:victim:unknown-attack", msg);
 
         assertThrows(BrokerExtractionException.class,
-                () -> sv.verify("2:victim:unknown-attack", s -> s),
+                () -> sv.verify("3:victim:unknown-attack", s -> s),
                 "Unknown signerId must be rejected by TrustAnchor (SignatureRejected)");
     }
 
@@ -193,13 +198,21 @@ class TrustAnchorSecurityTest {
     @Test
     void canonical_announcement_is_deterministic() {
         byte[] dummyDer = new byte[]{0x01, 0x02, 0x03, 0x04};
+        String dummyPkB64 = Base64.getUrlEncoder().withoutPadding().encodeToString(dummyDer);
         long ts = 1706712000L;
         long ttl = 3600L;
         String signerId = "svc-A";
 
-        byte[] a1 = GenericSignerVerifier.buildCanonicalAnnouncement(dummyDer, ts, ttl, signerId, "2:test:seq1");
-        byte[] a2 = GenericSignerVerifier.buildCanonicalAnnouncement(dummyDer, ts, ttl, signerId, "2:test:seq1");
-        assertArrayEquals(a1, a2, "buildCanonicalAnnouncement must be deterministic");
+        Map<String, String> p = new LinkedHashMap<>();
+        p.put(ProtocolV2.PROP_ALG, Config.DEFAULT_CRYPTO_MODE);
+        p.put(ProtocolV2.PROP_PK, dummyPkB64);
+        p.put(ProtocolV2.PROP_TS, String.valueOf(ts));
+        p.put(ProtocolV2.PROP_TTL, String.valueOf(ttl));
+        p.put(ProtocolV2.PROP_SID, signerId);
+
+        byte[] a1 = ProtocolV2.buildCanonicalBytes("3:test:seq1", p);
+        byte[] a2 = ProtocolV2.buildCanonicalBytes("3:test:seq1", p);
+        assertArrayEquals(a1, a2, "buildCanonicalBytes must be deterministic");
     }
 
     /**
@@ -209,15 +222,39 @@ class TrustAnchorSecurityTest {
     @Test
     void canonical_announcement_changes_when_any_field_changes() {
         byte[] der = new byte[]{0x01, 0x02, 0x03};
+        String derB64 = Base64.getUrlEncoder().withoutPadding().encodeToString(der);
         long ts = 1706712000L;
         long ttl = 3600L;
         String signerId = "svc-A";
 
-        byte[] base = GenericSignerVerifier.buildCanonicalAnnouncement(der, ts, ttl, signerId, "2:g:s");
-        byte[] diffDer = GenericSignerVerifier.buildCanonicalAnnouncement(new byte[]{0x01, 0x02, 0x04}, ts, ttl, signerId, "2:g:s");
-        byte[] diffTs = GenericSignerVerifier.buildCanonicalAnnouncement(der, ts + 1, ttl, signerId, "2:g:s");
-        byte[] diffTtl = GenericSignerVerifier.buildCanonicalAnnouncement(der, ts, ttl + 1, signerId, "2:g:s");
-        byte[] diffSigner = GenericSignerVerifier.buildCanonicalAnnouncement(der, ts, ttl, "svc-B", "2:g:s");
+        // Helper to build props
+        java.util.function.Supplier<Map<String, String>> baseProps = () -> {
+            Map<String, String> m = new LinkedHashMap<>();
+            m.put(ProtocolV2.PROP_ALG, Config.DEFAULT_CRYPTO_MODE);
+            m.put(ProtocolV2.PROP_PK, derB64);
+            m.put(ProtocolV2.PROP_TS, String.valueOf(ts));
+            m.put(ProtocolV2.PROP_TTL, String.valueOf(ttl));
+            m.put(ProtocolV2.PROP_SID, signerId);
+            return m;
+        };
+
+        byte[] base = ProtocolV2.buildCanonicalBytes("3:g:s", baseProps.get());
+
+        Map<String, String> pDiffDer = baseProps.get();
+        pDiffDer.put(ProtocolV2.PROP_PK, Base64.getUrlEncoder().withoutPadding().encodeToString(new byte[]{0x01, 0x02, 0x04}));
+        byte[] diffDer = ProtocolV2.buildCanonicalBytes("3:g:s", pDiffDer);
+
+        Map<String, String> pDiffTs = baseProps.get();
+        pDiffTs.put(ProtocolV2.PROP_TS, String.valueOf(ts + 1));
+        byte[] diffTs = ProtocolV2.buildCanonicalBytes("3:g:s", pDiffTs);
+
+        Map<String, String> pDiffTtl = baseProps.get();
+        pDiffTtl.put(ProtocolV2.PROP_TTL, String.valueOf(ttl + 1));
+        byte[] diffTtl = ProtocolV2.buildCanonicalBytes("3:g:s", pDiffTtl);
+
+        Map<String, String> pDiffSigner = baseProps.get();
+        pDiffSigner.put(ProtocolV2.PROP_SID, "svc-B");
+        byte[] diffSigner = ProtocolV2.buildCanonicalBytes("3:g:s", pDiffSigner);
 
         assertFalse(java.util.Arrays.equals(base, diffDer), "Different pubkey DER must change canonical bytes");
         assertFalse(java.util.Arrays.equals(base, diffTs), "Different timestamp must change canonical bytes");
@@ -225,7 +262,7 @@ class TrustAnchorSecurityTest {
         assertFalse(java.util.Arrays.equals(base, diffSigner), "Different signerId must change canonical bytes");
 
         // Also verify that different messageId changes canonical bytes (anti-substitution)
-        byte[] diffMsgId = GenericSignerVerifier.buildCanonicalAnnouncement(der, ts, ttl, signerId, "2:g:other");
+        byte[] diffMsgId = ProtocolV2.buildCanonicalBytes("3:g:other", baseProps.get());
         assertFalse(java.util.Arrays.equals(base, diffMsgId), "Different messageId must change canonical bytes");
     }
 
