@@ -1,7 +1,7 @@
 package io.github.cyfko.veridot.core.impl;
 
 import io.github.cyfko.veridot.core.DistributionMode;
-import io.github.cyfko.veridot.core.InMemoryMetadataBroker;
+import io.github.cyfko.veridot.core.InMemoryBroker;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -9,12 +9,12 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class TokenTrackerTest {
 
-    private InMemoryMetadataBroker broker;
+    private InMemoryBroker broker;
     private GenericSignerVerifier sv;
 
     @BeforeEach
     void setUp() {
-        broker = new InMemoryMetadataBroker();
+        broker = new InMemoryBroker();
         sv = TestTrustSetup.create().newSignerVerifier(broker);
     }
 

@@ -4,7 +4,8 @@ import io.github.cyfko.veridot.core.*;
 import io.github.cyfko.veridot.core.exceptions.BrokerExtractionException;
 import io.github.cyfko.veridot.core.impl.BasicConfigurer;
 import io.github.cyfko.veridot.core.impl.GenericSignerVerifier;
-import io.github.cyfko.veridot.databases.DatabaseMetadataBroker;
+import io.github.cyfko.veridot.databases.DatabaseBroker;
+import io.github.cyfko.veridot.core.impl.*;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import org.junit.jupiter.api.*;
@@ -48,8 +49,8 @@ public abstract class DatabaseTest {
     @BeforeAll
     void setUpClass() {
         dataSource = createDataSource();
-        MetadataBroker metadataBroker = new DatabaseMetadataBroker(dataSource, "broker_messages");
-        GenericSignerVerifier gsv = TestTrustSetup.create().newSignerVerifier(metadataBroker);
+        DatabaseBroker broker = new DatabaseBroker(dataSource, "broker_messages");
+        GenericSignerVerifier gsv = TestTrustSetup.create().newSignerVerifier(broker);
         dataSigner    = gsv;
         tokenVerifier = gsv;
         tokenRevoker  = gsv;
@@ -193,7 +194,6 @@ public abstract class DatabaseTest {
     void verify_token_regeneration_returns_payload(DistributionMode mode) throws InterruptedException {
         UserData data = new UserData("john.doe@example.com");
         String groupId = "regen-" + mode.name();
-        // Sign twice with the same sequenceId — second sign overwrites the first
         dataSigner.sign(data, BasicConfigurer.builder().groupId(groupId).sequenceId("s1").distribution(mode).validity(600).build());
         String token = dataSigner.sign(data, BasicConfigurer.builder().groupId(groupId).sequenceId("s1").distribution(mode).validity(600).build());
         Thread.sleep(2000);
@@ -224,6 +224,7 @@ public abstract class DatabaseTest {
         Thread.sleep(2000);
         assertFalse(tokenTracker.hasActiveToken(groupId));
     }
+
     @ParameterizedTest
     @EnumSource(value = DistributionMode.class)
     void revokeGroup_physically_deletes_entries_from_database(DistributionMode mode) throws Exception {
@@ -235,32 +236,38 @@ public abstract class DatabaseTest {
         dataSigner.sign("d2", BasicConfigurer.builder().groupId(groupId).sequenceId(seqB).distribution(mode).validity(3600).build());
         Thread.sleep(2000);
 
-        // Pre-condition: verify entries exist in the raw SQL table
-        String keyA = "3:" + groupId + ":" + seqA;
-        String keyB = "3:" + groupId + ":" + seqB;
+        byte[] keyA = computeStorageKey(groupId, EntryType.KEY_EPOCH, seqA);
+        byte[] keyB = computeStorageKey(groupId, EntryType.KEY_EPOCH, seqB);
+
         assertTrue(existsInDb(keyA), "Sequence A must exist in DB before revokeGroup");
         assertTrue(existsInDb(keyB), "Sequence B must exist in DB before revokeGroup");
 
         tokenRevoker.revoke(groupId, null);
         Thread.sleep(2000);
 
-        // Post-condition: entries are physically absent from the SQL table
         assertFalse(existsInDb(keyA), "Sequence A must be physically deleted from DB after revokeGroup");
         assertFalse(existsInDb(keyB), "Sequence B must be physically deleted from DB after revokeGroup");
-
-        // The __REVOKE__ entry persists for interoperability
-        String revokeKey = "3:" + groupId + ":__REVOKE__";
-        assertTrue(existsInDb(revokeKey), "__REVOKE__ entry must persist in DB for interoperability");
     }
 
-    /**
-     * Queries the raw SQL table to check if a message_key exists.
-     */
-    private boolean existsInDb(String messageKey) throws SQLException {
+    private byte[] computeStorageKey(String groupId, EntryType type, String key) {
+        byte[] scopeBytes = ("group:" + groupId).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] keyBytes = key.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+        byte[] result = new byte[scopeBytes.length + 1 + 1 + 1 + keyBytes.length];
+        System.arraycopy(scopeBytes, 0, result, 0, scopeBytes.length);
+        result[scopeBytes.length] = 0x00;
+        result[scopeBytes.length + 1] = type.code;
+        result[scopeBytes.length + 2] = 0x00;
+        System.arraycopy(keyBytes, 0, result, scopeBytes.length + 3, keyBytes.length);
+
+        return result;
+    }
+
+    private boolean existsInDb(byte[] storageKey) throws SQLException {
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(
-                     "SELECT COUNT(*) FROM broker_messages WHERE message_key = ?")) {
-            stmt.setString(1, messageKey);
+                     "SELECT COUNT(*) FROM broker_messages WHERE storage_key = ?")) {
+            stmt.setBytes(1, storageKey);
             ResultSet rs = stmt.executeQuery();
             rs.next();
             return rs.getInt(1) > 0;

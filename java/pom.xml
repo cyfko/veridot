@@ -6,7 +6,7 @@
 
     <groupId>io.github.cyfko</groupId>
     <artifactId>veridot</artifactId>
-    <version>3.1.0</version>
+    <version>4.0.0</version>
     <packaging>pom</packaging>
 
     <name>Veridot - Distributed Token Verification</name>
@@ -51,8 +51,8 @@
     </distributionManagement>
 
     <properties>
-        <maven.compiler.source>21</maven.compiler.source>
-        <maven.compiler.target>21</maven.compiler.target>
+        <maven.compiler.source>25</maven.compiler.source>
+        <maven.compiler.target>25</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 

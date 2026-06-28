@@ -4,7 +4,7 @@ import io.github.cyfko.veridot.core.*;
 import io.github.cyfko.veridot.core.exceptions.BrokerExtractionException;
 import io.github.cyfko.veridot.core.impl.BasicConfigurer;
 import io.github.cyfko.veridot.core.impl.GenericSignerVerifier;
-import io.github.cyfko.veridot.kafka.KafkaMetadataBrokerAdapter;
+import io.github.cyfko.veridot.kafka.KafkaBroker;
 import io.github.cyfko.veridot.kafka.VerifierConfig;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.junit.jupiter.api.*;
@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class KafkaUnitTest {
 
     private static KafkaContainer kafkaContainer;
+    private KafkaBroker broker;
     private DataSigner dataSigner;
     private TokenVerifier tokenVerifier;
     private File tempDir;
@@ -46,13 +47,17 @@ class KafkaUnitTest {
         tempDir = Files.createTempDirectory("veridot_unit_test_").toFile();
         props.setProperty(VerifierConfig.EMBEDDED_DB_PATH_CONFIG, tempDir.getAbsolutePath());
 
-        GenericSignerVerifier gsv = TestTrustSetup.create().newSignerVerifier(KafkaMetadataBrokerAdapter.of(props));
+        broker = new KafkaBroker(props);
+        GenericSignerVerifier gsv = TestTrustSetup.create().newSignerVerifier(broker);
         dataSigner    = gsv;
         tokenVerifier = gsv;
     }
 
     @AfterEach
     void tearDown() {
+        if (broker != null) {
+            broker.close();
+        }
         if (tempDir != null && tempDir.exists()) {
             tempDir.delete();
         }
