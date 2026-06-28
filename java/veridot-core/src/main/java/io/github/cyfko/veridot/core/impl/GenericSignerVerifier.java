@@ -46,9 +46,12 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
     private final SessionCounter sessionCounter = new SessionCounter();
 
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
-    private final ConcurrentHashMap<String, Object> groupLocks = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, Long> lockAccessTimes = new ConcurrentHashMap<>();
-    private static final long LOCK_CLEANUP_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+    private static final class RefCountedLock {
+        final java.util.concurrent.locks.ReentrantLock lock = new java.util.concurrent.locks.ReentrantLock();
+        int refCount = 0;
+    }
+
+    private final ConcurrentHashMap<String, RefCountedLock> groupLocks = new ConcurrentHashMap<>();
     private final long reconciliationIntervalMinutes;
 
     // ═══ Constructeur V4 (recommandé) ═══
@@ -118,12 +121,16 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         long now = System.currentTimeMillis();
         long durationMs = configurer.getDuration() * 1000L;
 
-        // Periodically cleanup stale locks (F-05: memory efficiency)
-        cleanupStaleLocks(now);
+        RefCountedLock refLock = groupLocks.compute(groupId, (key, val) -> {
+            if (val == null) {
+                val = new RefCountedLock();
+            }
+            val.refCount++;
+            return val;
+        });
 
-        Object groupLock = groupLocks.computeIfAbsent(groupId, k -> new Object());
-        lockAccessTimes.put(groupId, now);
-        synchronized (groupLock) {
+        refLock.lock.lock();
+        try {
             // V4-01: garantir qu'une réconciliation périodique tourne pour ce scope de groupe
             ensureReconciliationStarted(scope);
 
@@ -207,6 +214,17 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             livenessManager.startRenewalLoop(liveEntryId, durationMs, watermark, scheduler);
 
             return configurer.getDistribution() == DistributionMode.DIRECT ? jwt : messageId;
+        } finally {
+            refLock.lock.unlock();
+            groupLocks.compute(groupId, (key, val) -> {
+                if (val != null) {
+                    val.refCount--;
+                    if (val.refCount == 0) {
+                        return null;
+                    }
+                }
+                return val;
+            });
         }
     }
 
@@ -412,20 +430,7 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         }
     }
 
-    /**
-     * Cleanup stale group locks that haven't been accessed in LOCK_CLEANUP_THRESHOLD_MS.
-     * Prevents unbounded memory growth from the groupLocks map (F-05).
-     * This is called periodically from sign() to maintain memory efficiency.
-     */
-    private void cleanupStaleLocks(long now) {
-        lockAccessTimes.forEach((groupId, lastAccess) -> {
-            if (now - lastAccess > LOCK_CLEANUP_THRESHOLD_MS) {
-                // Remove both the lock and its access time entry
-                groupLocks.remove(groupId);
-                lockAccessTimes.remove(groupId);
-            }
-        });
-    }
+
 
     @Override
     public void close() {
