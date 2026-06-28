@@ -1,0 +1,88 @@
+<section>
+    <h1 id="quickstart-guide">Quickstart Guide</h1>
+    <p>Get up and running with Veridot in under 5 minutes. Learn how to import the dependency and run your first cryptographic signature and validation loop.</p>
+    
+    <h2 id="installation">Installation</h2>
+    <p>Choose your build tool to add the Veridot Core dependency to your project:</p>
+    
+    <div class="code-tabs">
+        <div class="code-tabs-header">
+            <button class="code-tab-btn active" data-tab="maven">Maven</button>
+            <button class="code-tab-btn" data-tab="gradle">Gradle</button>
+        </div>
+        <div class="code-tabs-content active" data-tab="maven">
+            <pre><code>&lt;dependency&gt;
+    &lt;groupId&gt;io.github.cyfko&lt;/groupId&gt;
+    &lt;artifactId&gt;veridot-core&lt;/artifactId&gt;
+    &lt;version&gt;4.0.0&lt;/version&gt;
+&lt;/dependency&gt;</code></pre>
+        </div>
+        <div class="code-tabs-content" data-tab="gradle">
+            <pre><code>implementation 'io.github.cyfko:veridot-core:4.0.0'</code></pre>
+        </div>
+    </div>
+
+    <h2 id="first-signature-verification">First Token Signing & Verification</h2>
+    <p>Here is a complete Java example demonstrating how to initialize a signer/verifier, sign user payload data, and verify it locally:</p>
+
+    <pre><code class="language-java">import io.github.cyfko.veridot.core.*;
+import io.github.cyfko.veridot.core.impl.*;
+import java.security.*;
+
+public class VeridotQuickstart {
+    public static void main(String[] args) throws Exception {
+        // 1. Initialize a simple in-memory broker (for testing)
+        Broker broker = new InMemoryBroker();
+        
+        // 2. Generate long-term cryptographic keys (RSA 2048)
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");
+        kpg.initialize(2048);
+        KeyPair keyPair = kpg.generateKeyPair();
+        
+        // 3. Define the TrustRoot anchor
+        TrustRoot trustRoot = new PublicKeyTrustRoot() {
+            @Override
+            public PublicKey resolve(String issuer) {
+                return keyPair.getPublic();
+            }
+            @Override
+            public boolean isRootIdentity(String issuer) {
+                return "root-admin".equals(issuer);
+            }
+        };
+
+        // 4. Instantiate the GenericSignerVerifier service
+        GenericSignerVerifier service = new GenericSignerVerifier(
+            broker,
+            trustRoot,
+            "root-admin",
+            keyPair.getPrivate(),
+            (byte) 0x01 // Envelope signature algorithm (SHA256withRSA)
+        );
+
+        // 5. Configure the signing operation (session validity)
+        Configurer configurer = BasicConfigurer.builder()
+            .groupId("user-sessions")
+            .sequenceId("session-xyz-123")
+            .validity(300) // valid for 5 minutes
+            .build();
+
+        // 6. Sign the payload data
+        String token = service.sign("User ID: 9942", configurer);
+        System.out.println("Generated JWT Token or Message ID: " + token);
+
+        // 7. Verify the token locally
+        VerifiedData&lt;String&gt; verified = service.verify(token, payload -> payload);
+        System.out.println("Verification Succeeded! Data: " + verified.data());
+        System.out.println("Session Status: " + (verified.isLive() ? "LIVE" : "EXPIRED"));
+        
+        // Clean up internal schedulers
+        service.close();
+    }
+}</code></pre>
+
+    <div class="alert alert-note">
+        <div class="alert-title">Distribution Modes</div>
+        <p>By default, <code>DistributionMode.DIRECT</code> yields a self-contained JWT. You can set <code>.distribution(DistributionMode.INDIRECT)</code> to return a short, opaque message identifier (useful for keeping payload network overhead low).</p>
+    </div>
+</section>

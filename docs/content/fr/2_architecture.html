@@ -1,0 +1,53 @@
+<section>
+    <h1 id="architecture-systeme">Architecture Système & Protocole V4</h1>
+    <p>Veridot V4 fonctionne en publiant des entrées signées cryptographiquement vers un broker de métadonnées partagé à haute disponibilité. Les nœuds de vérification lisent ce broker et maintiennent une vue locale de l'état tout en garantissant des invariants de sécurité stricts.</p>
+    
+    <h2 id="format-d-enveloppe-binaire">Format de l'Enveloppe Binaire</h2>
+    <p>Chaque message propagé par le broker est encapsulé dans une enveloppe binaire compacte (<code>Envelope</code>). Son format de sérialisation est structuré ainsi :</p>
+    
+    <pre><code>+-----------------+-------------------+-------------------+-------------------+
+|  Magic (1B)     | Version (1B)      | Entry Type (1B)   | Flags (1B)        |
+|  valeur : 0x04  | valeur : 0x01     | (ex. CONFIG)      | (bitmask)         |
++-----------------+-------------------+-------------------+-------------------+
+|  Scope Length   | Scope Value (Var) | Key Length (2B)   | Key Value (Var)   |
++-----------------+-------------------+-------------------+-------------------+
+|  Version (8B)   | Timestamp (8B)    | Issuer ID Length  | Issuer ID Value   |
++-----------------+-------------------+-------------------+-------------------+
+|  Payload Length | Payload Bytes     | Signature Alg     | Signature Bytes   |
++-----------------+-------------------+-------------------+-------------------+</code></pre>
+
+    <h2 id="types-d-entrees">Types d'Entrées du Protocole</h2>
+    <p>Le système utilise 5 types de messages principaux pour synchroniser l'état et appliquer les règles :</p>
+    <ul>
+        <li><strong>CONFIG :</strong> Définit la capacité maximale de sessions, les politiques d'éviction, les TTL par défaut et la validité de la configuration.</li>
+        <li><strong>KEY_EPOCH :</strong> Publie les clés de rotation temporaires, les octets de clé publique éphémère et les signatures associées.</li>
+        <li><strong>LIVENESS :</strong> Signaux de vie périodiques (heartbeats). Un état peut être <code>ACTIVE</code> (actif) ou <code>REVOKED</code> (révoqué).</li>
+        <li><strong>FENCE :</strong> Établit l'ordre d'écriture et exclut (fence) les éditeurs concurrents ou obsolètes lors des modifications de capacité.</li>
+        <li><strong>SNAPSHOT_MARKER :</strong> Publié périodiquement lors des réconciliations pour établir un nouveau filigrane anti-rollback.</li>
+    </ul>
+
+    <h2 id="diagramme-de-flux">Flux de Réplication de l'État</h2>
+    <div class="mermaid">
+        sequenceDiagram
+            autonumber
+            participant Signer as Instance DataSigner
+            participant Broker as Broker de Métadonnées
+            participant Verifier as Instance TokenVerifier
+            
+            Signer->>Broker: Publie KEY_EPOCH (nouvelle session)
+            Signer->>Broker: Publie LIVENESS (ACTIVE)
+            Broker-->>Verifier: Réplication asynchrone des messages
+            Verifier->>Verifier: Mise à jour du filigrane local (Watermark) & Cache
+            Note over Verifier: La validation du jeton réussit localement (sub-ms)
+    </div>
+
+    <h2 id="garanties-anti-rollback">Garanties Anti-Rollback & Réconciliation</h2>
+    <p>Une vulnérabilité majeure des systèmes décentralisés est l'attaque par rejeu, où un attaquant réémet un ancien état "actif". Veridot élimine ce risque grâce à deux invariants clés :</p>
+    
+    <div class="alert alert-warning">
+        <div class="alert-title">Filigrane Strict (Watermarking)</div>
+        <p>Chaque nœud maintient un <code>VersionWatermark</code> qui suit la version de séquence la plus élevée vue pour chaque ressource. Si un nœud reçoit un message ayant une version inférieure ou égale au filigrane local, il est immédiatement rejeté.</p>
+    </div>
+
+    <p>Pour synchroniser les filigranes locaux, le <code>ReconciliationManager</code> exécute des boucles de réconciliation périodiques. Il effectue un snapshot du broker, agrège l'état actif, et publie un <code>SNAPSHOT_MARKER</code> signé pour aligner le filigrane de base sur toutes les instances en cours d'exécution.</p>
+</section>
