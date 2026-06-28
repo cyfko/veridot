@@ -227,17 +227,19 @@ public abstract class DatabaseTest {
 
     @ParameterizedTest
     @EnumSource(value = DistributionMode.class)
-    void revokeGroup_physically_deletes_entries_from_database(DistributionMode mode) throws Exception {
+    void revokeGroup_marks_liveness_revoked_but_leaves_key_epoch_intact(DistributionMode mode) throws Exception {
         String groupId = "revoke-phys-" + mode.name();
         String seqA = "phys-a-" + mode.name();
         String seqB = "phys-b-" + mode.name();
 
-        dataSigner.sign("d1", BasicConfigurer.builder().groupId(groupId).sequenceId(seqA).distribution(mode).validity(3600).build());
-        dataSigner.sign("d2", BasicConfigurer.builder().groupId(groupId).sequenceId(seqB).distribution(mode).validity(3600).build());
+        String tokenA = dataSigner.sign("d1", BasicConfigurer.builder().groupId(groupId).sequenceId(seqA).distribution(mode).validity(3600).build());
+        String tokenB = dataSigner.sign("d2", BasicConfigurer.builder().groupId(groupId).sequenceId(seqB).distribution(mode).validity(3600).build());
         Thread.sleep(2000);
 
         byte[] keyA = computeStorageKey(groupId, EntryType.KEY_EPOCH, seqA);
         byte[] keyB = computeStorageKey(groupId, EntryType.KEY_EPOCH, seqB);
+        byte[] liveA = computeStorageKey(groupId, EntryType.LIVENESS, seqA);
+        byte[] liveB = computeStorageKey(groupId, EntryType.LIVENESS, seqB);
 
         assertTrue(existsInDb(keyA), "Sequence A must exist in DB before revokeGroup");
         assertTrue(existsInDb(keyB), "Sequence B must exist in DB before revokeGroup");
@@ -245,8 +247,31 @@ public abstract class DatabaseTest {
         tokenRevoker.revoke(groupId, null);
         Thread.sleep(2000);
 
-        assertFalse(existsInDb(keyA), "Sequence A must be physically deleted from DB after revokeGroup");
-        assertFalse(existsInDb(keyB), "Sequence B must be physically deleted from DB after revokeGroup");
+        // V4-02: Key Epoch must NOT be physically deleted from DB (it is now permanent/immutable V4 metadata)
+        assertTrue(existsInDb(keyA), "Sequence A KEY_EPOCH must NOT be deleted from DB after revokeGroup");
+        assertTrue(existsInDb(keyB), "Sequence B KEY_EPOCH must NOT be deleted from DB after revokeGroup");
+
+        // Verify that liveness entries exist
+        assertTrue(existsInDb(liveA), "Liveness A entry must exist");
+        assertTrue(existsInDb(liveB), "Liveness B entry must exist");
+
+        // Verify that token verification fails for both (due to liveness = revoked)
+        assertThrows(BrokerExtractionException.class, () -> tokenVerifier.verify(tokenA, s -> s));
+        assertThrows(BrokerExtractionException.class, () -> tokenVerifier.verify(tokenB, s -> s));
+    }
+
+    private byte[] getFromDb(byte[] storageKey) throws SQLException {
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(
+                     "SELECT entry_bytes FROM broker_messages WHERE storage_key = ?")) {
+            stmt.setBytes(1, storageKey);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getBytes("entry_bytes");
+                }
+                return null;
+            }
+        }
     }
 
     private byte[] computeStorageKey(String groupId, EntryType type, String key) {

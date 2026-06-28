@@ -54,14 +54,14 @@ class RevocationTest {
     }
 
     @Test
-    void revoke_updates_liveness_to_revoked_and_deletes_key_epoch() {
+    void revoke_updates_liveness_to_revoked_but_retains_key_epoch() {
         var cfg = BasicConfigurer.builder().groupId("u1").sequenceId("s1").validity(600).build();
         sv.sign("data", cfg);
         assertTrue(hasKeyEpoch("u1", "s1"), "KeyEpoch must exist before revocation");
         
         sv.revoke("u1", "s1");
         
-        assertFalse(hasKeyEpoch("u1", "s1"), "KeyEpoch must be removed after revocation");
+        assertTrue(hasKeyEpoch("u1", "s1"), "KeyEpoch must NOT be removed after revocation (V4-02)");
         
         LivenessPayload liveness = getLivenessPayload("u1", "s1");
         assertNotNull(liveness);
@@ -85,7 +85,7 @@ class RevocationTest {
         long keyEpochCountAfter = broker.snapshot(scope).stream()
                 .filter(e -> Envelope.parse(e.envelopeBytes()).entryType == EntryType.KEY_EPOCH)
                 .count();
-        assertEquals(0, keyEpochCountAfter, "Must have 0 KeyEpoch sessions after revokeGroup");
+        assertEquals(3, keyEpochCountAfter, "Must have 3 KeyEpoch sessions after revokeGroup (V4-02)");
 
         assertThrows(BrokerExtractionException.class, () -> sv.verify(t1, s -> s));
         assertThrows(BrokerExtractionException.class, () -> sv.verify(t2, s -> s));
@@ -111,7 +111,7 @@ class RevocationTest {
     }
 
     @Test
-    void revokeGroup_physically_deletes_entries_from_store() {
+    void revokeGroup_retains_key_epoch_but_updates_liveness_to_revoked() {
         sv.sign("d1", BasicConfigurer.builder().groupId("g1").sequenceId("ses-A").validity(600).build());
         sv.sign("d2", BasicConfigurer.builder().groupId("g1").sequenceId("ses-B").validity(600).build());
         sv.sign("d3", BasicConfigurer.builder().groupId("g1").sequenceId("ses-C").validity(600).build());
@@ -122,8 +122,12 @@ class RevocationTest {
 
         sv.revoke("g1", null);
 
-        assertFalse(hasKeyEpoch("g1", "ses-A"), "ses-A must be physically deleted after revokeGroup");
-        assertFalse(hasKeyEpoch("g1", "ses-B"), "ses-B must be physically deleted after revokeGroup");
-        assertFalse(hasKeyEpoch("g1", "ses-C"), "ses-C must be physically deleted after revokeGroup");
+        assertTrue(hasKeyEpoch("g1", "ses-A"), "ses-A must NOT be physically deleted after revokeGroup");
+        assertTrue(hasKeyEpoch("g1", "ses-B"), "ses-B must NOT be physically deleted after revokeGroup");
+        assertTrue(hasKeyEpoch("g1", "ses-C"), "ses-C must NOT be physically deleted after revokeGroup");
+
+        assertFalse(getLivenessPayload("g1", "ses-A").isActive());
+        assertFalse(getLivenessPayload("g1", "ses-B").isActive());
+        assertFalse(getLivenessPayload("g1", "ses-C").isActive());
     }
 }

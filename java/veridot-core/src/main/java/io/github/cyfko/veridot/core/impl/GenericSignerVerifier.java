@@ -34,6 +34,8 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
 
     // Delegates
     private final KeyRotationService keyRotationService;
+    final ReconciliationManager reconciliationManager = new ReconciliationManager();
+    final CapabilityVerifier capabilityVerifier = new CapabilityVerifier();
     private final EntryPublisher entryPublisher = new EntryPublisher();
     private final ConfigResolver configResolver = new ConfigResolver();
     private final LivenessChecker livenessChecker = new LivenessChecker();
@@ -45,16 +47,25 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
 
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
     private final ConcurrentHashMap<String, Object> groupLocks = new ConcurrentHashMap<>();
+    private final long reconciliationIntervalMinutes;
 
     // ═══ Constructeur V4 (recommandé) ═══
     public GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String issuerId, 
                                  PrivateKey longTermKey, byte envelopeSigAlg) {
-        this(broker, trustRoot, issuerId, longTermKey, envelopeSigAlg, -1, EvictionPolicy.FIFO);
+        this(broker, trustRoot, issuerId, longTermKey, envelopeSigAlg, -1, EvictionPolicy.FIFO, Config.RECONCILIATION_INTERVAL_MINUTES);
     }
 
     public GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String issuerId, 
                                  PrivateKey longTermKey, byte envelopeSigAlg,
                                  int maxSessions, EvictionPolicy policy) {
+        this(broker, trustRoot, issuerId, longTermKey, envelopeSigAlg, maxSessions, policy, Config.RECONCILIATION_INTERVAL_MINUTES);
+    }
+
+    // Constructor package-private for test override
+    GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String issuerId, 
+                          PrivateKey longTermKey, byte envelopeSigAlg,
+                          int maxSessions, EvictionPolicy policy,
+                          long reconciliationIntervalMinutesOverride) {
         if (broker == null) throw new IllegalArgumentException("Broker cannot be null");
         if (trustRoot == null) throw new IllegalArgumentException("TrustRoot cannot be null");
         if (issuerId == null || issuerId.isBlank()) throw new IllegalArgumentException("issuerId cannot be null or blank");
@@ -66,6 +77,7 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         this.signerId = issuerId;
         this.longTermPrivateKey = longTermKey;
         this.envelopeSigAlg = envelopeSigAlg;
+        this.reconciliationIntervalMinutes = reconciliationIntervalMinutesOverride;
 
         this.defaultConfig = new ConfigPayload(
             maxSessions == -1 ? OptionalInt.empty() : OptionalInt.of(maxSessions),
@@ -80,8 +92,6 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         this.keyRotationService = new KeyRotationService(ephemeralAlg);
         this.livenessManager = new LivenessManager(entryPublisher, broker, longTermKey, envelopeSigAlg, issuerId);
     }
-
-
 
     @Override
     public String sign(Object data, Configurer configurer) throws DataSerializationException {
@@ -108,6 +118,9 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
 
         Object groupLock = groupLocks.computeIfAbsent(groupId, k -> new Object());
         synchronized (groupLock) {
+            // V4-01: garantir qu'une réconciliation périodique tourne pour ce scope de groupe
+            ensureReconciliationStarted(scope);
+
             // Resolve siteId from active sessions if any
             String siteId = null;
             try {
@@ -124,8 +137,7 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             } catch (Exception ignored) {}
 
             // 1. Resolve Config
-            CapabilityVerifier capVerifier = new CapabilityVerifier();
-            ConfigPayload config = configResolver.resolve(scope, siteId, broker, trustRoot, capVerifier, watermark);
+            ConfigPayload config = configResolver.resolve(scope, siteId, broker, trustRoot, capabilityVerifier, watermark);
             if (config == null) {
                 config = defaultConfig;
             }
@@ -216,9 +228,8 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             EntryId keyEpochId = new EntryId(scope, EntryType.KEY_EPOCH, sequenceId);
 
             // Run verification pipeline (Steps 1-7)
-            CapabilityVerifier capVerifier = new CapabilityVerifier();
             KeyEpochPayload epochPayload = entryVerifier.verifyKeyEpoch(
-                keyEpochId, broker, trustRoot, watermark, capVerifier, livenessChecker, System.currentTimeMillis()
+                keyEpochId, broker, trustRoot, watermark, capabilityVerifier, livenessChecker, System.currentTimeMillis()
             );
 
             String resolvedJwt = jwtToken;
@@ -266,29 +277,21 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
 
         Scope scope = Scope.group(groupId);
         long now = System.currentTimeMillis();
+        ensureReconciliationStarted(scope);
 
         try {
             if (sequenceId == null) {
                 // Revoke all active sessions in V4
-                CapabilityVerifier capVerifier = new CapabilityVerifier();
                 List<SessionCounter.SessionInfo> active = sessionCounter.listActive(scope, broker, trustRoot, watermark, livenessChecker, now);
                 for (SessionCounter.SessionInfo session : active) {
                     EntryId liveEntryId = new EntryId(scope, EntryType.LIVENESS, session.sessionKey());
                     livenessManager.publishRevoked(liveEntryId, watermark);
                     livenessManager.stopRenewalLoop(liveEntryId);
-
-                    // Physically delete KEY_EPOCH from broker
-                    EntryId keyEpochId = new EntryId(scope, EntryType.KEY_EPOCH, session.sessionKey());
-                    broker.put(keyEpochId.storageKey(), new byte[0]).join();
                 }
             } else {
                 EntryId liveEntryId = new EntryId(scope, EntryType.LIVENESS, sequenceId);
                 livenessManager.publishRevoked(liveEntryId, watermark);
                 livenessManager.stopRenewalLoop(liveEntryId);
-
-                // Physically delete KEY_EPOCH from broker
-                EntryId keyEpochId = new EntryId(scope, EntryType.KEY_EPOCH, sequenceId);
-                broker.put(keyEpochId.storageKey(), new byte[0]).join();
             }
         } catch (Exception e) {
             logger.severe("Failed to revoke target/group: " + e.getMessage());
@@ -318,6 +321,8 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             case GLOBAL -> Scope.global();
         };
 
+        ensureReconciliationStarted(targetScope);
+
         long now = System.currentTimeMillis();
         long version = Math.max(watermark.current(new EntryId(targetScope, EntryType.CONFIG, "")) + 1, 1);
 
@@ -332,9 +337,8 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
 
         try {
             // Verify our own capability before publishing config (§7.4)
-            CapabilityVerifier capVerifier = new CapabilityVerifier();
             if (!trustRoot.isRootIdentity(signerId)) {
-                capVerifier.assertAuthorized(signerId, targetScope, broker, trustRoot);
+                capabilityVerifier.assertAuthorized(signerId, targetScope, broker, trustRoot);
             }
 
             entryPublisher.publish(EntryType.CONFIG, targetScope, "", version, payload.encode(), longTermPrivateKey, envelopeSigAlg, signerId, broker)
@@ -356,13 +360,11 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         }
 
         long now = System.currentTimeMillis();
-        CapabilityVerifier capVerifier = new CapabilityVerifier();
-
         if (Protocol.isMessageId(s)) {
             String[] parts = Protocol.parseMessageId(s);
             EntryId liveEntryId = new EntryId(Scope.group(parts[1]), EntryType.LIVENESS, parts[2]);
             try {
-                livenessChecker.assertLive(liveEntryId, broker, trustRoot, watermark, capVerifier, now);
+                livenessChecker.assertLive(liveEntryId, broker, trustRoot, watermark, capabilityVerifier, now);
                 return true;
             } catch (Exception e) {
                 return false;
@@ -385,6 +387,25 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         }
     }
 
+    private final java.util.Set<Scope> reconciledScopes = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    private void ensureReconciliationStarted(Scope scope) {
+        if (reconciledScopes.add(scope)) {
+            reconciliationManager.startPeriodicReconciliation(
+                scope,
+                java.time.Duration.ofMinutes(reconciliationIntervalMinutes),
+                scheduler,
+                broker,
+                watermark,
+                trustRoot,
+                entryPublisher,
+                signerId,
+                longTermPrivateKey,
+                envelopeSigAlg
+            );
+        }
+    }
+
     @Override
     public void close() {
         if (keyRotationService != null) {
@@ -392,6 +413,9 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         }
         if (livenessManager != null) {
             livenessManager.stopAll();
+        }
+        if (reconciliationManager != null) {
+            reconciliationManager.close();
         }
         scheduler.shutdownNow();
     }

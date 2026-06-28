@@ -34,6 +34,19 @@ class SessionCapacityTest {
         }
     }
 
+    private boolean hasActiveLiveness(String groupId, String sessionKey) {
+        EntryId id = new EntryId(Scope.group(groupId), EntryType.LIVENESS, sessionKey);
+        byte[] bytes = broker.get(id.storageKey());
+        if (bytes == null) return false;
+        try {
+            Envelope env = Envelope.parse(bytes);
+            LivenessPayload payload = LivenessPayload.decode(env.payload);
+            return payload.isActive();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     @Test
     void maxSessions_fifo_evicts_oldest() throws InterruptedException {
         var sv = trust.newSignerVerifier(broker, 2, EvictionPolicy.FIFO);
@@ -118,7 +131,7 @@ class SessionCapacityTest {
 
         assertTrue(hasKeyEpoch("u1", "s2"), "s2 must still be active");
         assertTrue(hasKeyEpoch("u1", "s3"), "s3 must be active");
-        assertFalse(hasKeyEpoch("u1", "s1"), "s1 must remain revoked");
+        assertFalse(hasActiveLiveness("u1", "s1"), "s1 must remain revoked");
     }
 
     @Test

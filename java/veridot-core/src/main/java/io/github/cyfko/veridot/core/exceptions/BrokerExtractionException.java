@@ -2,7 +2,7 @@ package io.github.cyfko.veridot.core.exceptions;
 
 /**
  * Thrown when verification metadata for a token cannot be retrieved from the
- * {@link io.github.cyfko.veridot.core.MetadataBroker}, or when the metadata is present
+ * {@link io.github.cyfko.veridot.core.Broker}, or when the metadata is present
  * but the token fails validation.
  *
  * <p>Common causes include:</p>
@@ -14,7 +14,7 @@ package io.github.cyfko.veridot.core.exceptions;
  *       (e.g., the token was issued against a different broker)</li>
  *   <li>Clock drift between the signing service and the verifying service exceeds
  *       the allowed threshold (default: ±5 minutes)</li>
- *   <li>The token format is unrecognized (neither a valid signed token nor a Protocol V3
+ *   <li>The token format is unrecognized (neither a valid signed token nor a Protocol V4
  *       {@code messageId})</li>
  * </ul>
  *

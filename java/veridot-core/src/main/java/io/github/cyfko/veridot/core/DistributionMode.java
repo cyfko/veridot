@@ -23,7 +23,7 @@ public enum DistributionMode {
      * The signed token is returned directly to the caller.
      *
      * <p>The token is self-contained: it embeds the payload and can be used directly
-     * for verification by any service that has access to the same {@link MetadataBroker}.
+     * for verification by any service that has access to the same {@link Broker}.
      * This is the default mode and the most common choice for API authentication flows.</p>
      *
      * <h4>Example</h4>
@@ -40,11 +40,11 @@ public enum DistributionMode {
     DIRECT,
 
     /**
-     * The signed token is stored in the {@link MetadataBroker}; only a compact
+     * The signed token is stored in the {@link Broker}; only a compact
      * {@code messageId} is returned to the caller.
      *
      * <p>The {@code messageId} has the form {@code <version>:<groupId>:<sequenceId>}
-     * (e.g., {@code "2:user-123:session-A"}). It is used by the verifier to fetch the
+     * (e.g., {@code "4:user-123:session-A"}). It is used by the verifier to fetch the
      * actual token from the broker at verification time. This mode is useful when
      * token size is a concern, or when the payload is sensitive and should not leave
      * the broker boundary.</p>
@@ -57,7 +57,7 @@ public enum DistributionMode {
      *         .distribution(DistributionMode.INDIRECT)
      *         .validity(300)
      *         .build());
-     * // messageId → "2:service-X:<uuid>", safe to pass as an opaque reference
+     * // messageId → "4:service-X:<uuid>", safe to pass as an opaque reference
      * }</pre>
      */
     INDIRECT

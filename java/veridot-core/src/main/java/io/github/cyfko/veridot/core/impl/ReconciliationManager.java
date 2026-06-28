@@ -130,4 +130,9 @@ final class ReconciliationManager implements AutoCloseable {
             stopPeriodicReconciliation(scope);
         }
     }
+
+    // Visible for testing
+    int tasksCountForTest() {
+        return tasks.size();
+    }
 }

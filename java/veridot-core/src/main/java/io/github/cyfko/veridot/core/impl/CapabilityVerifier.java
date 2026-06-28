@@ -44,10 +44,10 @@ final class CapabilityVerifier {
 
         try {
             checkCapabilityChain(issuer, scope, siteId, 0, broker, trustRoot, now);
-            // Cache success for up to 60 seconds
-            cache.put(cacheKey, new CacheEntry(true, now + 60000));
+            // Cache success for up to configured TTL
+            cache.put(cacheKey, new CacheEntry(true, now + Config.CAPABILITY_CACHE_TTL_SECONDS * 1000L));
         } catch (VeridotException e) {
-            cache.put(cacheKey, new CacheEntry(false, now + 5000)); // Cache failure for 5 seconds to prevent hammer
+            cache.put(cacheKey, new CacheEntry(false, now + Config.CAPABILITY_NEGATIVE_CACHE_TTL_SECONDS * 1000L)); // Cache failure to prevent hammer
             throw e;
         }
     }
@@ -130,5 +130,21 @@ final class CapabilityVerifier {
         }
 
         return totalDepth;
+    }
+
+    public void invalidateAuthorization(String issuer, Scope scope) {
+        if (issuer == null || scope == null) return;
+        String prefix = issuer + "\0" + scope.value() + "\0";
+        cache.keySet().removeIf(key -> key.startsWith(prefix));
+    }
+
+    public void invalidateAuthorizationsForIssuer(String issuer) {
+        if (issuer == null) return;
+        String prefix = issuer + "\0";
+        cache.keySet().removeIf(key -> key.startsWith(prefix));
+    }
+
+    public void clearCache() {
+        cache.clear();
     }
 }
