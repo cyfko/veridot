@@ -74,6 +74,16 @@ La hiérarchie `sealed` de `TrustResolutionException` force un traitement explic
 
 > **⚠️ Critique** : une erreur `Unavailable` ne doit **jamais** être silencieusement catchée et traitée comme « impossible à vérifier → accepter quand même ». Ce pattern réduirait le TrustAnchor à un no-op sous une défaillance d'infrastructure — exactement la fenêtre qu'un attaquant exploiterait.
 
+### 1.4 Implémenter TrustRoot de manière sécurisée (Invariants V4)
+
+Pour garantir la robustesse du protocole Veridot, toute implémentation personnalisée de `TrustRoot` doit se conformer strictement aux invariants suivants :
+
+1. **Déterminisme et contrôle de `isRootIdentity(issuer)`** : La fonction déterminant si une identité est racine doit être basée sur des critères statiques, configurés au déploiement. Toute identité renvoyée comme racine contourne la chaîne d'autorisation `CapabilityVerifier` (profondeur de délégation 0). Une faille dans cette méthode expose l'intégralité du système.
+2. **Fail-closed pour `resolve(issuer)`** : Dans `PublicKeyTrustRoot`, si un émetteur est inconnu, l'implémentation doit lever une exception plutôt que de retourner une valeur nulle ou par défaut. `SignatureVerifier` rejette le token en cas d'exception, garantissant ainsi l'isolation stricte des émetteurs.
+3. **Fail-closed pour `verifySignature`** : Dans `DelegatedTrustRoot`, toute exception interne (timeout KMS, erreur réseau) doit se traduire par un retour `false` ou la propagation d'une exception non-interceptée. Ne renvoyez jamais `true` par défaut lors d'une défaillance d'infrastructure.
+4. **Idempotence et double validation lors de la rotation** : La résolution de clé doit être idempotente pour un émetteur donné pendant la durée de vie du processus de vérification. Lors d'une rotation de clé long-terme, la configuration doit supporter temporairement l'ancienne et la nouvelle clé publique pour éviter toute rupture de service.
+5. **Préférence pour les implémentations auditées** : Il est fortement recommandé d'utiliser une source de clés publiques statique signée (type JWKS) plutôt que de réimplémenter des mécanismes de transport réseau complexes sujet aux injections ou aux timeouts.
+
 ---
 
 ## 2. Fondations cryptographiques
