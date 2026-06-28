@@ -7,14 +7,14 @@ package io.github.cyfko.veridot.core.exceptions;
  *
  * <p>This exception will only occur when the {@code GenericSignerVerifier} has been constructed
  * with a positive {@code maxSessions} limit and the
- * {@link io.github.cyfko.veridot.core.impl.EvictionPolicy#REJECT REJECT}
+ * {@link io.github.cyfko.veridot.core.EvictionPolicy#REJECT REJECT}
  * eviction policy. With other policies (FIFO, LIFO, LRU), the oldest or newest session is
  * evicted automatically to make room for the new one.</p>
  *
  * <h2>Example</h2>
  * <pre>{@code
  * // Allow at most 2 concurrent sessions; reject any 3rd attempt
- * var sv = new GenericSignerVerifier(broker, trustAnchor, "my-signer", longTermKey, 2, EvictionPolicy.REJECT);
+ * var sv = new GenericSignerVerifier(broker, trustRoot, "my-signer", longTermKey, 2, EvictionPolicy.REJECT);
  *
  * sv.sign("payload", BasicConfigurer.builder().groupId("user-1").validity(3600).build());
  * sv.sign("payload", BasicConfigurer.builder().groupId("user-1").validity(3600).build());
@@ -24,7 +24,7 @@ package io.github.cyfko.veridot.core.exceptions;
  *
  * @author Frank KOSSI
  * @since 2.0.0
- * @see io.github.cyfko.veridot.core.impl.EvictionPolicy
+ * @see io.github.cyfko.veridot.core.EvictionPolicy
  */
 public class SessionCapacityExceededException extends VeridotException {
 

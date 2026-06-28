@@ -3,10 +3,13 @@ package io.github.cyfko.veridot.core;
 /**
  * Contract for invalidating previously issued tokens.
  *
- * <p>Revocation is expressed in terms of Protocol V3 identifiers ({@code groupId} and
+ * <p>Revocation is expressed in terms of Protocol V4 identifiers ({@code groupId} and
  * {@code sequenceId}) rather than opaque token strings, ensuring that the revocation is
- * broker-centric — any service sharing the same {@link MetadataBroker} will immediately
- * stop accepting the revoked token, regardless of which service issued it.</p>
+ * broker-centric. Revocation takes effect for any verifier instance as soon as it observes
+ * the published {@code LIVENESS=REVOKED} entry from the broker. This is not instantaneous in a
+ * distributed deployment: see {@code io.github.cyfko.veridot.core.impl.Config#RECONCILIATION_INTERVAL_MINUTES}
+ * for the bound on cross-instance watermark staleness, and note that broker read consistency is
+ * an operational assumption of this guarantee, not one enforced by this library alone.</p>
  *
  * <p>Two revocation scopes are supported:</p>
  * <ul>
@@ -17,7 +20,7 @@ package io.github.cyfko.veridot.core;
  *
  * <h2>Typical usage</h2>
  * <pre>{@code
- * TokenRevoker revoker = new GenericSignerVerifier(broker, trustAnchor, "my-signer", longTermKey);
+ * TokenRevoker revoker = new GenericSignerVerifier(broker, trustRoot, "my-signer", longTermKey);
  *
  * // Revoke a specific session (obtained from VerifiedData after verification)
  * revoker.revoke("user-123", "session-A");

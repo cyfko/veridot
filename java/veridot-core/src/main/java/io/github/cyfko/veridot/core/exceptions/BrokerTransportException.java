@@ -2,7 +2,7 @@ package io.github.cyfko.veridot.core.exceptions;
 
 /**
  * Thrown when verification metadata cannot be published to the
- * {@link io.github.cyfko.veridot.core.MetadataBroker} due to a transport-level failure.
+ * {@link io.github.cyfko.veridot.core.Broker} due to a transport-level failure.
  *
  * <p>This exception occurs at <em>signing time</em>, when
  * {@link io.github.cyfko.veridot.core.DataSigner#sign DataSigner.sign()} attempts to push
@@ -22,7 +22,7 @@ package io.github.cyfko.veridot.core.exceptions;
  * @author Frank KOSSI
  * @since 1.0.0
  * @see io.github.cyfko.veridot.core.DataSigner#sign
- * @see io.github.cyfko.veridot.core.MetadataBroker#send
+ * @see io.github.cyfko.veridot.core.Broker#put
  */
 public class BrokerTransportException extends VeridotException {
 
