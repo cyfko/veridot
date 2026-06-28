@@ -122,7 +122,7 @@ function applyTranslations() {
     searchInput.placeholder = t.searchPlaceholder;
     document.getElementById("nav-title-getting-started").textContent = t.navTitleGettingStarted;
     document.getElementById("nav-title-core-concepts").textContent = t.navTitleCoreConcepts;
-    document.getElementById("nav-title-devGuides").textContent = t.navTitleDevGuides;
+    document.getElementById("nav-title-developer-guides").textContent = t.navTitleDevGuides;
     document.getElementById("toc-title-text").textContent = t.tocTitleText;
     
     // Menu links
