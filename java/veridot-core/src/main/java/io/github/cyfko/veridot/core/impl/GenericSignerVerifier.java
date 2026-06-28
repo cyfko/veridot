@@ -277,18 +277,17 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
                     livenessManager.publishRevoked(liveEntryId, watermark);
                     livenessManager.stopRenewalLoop(liveEntryId);
 
-                    // Physically delete KEY_EPOCH from broker
-                    EntryId keyEpochId = new EntryId(scope, EntryType.KEY_EPOCH, session.sessionKey());
-                    broker.put(keyEpochId.storageKey(), new byte[0]).join();
+                    // V4-02: la suppression physique du KEY_EPOCH a été retirée — elle était redondante
+                    // et non conforme au modèle d'enveloppe signée du protocole. La révocation est
+                    // pleinement effective via LIVENESS=REVOKED, vérifié obligatoirement par
+                    // EntryVerifier.verifyKeyEpoch / LivenessChecker.assertLive avant toute acceptation.
                 }
             } else {
                 EntryId liveEntryId = new EntryId(scope, EntryType.LIVENESS, sequenceId);
                 livenessManager.publishRevoked(liveEntryId, watermark);
                 livenessManager.stopRenewalLoop(liveEntryId);
 
-                // Physically delete KEY_EPOCH from broker
-                EntryId keyEpochId = new EntryId(scope, EntryType.KEY_EPOCH, sequenceId);
-                broker.put(keyEpochId.storageKey(), new byte[0]).join();
+                // V4-02: voir commentaire équivalent ci-dessus.
             }
         } catch (Exception e) {
             logger.severe("Failed to revoke target/group: " + e.getMessage());
