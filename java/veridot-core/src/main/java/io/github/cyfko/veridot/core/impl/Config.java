@@ -4,11 +4,13 @@ package io.github.cyfko.veridot.core.impl;
 abstract class ConstantDefault {
     static final long KEYS_ROTATION_MINUTES = 1440; // 24 hours
     static final int  ASYMMETRIC_KEY_SIZE   = 3072;  // RSA-3072 (NIST recommendation post-2030)
+    static final long RECONCILIATION_INTERVAL_MINUTES = 15;
 }
 
 /// Defines environment variable names.
 abstract class Env {
     static final String KEYS_ROTATION_MINUTES = "VDOT_KEYS_ROTATION_MINUTES";
+    static final String RECONCILIATION_INTERVAL_MINUTES = "VDOT_RECONCILIATION_INTERVAL_MINUTES";
 }
 
 /**
@@ -25,6 +27,8 @@ abstract class Env {
  *   <tr><th>Variable</th><th>Constant</th><th>Default</th></tr>
  *   <tr><td>{@code VDOT_KEYS_ROTATION_MINUTES}</td>
  *       <td>{@link #KEYS_ROTATION_MINUTES}</td><td>1440 (24 h)</td></tr>
+ *   <tr><td>{@code VDOT_RECONCILIATION_INTERVAL_MINUTES}</td>
+ *       <td>{@link #RECONCILIATION_INTERVAL_MINUTES}</td><td>15 (15 min)</td></tr>
  * </table>
  *
  * @author Frank KOSSI
@@ -39,8 +43,8 @@ public abstract class Config {
     /**
      * Protocol version implemented by this library.
      *
-     * <p>This value corresponds to the version prefix embedded in every Protocol V3
-     * {@code messageId} (e.g., {@code "3:user-123:session-A"}).</p>
+     * <p>This value corresponds to the version prefix embedded in every Protocol V4
+     * {@code messageId} (e.g., {@code "4:user-123:session-A"}).</p>
      */
     public static final int PROTOCOL_VERSION = Protocol.VERSION;
 
@@ -52,6 +56,15 @@ public abstract class Config {
      * but invalidates tokens signed with the previous key sooner.</p>
      */
     public static final long KEYS_ROTATION_MINUTES;
+
+    /**
+     * The interval in minutes between automatic VersionWatermark periodic reconciliations against the broker.
+     *
+     * <p>Override with the {@code VDOT_RECONCILIATION_INTERVAL_MINUTES} environment variable.
+     * Default is {@code 15} minutes. Reducing this value reduces the cross-instance watermark propagation
+     * latency window, at the cost of more frequent {@code broker.snapshot()} query calls.</p>
+     */
+    public static final long RECONCILIATION_INTERVAL_MINUTES;
 
     /**
      * The asymmetric algorithm used to generate signing key pairs.
@@ -115,5 +128,27 @@ public abstract class Config {
             }
         }
         KEYS_ROTATION_MINUTES = parsedRotation;
+
+        long parsedReconciliation = ConstantDefault.RECONCILIATION_INTERVAL_MINUTES;
+        final var reconciliationRate = System.getenv(Env.RECONCILIATION_INTERVAL_MINUTES);
+        if (reconciliationRate != null) {
+            try {
+                long parsed = Long.parseLong(reconciliationRate);
+                if (parsed >= 1) {
+                    parsedReconciliation = parsed;
+                } else {
+                    System.getLogger(Config.class.getName()).log(
+                            System.Logger.Level.WARNING,
+                            "Ignoring invalid " + Env.RECONCILIATION_INTERVAL_MINUTES + "=" + parsed
+                                    + " (must be >= 1). Using default: " + ConstantDefault.RECONCILIATION_INTERVAL_MINUTES);
+                }
+            } catch (NumberFormatException e) {
+                System.getLogger(Config.class.getName()).log(
+                        System.Logger.Level.WARNING,
+                        "Ignoring non-numeric " + Env.RECONCILIATION_INTERVAL_MINUTES + "='" + reconciliationRate
+                                + "'. Using default: " + ConstantDefault.RECONCILIATION_INTERVAL_MINUTES);
+            }
+        }
+        RECONCILIATION_INTERVAL_MINUTES = parsedReconciliation;
     }
 }
