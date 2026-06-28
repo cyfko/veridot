@@ -296,6 +296,8 @@ public abstract class Config {
                     parsedAlgs.add((byte) 0x01);
                 } else if (clean.equals("ED25519") || clean.equals("EDDSA") || clean.equals("2") || clean.equals("0X02")) {
                     parsedAlgs.add((byte) 0x02);
+                } else if (clean.equals("RSA-PSS") || clean.equals("3") || clean.equals("0X03")) {
+                    parsedAlgs.add((byte) 0x03);
                 } else {
                     System.getLogger(Config.class.getName()).log(
                             System.Logger.Level.WARNING,
@@ -306,6 +308,7 @@ public abstract class Config {
         if (parsedAlgs.isEmpty()) {
             parsedAlgs.add((byte) 0x01);
             parsedAlgs.add((byte) 0x02);
+            parsedAlgs.add((byte) 0x03);
         }
         ALLOWED_SIG_ALGS = Collections.unmodifiableSet(parsedAlgs);
 

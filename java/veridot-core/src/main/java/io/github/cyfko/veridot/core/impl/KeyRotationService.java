@@ -21,7 +21,7 @@ public final class KeyRotationService {
     }
 
     public KeyRotationService(byte alg) {
-        if (alg != 0x01 && alg != 0x02) {
+        if (alg != 0x01 && alg != 0x02 && alg != 0x03) {
             throw new IllegalArgumentException("Unsupported ephemeral key algorithm: " + alg);
         }
         this.alg = alg;
@@ -38,7 +38,7 @@ public final class KeyRotationService {
     private void generateKeyPair() {
         try {
             KeyPairGenerator gen;
-            if (alg == 0x01) {
+            if (alg == 0x01 || alg == 0x03) {
                 gen = KeyPairGenerator.getInstance("RSA");
                 gen.initialize(Config.ASYMMETRIC_KEY_SIZE, new SecureRandom());
             } else {
@@ -50,7 +50,7 @@ public final class KeyRotationService {
             // F-04: capture atomically as a single record
             this.currentSnapshot = new KeySnapshot(keyPair.getPrivate(), keyPair.getPublic(), alg);
 
-            logger.info("Ephemeral key pair rotated successfully. Algorithm: " + (alg == 0x01 ? "RSA" : "EC") 
+            logger.info("Ephemeral key pair rotated successfully. Algorithm: " + (alg == 0x02 ? "EC" : "RSA") 
                         + " on thread: " + Thread.currentThread().getName());
         } catch (NoSuchAlgorithmException e) {
             logger.severe("CRITICAL: Failed to generate ephemeral key pair: " + e.getMessage());

@@ -54,7 +54,7 @@ final class SignatureVerifier {
 
         // 3. Verify key type consistency and constraints
         String keyAlg = publicKey.getAlgorithm();
-        if (envelope.sigAlg == 0x01) { // RSA-SHA256
+        if (envelope.sigAlg == 0x01 || envelope.sigAlg == 0x03) { // RSA-SHA256 or RSA-PSS
             if (!"RSA".equalsIgnoreCase(keyAlg)) {
                 throw new VeridotException(ErrorCode.SIGALG_KEY_MISMATCH, envelope.entryId().loggable(), "RSA signature requires an RSA key, got: " + keyAlg);
             }
@@ -78,6 +78,8 @@ final class SignatureVerifier {
             Signature sig;
             if (envelope.sigAlg == 0x01) {
                 sig = Signature.getInstance("SHA256withRSA");
+            } else if (envelope.sigAlg == 0x03) {
+                sig = Signature.getInstance("SHA256withRSA/PSS");
             } else {
                 sig = Signature.getInstance("Ed25519");
             }

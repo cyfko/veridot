@@ -295,4 +295,86 @@ public class CoreUnitTest {
             assertEquals(ErrorCode.RECONCILIATION_STALE, ex.getErrorCode());
         }
     }
+
+    @Test
+    public void testRsaPssSignatureVerification() throws Exception {
+        KeyPairGenerator gen = KeyPairGenerator.getInstance("RSA");
+        gen.initialize(2048);
+        KeyPair kp = gen.generateKeyPair();
+
+        TrustRoot trustRoot = issuer -> {
+            if ("issuer-pss".equals(issuer)) {
+                return kp.getPublic();
+            }
+            return null;
+        };
+
+        Envelope env = new Envelope(
+                Envelope.PROTO_VERSION,
+                (byte) 0x01, // KEY_EPOCH
+                (byte) 0x00, // flags
+                "group:g1",
+                "k1",
+                1L,
+                System.currentTimeMillis(),
+                "issuer-pss",
+                new byte[] { 0x01, 0x02 },
+                (byte) 0x03, // RSA-PSS
+                null
+        );
+
+        // Sign the envelope
+        Signature sig = Signature.getInstance("SHA256withRSA/PSS");
+        sig.initSign(kp.getPrivate());
+        sig.update(env.canonicalSigningBytes());
+        byte[] signature = sig.sign();
+
+        Envelope signedEnv = new Envelope(
+                env.protoVersion,
+                env.entryType,
+                env.flags,
+                env.scope.toString(),
+                env.key,
+                env.version,
+                env.timestamp,
+                env.issuer,
+                env.payload,
+                env.sigAlg,
+                signature
+        );
+
+        SignatureVerifier verifier = new SignatureVerifier();
+        // Should verify without exception
+        verifier.verify(signedEnv, trustRoot);
+    }
+
+    @Test
+    public void testRsaPssEphemeralSignature() throws Exception {
+        io.github.cyfko.veridot.core.InMemoryBroker inMemoryBroker = new io.github.cyfko.veridot.core.InMemoryBroker();
+        TrustRoot trustRoot = issuer -> {
+            if ("issuer-rsa".equals(issuer)) {
+                return rsaKeyPair.getPublic();
+            }
+            return null;
+        };
+
+        // Create SignerVerifier with RSA-PSS (0x03) for ephemeral algorithm
+        try (GenericSignerVerifier sv = new GenericSignerVerifier(
+                inMemoryBroker,
+                trustRoot,
+                "issuer-rsa",
+                rsaKeyPair.getPrivate(),
+                (byte) 0x03, // Ephemeral alg = RSA-PSS
+                -1,
+                EvictionPolicy.FIFO,
+                60,
+                null
+        )) {
+            String token = sv.sign("data", BasicConfigurer.builder().groupId("group1").sequenceId("sessionA").validity(600).build());
+            
+            // Verify should succeed using PSS verification internally
+            String verified = sv.verify(token, s -> s);
+            assertEquals("data", verified);
+        }
+    }
 }
