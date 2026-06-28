@@ -66,7 +66,8 @@ public class KafkaBroker implements Broker, AutoCloseable {
         this.properties.setProperty(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
         
         try {
-            this.options = new Options().setCreateIfMissing(true);
+            this.options = new Options();
+            this.options.setCreateIfMissing(true);
             this.db = RocksDB.open(options, this.properties.getProperty(VerifierConfig.EMBEDDED_DB_PATH_CONFIG));
             
             this.producer = new KafkaProducer<>(this.properties);

@@ -104,47 +104,48 @@ class ConfigTrustSecurityTest {
             }
         };
 
-        var sv = new GenericSignerVerifier(broker, badTrustRoot, trust.signerId, trust.longTermKeyPair.getPrivate(), (byte) 0x01);
+        try (var sv = new GenericSignerVerifier(broker, badTrustRoot, trust.signerId, trust.longTermKeyPair.getPrivate(), (byte) 0x01)) {
 
-        // Publish a config signed with a valid signature format
-        long now = System.currentTimeMillis();
-        EntryId configId = new EntryId(Scope.group("group1"), EntryType.CONFIG, "");
-        ConfigPayload payload = new ConfigPayload(OptionalInt.of(1), (byte) 0x04, OptionalLong.empty(), Optional.empty(), Optional.empty(), OptionalLong.of(3600000L));
-        
-        EnvelopeBuilder builder = new EnvelopeBuilder()
-            .entryType(EntryType.CONFIG)
-            .flags((byte) 0x00)
-            .scope(Scope.group("group1"))
-            .key("")
-            .version(1L)
-            .timestamp(now)
-            .issuer(trust.signerId)
-            .payload(payload.encode())
-            .sigAlg((byte) 0x01);
+            // Publish a config signed with a valid signature format
+            long now = System.currentTimeMillis();
+            EntryId configId = new EntryId(Scope.group("group1"), EntryType.CONFIG, "");
+            ConfigPayload payload = new ConfigPayload(OptionalInt.of(1), (byte) 0x04, OptionalLong.empty(), Optional.empty(), Optional.empty(), OptionalLong.of(3600000L));
+            
+            EnvelopeBuilder builder = new EnvelopeBuilder()
+                .entryType(EntryType.CONFIG)
+                .flags((byte) 0x00)
+                .scope(Scope.group("group1"))
+                .key("")
+                .version(1L)
+                .timestamp(now)
+                .issuer(trust.signerId)
+                .payload(payload.encode())
+                .sigAlg((byte) 0x01);
 
-        // Sign it with valid long term key
-        try {
-            Signature sig = Signature.getInstance("SHA256withRSA");
-            sig.initSign(trust.longTermKeyPair.getPrivate());
-            Envelope tempEnv = new Envelope(Envelope.PROTO_VERSION, EntryType.CONFIG, (byte) 0x00, Scope.group("group1"), "", 1L, now, trust.signerId, payload.encode(), (byte) 0x01, new byte[0]);
-            sig.update(tempEnv.canonicalSigningBytes());
-            byte[] signature = sig.sign();
-            byte[] encoded = Envelope.encode(builder, signature);
-            broker.put(configId.storageKey(), encoded).join();
-        } catch (Exception e) {
-            throw new RuntimeException(e);
+            // Sign it with valid long term key
+            try {
+                Signature sig = Signature.getInstance("SHA256withRSA");
+                sig.initSign(trust.longTermKeyPair.getPrivate());
+                Envelope tempEnv = new Envelope(Envelope.PROTO_VERSION, EntryType.CONFIG, (byte) 0x00, Scope.group("group1"), "", 1L, now, trust.signerId, payload.encode(), (byte) 0x01, new byte[0]);
+                sig.update(tempEnv.canonicalSigningBytes());
+                byte[] signature = sig.sign();
+                byte[] encoded = Envelope.encode(builder, signature);
+                broker.put(configId.storageKey(), encoded).join();
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+
+            // Sign a session. It should not throw because badTrustRoot throwing on config check
+            // should be caught and fallback to default (unlimited), not throw.
+            assertDoesNotThrow(() -> {
+                sv.sign("d1", BasicConfigurer.builder().groupId("group1").sequenceId("s1").validity(600).build());
+                Thread.sleep(100);
+                sv.sign("d2", BasicConfigurer.builder().groupId("group1").sequenceId("s2").validity(600).build());
+            });
+
+            assertTrue(hasKeyEpoch("group1", "s1"));
+            assertTrue(hasKeyEpoch("group1", "s2"));
         }
-
-        // Sign a session. It should not throw because badTrustRoot throwing on config check
-        // should be caught and fallback to default (unlimited), not throw.
-        assertDoesNotThrow(() -> {
-            sv.sign("d1", BasicConfigurer.builder().groupId("group1").sequenceId("s1").validity(600).build());
-            Thread.sleep(100);
-            sv.sign("d2", BasicConfigurer.builder().groupId("group1").sequenceId("s2").validity(600).build());
-        });
-
-        assertTrue(hasKeyEpoch("group1", "s1"));
-        assertTrue(hasKeyEpoch("group1", "s2"));
     }
 
     @Test
@@ -199,41 +200,42 @@ class ConfigTrustSecurityTest {
             }
         };
 
-        var sv = new GenericSignerVerifier(broker, authRoot, trust.signerId, trust.longTermKeyPair.getPrivate(), (byte) 0x01);
+        try (var sv = new GenericSignerVerifier(broker, authRoot, trust.signerId, trust.longTermKeyPair.getPrivate(), (byte) 0x01)) {
 
-        // Publish config for group-denied directly to broker
-        try {
-            long now = System.currentTimeMillis();
-            EntryId configId = new EntryId(Scope.group("group-denied"), EntryType.CONFIG, "");
-            ConfigPayload payload = new ConfigPayload(OptionalInt.of(1), (byte) 0x04, OptionalLong.empty(), Optional.empty(), Optional.empty(), OptionalLong.of(3600000L));
-            
-            EnvelopeBuilder builder = new EnvelopeBuilder()
-                .entryType(EntryType.CONFIG)
-                .flags((byte) 0x00)
-                .scope(Scope.group("group-denied"))
-                .key("")
-                .version(1L)
-                .timestamp(now)
-                .issuer(trust.signerId)
-                .payload(payload.encode())
-                .sigAlg((byte) 0x01);
+            // Publish config for group-denied directly to broker
+            try {
+                long now = System.currentTimeMillis();
+                EntryId configId = new EntryId(Scope.group("group-denied"), EntryType.CONFIG, "");
+                ConfigPayload payload = new ConfigPayload(OptionalInt.of(1), (byte) 0x04, OptionalLong.empty(), Optional.empty(), Optional.empty(), OptionalLong.of(3600000L));
+                
+                EnvelopeBuilder builder = new EnvelopeBuilder()
+                    .entryType(EntryType.CONFIG)
+                    .flags((byte) 0x00)
+                    .scope(Scope.group("group-denied"))
+                    .key("")
+                    .version(1L)
+                    .timestamp(now)
+                    .issuer(trust.signerId)
+                    .payload(payload.encode())
+                    .sigAlg((byte) 0x01);
 
-            Signature sig = Signature.getInstance("SHA256withRSA");
-            sig.initSign(trust.longTermKeyPair.getPrivate());
-            Envelope tempEnv = new Envelope(Envelope.PROTO_VERSION, EntryType.CONFIG, (byte) 0x00, Scope.group("group-denied"), "", 1L, now, trust.signerId, payload.encode(), (byte) 0x01, new byte[0]);
-            sig.update(tempEnv.canonicalSigningBytes());
-            byte[] signature = sig.sign();
-            byte[] encoded = Envelope.encode(builder, signature);
-            broker.put(configId.storageKey(), encoded).join();
-        } catch (Exception e) {
-            throw new RuntimeException(e);
+                Signature sig = Signature.getInstance("SHA256withRSA");
+                sig.initSign(trust.longTermKeyPair.getPrivate());
+                Envelope tempEnv = new Envelope(Envelope.PROTO_VERSION, EntryType.CONFIG, (byte) 0x00, Scope.group("group-denied"), "", 1L, now, trust.signerId, payload.encode(), (byte) 0x01, new byte[0]);
+                sig.update(tempEnv.canonicalSigningBytes());
+                byte[] signature = sig.sign();
+                byte[] encoded = Envelope.encode(builder, signature);
+                broker.put(configId.storageKey(), encoded).join();
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+
+            // Sign two sessions. Since the issuer is not authorized (no capability in broker), the config is ignored.
+            assertDoesNotThrow(() -> {
+                sv.sign("d1", BasicConfigurer.builder().groupId("group-denied").sequenceId("s1").validity(600).build());
+                sv.sign("d2", BasicConfigurer.builder().groupId("group-denied").sequenceId("s2").validity(600).build());
+            });
         }
-
-        // Sign two sessions. Since the issuer is not authorized (no capability in broker), the config is ignored.
-        assertDoesNotThrow(() -> {
-            sv.sign("d1", BasicConfigurer.builder().groupId("group-denied").sequenceId("s1").validity(600).build());
-            sv.sign("d2", BasicConfigurer.builder().groupId("group-denied").sequenceId("s2").validity(600).build());
-        });
     }
 
     @Test

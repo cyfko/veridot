@@ -260,19 +260,6 @@ public abstract class DatabaseTest {
         assertThrows(BrokerExtractionException.class, () -> tokenVerifier.verify(tokenB, s -> s));
     }
 
-    private byte[] getFromDb(byte[] storageKey) throws SQLException {
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(
-                     "SELECT entry_bytes FROM broker_messages WHERE storage_key = ?")) {
-            stmt.setBytes(1, storageKey);
-            try (ResultSet rs = stmt.executeQuery()) {
-                if (rs.next()) {
-                    return rs.getBytes("entry_bytes");
-                }
-                return null;
-            }
-        }
-    }
 
     private byte[] computeStorageKey(String groupId, EntryType type, String key) {
         byte[] scopeBytes = ("group:" + groupId).getBytes(java.nio.charset.StandardCharsets.UTF_8);

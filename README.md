@@ -1,9 +1,9 @@
 # Veridot — Distributed Token Verification Protocol
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Protocol V3](https://img.shields.io/badge/Protocol-V3.0-green.svg)](PROTOCOL_V3.md)
+[![Protocol V4](https://img.shields.io/badge/Protocol-V4.0-green.svg)](PROTOCOL_V4.md)
 [![Java](https://img.shields.io/badge/Java-25%2B-orange.svg)](java/veridot-core)
-[![Trust Architecture](https://img.shields.io/badge/Trust-TrustAnchor%20v3.0-purple.svg)](docs/adr/)
+[![Trust Architecture](https://img.shields.io/badge/Trust-TrustRoot%20v4.0-purple.svg)](docs/adr/)
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.cyfko/veridot-core)](https://central.sonatype.com/search?q=io.github.cyfko.veridot)
 
 **Veridot** solves the distributed authentication trilemma: verify tokens in **sub-millisecond** without a central authority, revoke them **instantly** across the cluster, and maintain **zero shared secrets** between services.
@@ -37,11 +37,11 @@ cat java/veridot-core/README.md   # ← exhaustive reference
 
 ---
 
-## Protocol V3 specification → [`PROTOCOL_V3.md`](PROTOCOL_V3.md)
+## Protocol V4 specification → [`PROTOCOL_V4.md`](PROTOCOL_V4.md)
 
-Binary-safe canonical message format enabling cross-language interoperability. Any conforming implementation — regardless of language — can verify tokens produced by any other.
+Binary-safe canonical message format with sealed TrustRoot interface, cryptographic capability authorization, and distributed liveness attestation. Any conforming implementation — regardless of language — can verify tokens produced by any other.
 
-Current version: **3.0** — adds universal signature over length-prefixed canonical encoding and shortened property names.
+Current version: **4.0** — evolves from V3 with TrustRoot sealed interface, hierarchical configuration scope authorization, fenced session capacity, monotonic watermark tracking, and positive-proof liveness protocol.
 
 ---
 

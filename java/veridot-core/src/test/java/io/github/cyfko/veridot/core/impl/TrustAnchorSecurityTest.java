@@ -2,7 +2,6 @@ package io.github.cyfko.veridot.core.impl;
 
 import io.github.cyfko.veridot.core.InMemoryBroker;
 import io.github.cyfko.veridot.core.PublicKeyTrustRoot;
-import io.github.cyfko.veridot.core.TrustRoot;
 import io.github.cyfko.veridot.core.exceptions.BrokerExtractionException;
 import io.github.cyfko.veridot.core.exceptions.VeridotException;
 
@@ -106,15 +105,16 @@ class TrustAnchorSecurityTest {
             }
         };
 
-        var sv = new GenericSignerVerifier(broker, flakeyRoot, trust.signerId,
-                trust.longTermKeyPair.getPrivate(), (byte) 0x01);
+        try (var sv = new GenericSignerVerifier(broker, flakeyRoot, trust.signerId,
+                trust.longTermKeyPair.getPrivate(), (byte) 0x01)) {
 
-        String token = sv.sign("data",
-                BasicConfigurer.builder().groupId("infra-test").validity(600).build());
+            String token = sv.sign("data",
+                    BasicConfigurer.builder().groupId("infra-test").validity(600).build());
 
-        assertThrows(BrokerExtractionException.class,
-                () -> sv.verify(token, s -> s),
-                "Unavailable TrustRoot must fail safe — cannot verify without trust");
+            assertThrows(BrokerExtractionException.class,
+                    () -> sv.verify(token, s -> s),
+                    "Unavailable TrustRoot must fail safe — cannot verify without trust");
+        }
     }
 
     @Test
