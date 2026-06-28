@@ -27,6 +27,26 @@ final class EntryVerifier {
             CapabilityVerifier capabilityVerifier,
             LivenessChecker livenessChecker,
             long nowMillis) {
+        try {
+            KeyEpochPayload payload = verifyKeyEpochInternal(
+                keyEpochId, broker, trustRoot, watermark, capabilityVerifier, livenessChecker, nowMillis
+            );
+            io.github.cyfko.veridot.core.VeridotMetrics.ENVELOPE_ACCEPTED.increment();
+            return payload;
+        } catch (RuntimeException e) {
+            io.github.cyfko.veridot.core.VeridotMetrics.ENVELOPE_REJECTED.increment();
+            throw e;
+        }
+    }
+
+    private KeyEpochPayload verifyKeyEpochInternal(
+            EntryId keyEpochId,
+            Broker broker,
+            TrustRoot trustRoot,
+            VersionWatermark watermark,
+            CapabilityVerifier capabilityVerifier,
+            LivenessChecker livenessChecker,
+            long nowMillis) {
 
         if (keyEpochId == null) {
             throw new IllegalArgumentException("keyEpochId cannot be null");

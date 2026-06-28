@@ -1,6 +1,7 @@
 package io.github.cyfko.veridot.kafka;
 
 import io.github.cyfko.veridot.core.Broker;
+import io.github.cyfko.veridot.core.WatermarkStore;
 import io.github.cyfko.veridot.core.exceptions.VeridotException;
 import io.github.cyfko.veridot.core.impl.Envelope;
 import io.github.cyfko.veridot.core.impl.Scope;
@@ -28,7 +29,7 @@ import java.util.logging.Logger;
 /**
  * Kafka + RocksDB implementation of the Broker interface for Protocol V4 (§12.2).
  */
-public class KafkaBroker implements Broker, AutoCloseable {
+public class KafkaBroker implements Broker, WatermarkStore, AutoCloseable {
 
     private static final Logger logger = Logger.getLogger(KafkaBroker.class.getName());
 
@@ -301,5 +302,26 @@ public class KafkaBroker implements Broker, AutoCloseable {
             }
         }
         return a.length - b.length;
+    }
+
+    @Override
+    public void save(byte[] snapshot) {
+        if (closed || db == null) return;
+        try {
+            db.put("__watermark_snapshot__".getBytes(StandardCharsets.UTF_8), snapshot);
+        } catch (org.rocksdb.RocksDBException e) {
+            logger.severe("Failed to save watermark snapshot to RocksDB: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public byte[] load() {
+        if (closed || db == null) return null;
+        try {
+            return db.get("__watermark_snapshot__".getBytes(StandardCharsets.UTF_8));
+        } catch (org.rocksdb.RocksDBException e) {
+            logger.severe("Failed to load watermark snapshot from RocksDB: " + e.getMessage());
+            return null;
+        }
     }
 }

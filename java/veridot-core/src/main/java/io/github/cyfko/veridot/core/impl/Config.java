@@ -13,6 +13,7 @@ abstract class ConstantDefault {
     static final long CAPABILITY_NEGATIVE_CACHE_TTL_SECONDS = 5;
     static final long MAX_CLOCK_DRIFT_SECONDS = 300;
     static final int  MIN_RSA_KEY_LENGTH = 2048;
+    static final long RECONCILIATION_MAX_STALENESS_MINUTES = 60;
 }
 
 /// Defines environment variable names.
@@ -24,6 +25,8 @@ abstract class Env {
     static final String CLOCK_DRIFT_TOLERANCE_SECONDS = "VDOT_CLOCK_DRIFT_TOLERANCE_SECONDS";
     static final String ALLOWED_SIG_ALGS = "VDOT_ALLOWED_SIG_ALGS";
     static final String MIN_RSA_KEY_LENGTH = "VDOT_MIN_RSA_KEY_LENGTH";
+    static final String WATERMARK_PERSISTENCE_FILE = "VDOT_WATERMARK_PERSISTENCE_FILE";
+    static final String RECONCILIATION_MAX_STALENESS_MINUTES = "VDOT_RECONCILIATION_MAX_STALENESS_MINUTES";
 }
 
 /**
@@ -129,6 +132,16 @@ public abstract class Config {
      * Minimum allowed RSA public key size in bits.
      */
     public static final int MIN_RSA_KEY_LENGTH;
+
+    /**
+     * File path to save and load version watermarks snapshot for persistent monotonicity (§12.3.1).
+     */
+    public static final String WATERMARK_PERSISTENCE_FILE;
+
+    /**
+     * Maximum allowed staleness of the local cache before rejecting validation (Option C).
+     */
+    public static final long RECONCILIATION_MAX_STALENESS_MINUTES;
 
     /**
      * How long verified capabilities are cached (positive caching).
@@ -295,5 +308,29 @@ public abstract class Config {
             parsedAlgs.add((byte) 0x02);
         }
         ALLOWED_SIG_ALGS = Collections.unmodifiableSet(parsedAlgs);
+
+        WATERMARK_PERSISTENCE_FILE = System.getenv(Env.WATERMARK_PERSISTENCE_FILE);
+
+        long parsedStaleness = ConstantDefault.RECONCILIATION_MAX_STALENESS_MINUTES;
+        final var stalenessVal = System.getenv(Env.RECONCILIATION_MAX_STALENESS_MINUTES);
+        if (stalenessVal != null) {
+            try {
+                long parsed = Long.parseLong(stalenessVal);
+                if (parsed >= 1) {
+                    parsedStaleness = parsed;
+                } else {
+                    System.getLogger(Config.class.getName()).log(
+                            System.Logger.Level.WARNING,
+                            "Ignoring invalid " + Env.RECONCILIATION_MAX_STALENESS_MINUTES + "=" + parsed
+                                    + " (must be >= 1). Using default: " + ConstantDefault.RECONCILIATION_MAX_STALENESS_MINUTES);
+                }
+            } catch (NumberFormatException e) {
+                System.getLogger(Config.class.getName()).log(
+                        System.Logger.Level.WARNING,
+                        "Ignoring non-numeric " + Env.RECONCILIATION_MAX_STALENESS_MINUTES + "='" + stalenessVal
+                                + "'. Using default: " + ConstantDefault.RECONCILIATION_MAX_STALENESS_MINUTES);
+            }
+        }
+        RECONCILIATION_MAX_STALENESS_MINUTES = parsedStaleness;
     }
 }
