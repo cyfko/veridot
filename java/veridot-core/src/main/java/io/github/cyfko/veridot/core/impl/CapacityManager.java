@@ -104,7 +104,6 @@ final class CapacityManager {
                              .join();
 
                     // V3 compatibility: delete the evicted session's KEY_EPOCH entry from broker
-                    EntryId victimEpochId = new EntryId(groupScope, EntryType.KEY_EPOCH, victim.sessionKey());
                     publisher.publish(EntryType.KEY_EPOCH, groupScope, victim.sessionKey(), nextVersion, new byte[0], signingKey, sigAlg, issuerId, broker)
                              .join();
                     
