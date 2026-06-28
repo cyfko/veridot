@@ -40,9 +40,8 @@ final class CapacityManager {
         // 1. Acquire FENCE grant (§9.4)
         // Set fence validity duration to 5 minutes
         long fenceValidUntil = now + 300000;
-        FenceManager.FenceGrant grant;
         try {
-            grant = fenceManager.acquire(groupScope, processorId, fenceValidUntil, publisher, broker, trustRoot, watermark, signingKey, sigAlg, issuerId);
+            fenceManager.acquire(groupScope, processorId, fenceValidUntil, publisher, broker, trustRoot, watermark, signingKey, sigAlg, issuerId);
         } catch (VeridotException e) {
             throw e;
         } catch (Exception e) {

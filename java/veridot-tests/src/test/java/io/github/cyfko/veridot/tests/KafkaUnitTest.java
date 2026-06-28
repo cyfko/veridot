@@ -10,7 +10,7 @@ import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
-import org.testcontainers.containers.KafkaContainer;
+import org.testcontainers.kafka.ConfluentKafkaContainer;
 import org.testcontainers.utility.DockerImageName;
 
 import java.io.File;
@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class KafkaUnitTest {
 
-    private static KafkaContainer kafkaContainer;
+    private static ConfluentKafkaContainer kafkaContainer;
     private KafkaBroker broker;
     private DataSigner dataSigner;
     private TokenVerifier tokenVerifier;
@@ -30,8 +30,7 @@ class KafkaUnitTest {
 
     @BeforeAll
     static void setUpClass() {
-        kafkaContainer = new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))
-                .withEmbeddedZookeeper();
+        kafkaContainer = new ConfluentKafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"));
         kafkaContainer.start();
     }
 

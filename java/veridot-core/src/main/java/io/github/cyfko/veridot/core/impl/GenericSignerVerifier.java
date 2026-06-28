@@ -347,7 +347,6 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
 
         ensureReconciliationStarted(targetScope);
 
-        long now = System.currentTimeMillis();
         long version = Math.max(watermark.current(new EntryId(targetScope, EntryType.CONFIG, "")) + 1, 1);
 
         ConfigPayload payload = new ConfigPayload(
