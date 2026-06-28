@@ -1,0 +1,112 @@
+<section>
+    <h1 id="getting-started">Getting Started</h1>
+    <p>This guide walks you through installing Veridot Core, configuring a local environment, and implementing a complete "Hello World" token signing and verification program.</p>
+
+    <h2 id="prerequisites">Prerequisites</h2>
+    <ul>
+        <li>Java Development Kit (JDK) 17 or higher (Java 21 recommended)</li>
+        <li>Apache Maven 3.8+ or Gradle 7.4+</li>
+        <li>A secure cryptographically synchronized time source (NTP)</li>
+    </ul>
+
+    <h2 id="installation">Installation</h2>
+    <p>Add the Veridot Core dependency to your build configuration. The Community Edition (CE) provides the in-memory, file-based, and SQL database brokers. The Enterprise features (advanced Kafka clustering) require the Kafka broker module.</p>
+
+    <div class="code-tabs">
+        <div class="code-tabs-header">
+            <button class="code-tab-btn active" data-tab="maven">Maven</button>
+            <button class="code-tab-btn" data-tab="gradle">Gradle</button>
+        </div>
+        <div class="code-tabs-content active" data-tab="maven">
+            <pre><code class="language-xml">&lt;dependency&gt;
+    &lt;groupId&gt;io.github.cyfko&lt;/groupId&gt;
+    &lt;artifactId&gt;veridot-core&lt;/artifactId&gt;
+    &lt;version&gt;4.0.0&lt;/version&gt;
+&lt;/dependency&gt;</code></pre>
+        </div>
+        <div class="code-tabs-content" data-tab="gradle">
+            <pre><code class="language-groovy">implementation 'io.github.cyfko:veridot-core:4.0.0'</code></pre>
+        </div>
+    </div>
+
+    <h2 id="minimal-setup">Minimal Configuration</h2>
+    <p>In Veridot, configuration parameters can be specified via system properties or environment variables. The minimal configuration needs a default keys rotation interval and a cache TTL:</p>
+    <pre><code class="language-properties"># Environment variables setup
+export VDOT_KEYS_ROTATION_MINUTES=60
+export VDOT_RECONCILIATION_INTERVAL_MINUTES=10
+export VDOT_CAPABILITY_CACHE_TTL_SECONDS=60</code></pre>
+
+    <h2 id="hello-world">Hello World Example</h2>
+    <p>The code below demonstrates a complete token issuing, verification, and revocation cycle using a secure RSA signature scheme:</p>
+
+    <pre><code class="language-java">import io.github.cyfko.veridot.core.*;
+import io.github.cyfko.veridot.core.impl.*;
+import io.github.cyfko.veridot.core.exceptions.*;
+import java.security.*;
+
+public class HelloWorld {
+    public static void main(String[] args) throws Exception {
+        // 1. Setup the broker
+        Broker broker = new InMemoryBroker();
+
+        // 2. Generate RSA Keypair (2048-bit)
+        KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
+        keyGen.initialize(2048);
+        KeyPair pair = keyGen.generateKeyPair();
+
+        // 3. Define the trust root resolver
+        TrustRoot trustRoot = new PublicKeyTrustRoot() {
+            @Override
+            public PublicKey resolve(String issuer) {
+                return pair.getPublic();
+            }
+            @Override
+            public boolean isRootIdentity(String issuer) {
+                return "root-authority".equals(issuer);
+            }
+        };
+
+        // 4. Initialize Veridot Signer & Verifier
+        GenericSignerVerifier engine = new GenericSignerVerifier(
+            broker,
+            trustRoot,
+            "root-authority",
+            pair.getPrivate(),
+            (byte) 0x01 // RSA-SHA256
+        );
+
+        // 5. Issue a session token for group "users" and session "sess-01"
+        Configurer config = BasicConfigurer.builder()
+            .groupId("users")
+            .sequenceId("sess-01")
+            .validity(300) // 5 minutes validity
+            .build();
+        
+        String token = engine.sign("{\"userId\":\"1001\",\"role\":\"editor\"}", config);
+        System.out.println("Generated Token: " + token);
+
+        // 6. Verify the token
+        try {
+            VerifiedData<String> verified = engine.verify(token, payload -> payload);
+            System.out.println("Verification Result: SUCCESS");
+            System.out.println("Payload: " + verified.data());
+        } catch (Exception e) {
+            System.out.println("Verification Result: FAILED - " + e.getMessage());
+        }
+
+        // 7. Revoke the token instantly
+        System.out.println("Revoking session sess-01...");
+        engine.revoke(Scope.group("users"), "sess-01");
+
+        // 8. Re-verify the revoked token
+        try {
+            engine.verify(token, payload -> payload);
+            System.out.println("Verification Result: SUCCESS (Incorrect behavior!)");
+        } catch (BrokerExtractionException e) {
+            System.out.println("Verification Result: FAILED (Correct behavior!): " + e.getMessage());
+        }
+
+        engine.close();
+    }
+}</code></pre>
+</section>

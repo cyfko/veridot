@@ -1,0 +1,98 @@
+<section>
+    <h1 id="introduction-to-veridot">Introduction à Veridot</h1>
+    <p class="lead">Veridot est un protocole de vérification de jetons cryptographiques à haute performance et une bibliothèque Java conçue pour les architectures distribuées à grande échelle. Il résout le compromis historique entre la validation locale sans état (JWT) et la révocation immédiate avec état.</p>
+
+    <h2 id="key-features">Points Clés</h2>
+    <div class="alert alert-success">
+        <div class="alert-title">Pourquoi choisir Veridot V4 ?</div>
+        <ul>
+            <li><strong>✓ Latence inférieure à la milliseconde :</strong> La validation cryptographique s'effectue entièrement en mémoire via des caches locaux thread-safe, évitant tout appel réseau synchrone.</li>
+            <li><strong>✓ Révocation Décentralisée :</strong> Les événements de révocation se propagent de manière asynchrone aux microservices en moins d'une seconde via un broker de réplication.</li>
+            <li><strong>✓ Garantie Anti-Rollback :</strong> Veridot V4 applique un filigrane de version monotone sur tous les messages d'état, empêchant les attaques par rejeu.</li>
+            <li><strong>✓ Prêt pour la Production :</strong> Intégrations natives pour Spring Boot, Apache Kafka, et les bases de données relationnelles.</li>
+        </ul>
+    </div>
+
+    <h2 id="the-revocation-problem">Le Compromis de l'Authentification</h2>
+    <p>Les architectures modernes nécessitent une authentification rapide et sécurisée. Les approches classiques imposent un choix cornélien :</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Métrique Opérationnelle</th>
+                <th>JWT Classique (Sans État)</th>
+                <th>Introspection OAuth2 (Avec État)</th>
+                <th>Veridot V4</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>Latence de Vérification</strong></td>
+                <td>&lt; 1 ms (Cryptographique locale)</td>
+                <td>15 ms - 150 ms (Appel réseau synchrone)</td>
+                <td><strong>&lt; 1 ms</strong> (Vérification en cache local)</td>
+            </tr>
+            <tr>
+                <td><strong>Délai de Révocation</strong></td>
+                <td>Impossible (Attente de la fin du TTL)</td>
+                <td>Instantané</td>
+                <td><strong>&lt; 1 seconde</strong> (Propagation asynchrone)</td>
+            </tr>
+            <tr>
+                <td><strong>Charge Base de Données</strong></td>
+                <td>Nulle</td>
+                <td>Élevée (Requêtes pour chaque appel)</td>
+                <td><strong>Très Faible</strong> (Lecture seule des mises à jour)</td>
+            </tr>
+            <tr>
+                <td><strong>Résilience aux Pannes Réseau</strong></td>
+                <td>Excellente (Vérification autonome)</td>
+                <td>Très Mauvaise (Panne si le serveur d'auth est down)</td>
+                <td><strong>Élevée</strong> (Maintien du cache et des watermarks)</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h2 id="minimal-example">Exemple d'Utilisation Minimal</h2>
+    <p>L'exemple suivant montre l'initialisation du service, la signature d'un jeton, sa validation locale, puis sa révocation immédiate :</p>
+
+    <pre><code class="language-java">import io.github.cyfko.veridot.core.*;
+import io.github.cyfko.veridot.core.impl.*;
+import java.security.KeyPairGenerator;
+import java.security.KeyPair;
+import java.security.PublicKey;
+
+public class ExempleMinimal {
+    public static void main(String[] args) throws Exception {
+        // Initialisation d'un broker en mémoire pour les tests
+        Broker broker = new InMemoryBroker();
+        
+        // Génération d'une paire de clés
+        KeyPair keyPair = KeyPairGenerator.getInstance("RSA").generateKeyPair();
+        TrustRoot trustRoot = new PublicKeyTrustRoot() {
+            @Override public PublicKey resolve(String issuer) { return keyPair.getPublic(); }
+            @Override public boolean isRootIdentity(String issuer) { return "auth-issuer".equals(issuer); }
+        };
+
+        // Initialisation de Veridot
+        GenericSignerVerifier veridot = new GenericSignerVerifier(
+            broker, trustRoot, "auth-issuer", keyPair.getPrivate(), (byte) 0x01
+        );
+
+        // Signature du jeton
+        Configurer configurer = BasicConfigurer.builder()
+            .groupId("user-123")
+            .sequenceId("session-xyz")
+            .validity(3600)
+            .build();
+        String token = veridot.sign("{\"user\":\"Alice\"}", configurer);
+
+        // Vérification locale
+        VerifiedData<String> verified = veridot.verify(token, payload -> payload);
+        System.out.println("La session est-elle active ? " + verified.isLive());
+
+        // Révocation instantanée
+        veridot.revoke(Scope.group("user-123"), "session-xyz");
+        veridot.close();
+    }
+}</code></pre>
+</section>

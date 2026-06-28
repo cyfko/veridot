@@ -3,14 +3,22 @@ const translations = {
     en: {
         searchPlaceholder: "Search docs...",
         navTitleGettingStarted: "Getting Started",
-        navTitleCoreConcepts: "Core Concepts",
-        navTitleDevGuides: "Developer Guides",
-        linkIntro: "Introduction",
-        linkQuickstart: "Quickstart Guide",
-        linkArchitecture: "System Architecture",
-        linkSecurity: "Operational Security",
-        linkAdvanced: "Advanced Guides",
-        linkReference: "API Reference",
+        navTitleGuides: "Guides",
+        navTitleReference: "Reference",
+        navTitleResources: "Resources",
+        linkHome: "Home",
+        linkGettingStarted: "Getting Started",
+        linkTutorials: "Tutorials",
+        linkHowToGuides: "How-To Guides",
+        linkConcepts: "Core Concepts",
+        linkApiReference: "API Reference",
+        linkBenchmarks: "Benchmarks",
+        linkFaq: "FAQ",
+        linkMigration: "Migration Guide",
+        linkChangelog: "Changelog",
+        linkRoadmap: "Roadmap",
+        linkSecurity: "Security Policy",
+        linkLicense: "License",
         tocTitleText: "On this page",
         copyBtnText: "Copy",
         copyBtnSuccess: "Copied!",
@@ -20,14 +28,22 @@ const translations = {
     fr: {
         searchPlaceholder: "Rechercher...",
         navTitleGettingStarted: "Démarrage",
-        navTitleCoreConcepts: "Concepts Clés",
-        navTitleDevGuides: "Guides Développeur",
-        linkIntro: "Introduction",
-        linkQuickstart: "Guide Rapide",
-        linkArchitecture: "Architecture Système",
+        navTitleGuides: "Guides",
+        navTitleReference: "Référence",
+        navTitleResources: "Ressources",
+        linkHome: "Accueil",
+        linkGettingStarted: "Mise en Route",
+        linkTutorials: "Tutoriels",
+        linkHowToGuides: "Guides Pratiques",
+        linkConcepts: "Concepts Clés",
+        linkApiReference: "Référence API",
+        linkBenchmarks: "Benchmarks",
+        linkFaq: "FAQ",
+        linkMigration: "Guide de Migration",
+        linkChangelog: "Notes de Version",
+        linkRoadmap: "Feuille de Route",
         linkSecurity: "Sécurité Opérationnelle",
-        linkAdvanced: "Guides Avancés",
-        linkReference: "Référence API",
+        linkLicense: "Licence",
         tocTitleText: "Sur cette page",
         copyBtnText: "Copier",
         copyBtnSuccess: "Copié !",
@@ -39,30 +55,28 @@ const translations = {
 // --- Documentation Search Index ---
 const searchIndex = {
     en: [
-        { section: "1_introduction", title: "What is Veridot?", content: "Veridot is a high-performance cryptographic token verification protocol and Java library designed for large-scale distributed architectures. It guarantees immediate revocation verification without state lookup bottlenecks." },
-        { section: "1_introduction", title: "Comparison with JWT", content: "Unlike raw stateless JWT which has no efficient revocation, and stateful tokens that require database calls, Veridot operates on localized validation with async status propagation." },
-        { section: "2_architecture", title: "Binary Envelope Format", content: "Veridot V4 uses a Type-Length-Value (TLV) binary format starting with magic byte 0x04. It contains entries like CONFIG, KEY_EPOCH, LIVENESS, FENCE, and SNAPSHOT_MARKER." },
-        { section: "2_architecture", title: "Version Watermark & Reconciliation", content: "To protect against snapshot replay and rollback attacks, Veridot nodes maintain watermarks reconciled periodically against the metadata broker." },
-        { section: "3_quickstart", title: "Maven Dependency", content: "Add veridot-core dependency in your pom.xml: groupId io.github.cyfko, artifactId veridot-core, version 4.0.0." },
-        { section: "3_quickstart", title: "Hello World Code", content: "Initialize GenericSignerVerifier, build config, sign payload data and verify token using the TokenVerifier API." },
-        { section: "4_advanced", title: "Session & Group Revocation", content: "Revoke a single active session or all sessions within a group by publishing a liveness revoked envelope." },
-        { section: "4_advanced", title: "Custom Metadata Brokers", content: "Implement the Broker interface for custom databases or use the veridot-kafka and veridot-databases adapters." },
-        { section: "5_reference", title: "Java Public API", content: "Explore the core interfaces: DataSigner, TokenVerifier, TokenRevoker, TokenTracker." },
-        { section: "5_reference", title: "Configuration keys", content: "Environmental variables configuration: VDOT_KEYS_ROTATION_MINUTES, VDOT_RECONCILIATION_INTERVAL_MINUTES, VDOT_CAPABILITY_CACHE_TTL_SECONDS." },
-        { section: "6_security", title: "Clock Drift", content: "Verify clock drift sync between nodes. Clock drift skew must not exceed 5 minutes to maintain safety guarantees." }
+        { section: "home", title: "Introduction to Veridot", content: "Veridot is a high-performance cryptographic token verification protocol and Java library designed for large-scale distributed architectures." },
+        { section: "getting_started", title: "Installation and Setup", content: "Include the Veridot Core library in your project build file. Minimal configuration needs a default keys rotation interval." },
+        { section: "tutorials", title: "Building Your First Project", content: "Set up a standard Java project structure with Maven and implement a mock authentication system using Veridot." },
+        { section: "tutorials", title: "Writing a Custom Rule", content: "Rules in Veridot run during the verification pipeline. You can enforce policies like domain restrictions or email verification." },
+        { section: "how_to_guides", title: "Spring Boot Integration", content: "Integrate Veridot into a Spring Boot application by defining a custom security filter and registering verifier as a Spring Bean." },
+        { section: "concepts", title: "Binary Envelope wire format", content: "Every piece of data uses a single, unified binary envelope layout. It starts with magic bytes 0x56 0x44." },
+        { section: "concepts", title: "Monotonic Version Invariant", content: "To guard against rollback attacks, verifiers maintain a local watermark version. Updates are accepted only if version is higher." },
+        { section: "api_reference", title: "DataSigner Interface", content: "DataSigner is the Java public API surface used to issue and sign new user session tokens." },
+        { section: "benchmarks", title: "Verification Latency sub-ms", content: "Validation is executed in memory using a concurrent hash map or off-heap RocksDB. Average latency is 0.08ms to 0.24ms." },
+        { section: "security", title: "Clock Synchronization NTP", content: "Maximum allowed clock skew between any signer node and gateway is 5 minutes. Use NTP like systemd-timesyncd." }
     ],
     fr: [
-        { section: "1_introduction", title: "Qu'est-ce que Veridot ?", content: "Veridot est un protocole de vérification de jetons cryptographiques à haute performance conçu pour les architectures distribuées à grande échelle. Il garantit une vérification immédiate des révocations sans goulot d'étranglement de base de données." },
-        { section: "1_introduction", title: "Comparaison avec JWT", content: "Contrairement aux JWT sans état qui ne gèrent pas la révocation rapide, ou aux jetons avec état qui exigent des requêtes réseau, Veridot valide localement avec mise à jour asynchrone." },
-        { section: "2_architecture", title: "Format d'enveloppe binaire", content: "Veridot V4 utilise un format binaire TLV débutant par le magic byte 0x04. Il contient des entrées CONFIG, KEY_EPOCH, LIVENESS, FENCE, et SNAPSHOT_MARKER." },
-        { section: "2_architecture", title: "Version Watermark & Réconciliation", content: "Pour contrer les attaques par rejeu de snapshot, les instances Veridot maintiennent un filigrane de version (watermark) réconcilié régulièrement." },
-        { section: "3_quickstart", title: "Dépendance Maven", content: "Ajoutez la dépendance veridot-core dans votre fichier pom.xml : groupId io.github.cyfko, artifactId veridot-core, version 4.0.0." },
-        { section: "3_quickstart", title: "Code d'exemple", content: "Initialisez le GenericSignerVerifier, configurez-le, signez la payload utilisateur et validez via le TokenVerifier." },
-        { section: "4_advanced", title: "Révocation de session & groupe", content: "Révochez une session spécifique par son sequenceId ou l'intégralité du groupe de sessions via une enveloppe signée LIVENESS=REVOKED." },
-        { section: "4_advanced", title: "Brokers personnalisés", content: "Implémentez l'interface Broker ou utilisez les modules veridot-kafka et veridot-databases pour SQL." },
-        { section: "5_reference", title: "API Publique Java", content: "Explorez les interfaces clés : DataSigner, TokenVerifier, TokenRevoker, TokenTracker." },
-        { section: "5_reference", title: "Clés de Configuration", content: "Configuration par variables d'environnement : VDOT_KEYS_ROTATION_MINUTES, VDOT_RECONCILIATION_INTERVAL_MINUTES." },
-        { section: "6_security", title: "Dérive d'horloge (Clock Drift)", content: "Vérifiez la synchronisation des horloges entre nœuds. La dérive maximale tolérée est de 5 minutes." }
+        { section: "home", title: "Introduction à Veridot", content: "Veridot est un protocole de vérification de jetons cryptographiques à haute performance et une bibliothèque Java." },
+        { section: "getting_started", title: "Installation et Démarrage", content: "Ajoutez la dépendance Veridot Core à votre projet Maven ou Gradle. Configurez l'intervalle de rotation." },
+        { section: "tutorials", title: "Créer votre Premier Projet", content: "Mettez en place un projet Java standard avec Maven et implémentez une logique d'authentification simple." },
+        { section: "tutorials", title: "Écrire une Règle Personnalisée", content: "Les règles s'exécutent lors de la validation. Exemple pour vérifier si l'adresse e-mail a été validée." },
+        { section: "how_to_guides", title: "Intégration avec Spring Boot", content: "Intégrez Veridot dans une application Spring Boot en définissant un filtre de sécurité personnalisé OncePerRequestFilter." },
+        { section: "concepts", title: "Format de l'Enveloppe Binaire", content: "Chaque message utilise un format binaire strict débutant par les octets magiques 0x56 0x44." },
+        { section: "concepts", title: "Invariant de Monotonicité", content: "Pour contrer les attaques par rejeu, les validateurs enregistrent la dernière version et rejettent les anciennes." },
+        { section: "api_reference", title: "Interface DataSigner", content: "Interface utilisée pour signer et émettre des jetons utilisateur Veridot." },
+        { section: "benchmarks", title: "Latence et Benchmarks", content: "La validation locale s'exécute en moins d'une milliseconde (0.08ms en Ed25519)." },
+        { section: "security", title: "Synchronisation d'Horloge NTP", content: "L'écart de temps maximal toléré est de 5 minutes. Configurez timesyncd avec ntp.org." }
     ]
 };
 
@@ -81,13 +95,20 @@ const menuCloseBtn = document.getElementById("menu-close-btn");
 
 // --- Route Mapping ---
 const sectionRoutes = {
-    "": "1_introduction",
-    "introduction": "1_introduction",
-    "quickstart": "3_quickstart",
-    "architecture": "2_architecture",
-    "security": "6_security",
-    "advanced": "4_advanced",
-    "reference": "5_reference"
+    "": "home",
+    "home": "home",
+    "getting-started": "getting_started",
+    "tutorials": "tutorials",
+    "how-to-guides": "how_to_guides",
+    "concepts": "concepts",
+    "api-reference": "api_reference",
+    "benchmarks": "benchmarks",
+    "faq": "faq",
+    "migration": "migration",
+    "changelog": "changelog",
+    "roadmap": "roadmap",
+    "security": "security",
+    "license": "license"
 };
 
 // --- Initialize Language Selection ---
@@ -121,17 +142,25 @@ function applyTranslations() {
     // Static fields
     searchInput.placeholder = t.searchPlaceholder;
     document.getElementById("nav-title-getting-started").textContent = t.navTitleGettingStarted;
-    document.getElementById("nav-title-core-concepts").textContent = t.navTitleCoreConcepts;
-    document.getElementById("nav-title-developer-guides").textContent = t.navTitleDevGuides;
+    document.getElementById("nav-title-guides").textContent = t.navTitleGuides;
+    document.getElementById("nav-title-reference").textContent = t.navTitleReference;
+    document.getElementById("nav-title-resources").textContent = t.navTitleResources;
     document.getElementById("toc-title-text").textContent = t.tocTitleText;
     
     // Menu links
-    document.getElementById("link-intro").textContent = t.linkIntro;
-    document.getElementById("link-quickstart").textContent = t.linkQuickstart;
-    document.getElementById("link-architecture").textContent = t.linkArchitecture;
+    document.getElementById("link-home").textContent = t.linkHome;
+    document.getElementById("link-getting-started").textContent = t.linkGettingStarted;
+    document.getElementById("link-tutorials").textContent = t.linkTutorials;
+    document.getElementById("link-how-to-guides").textContent = t.linkHowToGuides;
+    document.getElementById("link-concepts").textContent = t.linkConcepts;
+    document.getElementById("link-api-reference").textContent = t.linkApiReference;
+    document.getElementById("link-benchmarks").textContent = t.linkBenchmarks;
+    document.getElementById("link-faq").textContent = t.linkFaq;
+    document.getElementById("link-migration").textContent = t.linkMigration;
+    document.getElementById("link-changelog").textContent = t.linkChangelog;
+    document.getElementById("link-roadmap").textContent = t.linkRoadmap;
     document.getElementById("link-security").textContent = t.linkSecurity;
-    document.getElementById("link-advanced").textContent = t.linkAdvanced;
-    document.getElementById("link-reference").textContent = t.linkReference;
+    document.getElementById("link-license").textContent = t.linkLicense;
 }
 
 // --- Load Content dynamically ---
@@ -298,7 +327,7 @@ function loadSectionFromHash() {
     // Hash format: #sectionName#headingId or #sectionName
     const hashParts = window.location.hash.split("#");
     const route = hashParts[1] || "";
-    const sectionName = sectionRoutes[route] || "1_introduction";
+    const sectionName = sectionRoutes[route] || "home";
     
     loadSection(sectionName).then(() => {
         // If heading target ID is specified in URL, scroll to it

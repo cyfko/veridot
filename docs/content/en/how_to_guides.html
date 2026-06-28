@@ -1,0 +1,148 @@
+<section>
+    <h1 id="how-to-guides">How-To Guides</h1>
+    <p>These practical guides provide copy-pasteable configurations and recipes for integrating Veridot into real-world architectures.</p>
+
+    <h2 id="spring-boot">How to Integrate with Spring Boot & Spring Security</h2>
+    <p>Integrate Veridot into a Spring Boot application by defining a custom security filter. The following configuration registers the verifier as a Spring Bean and validates incoming HTTP requests:</p>
+
+    <pre><code class="language-java">import io.github.cyfko.veridot.core.*;
+import io.github.cyfko.veridot.core.impl.*;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import jakarta.servlet.Filter;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.web.filter.OncePerRequestFilter;
+import java.security.PublicKey;
+
+@Configuration
+public class VeridotSecurityConfig {
+
+    @Bean
+    public Broker veridotBroker() {
+        return new InMemoryBroker(); // Replace with DatabaseBroker or KafkaBroker in production
+    }
+
+    @Bean
+    public TokenVerifier veridotVerifier(Broker broker) {
+        TrustRoot trustRoot = new PublicKeyTrustRoot() {
+            @Override public PublicKey resolve(String issuer) { return null; /* Load from KMS */ }
+            @Override public boolean isRootIdentity(String issuer) { return "root".equals(issuer); }
+        };
+        return new GenericSignerVerifier(broker, trustRoot);
+    }
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http, TokenVerifier verifier) throws Exception {
+        Filter veridotFilter = new OncePerRequestFilter() {
+            @Override
+            protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+                    throws java.io.IOException, jakarta.servlet.ServletException {
+                String header = request.getHeader("Authorization");
+                if (header != null && header.startsWith("Bearer ")) {
+                    String token = header.substring(7);
+                    try {
+                        VerifiedData<String> verified = verifier.verify(token, payload -> payload);
+                        // Setup Spring Security context here...
+                    } catch (Exception e) {
+                        response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid Token");
+                        return;
+                    }
+                }
+                filterChain.doFilter(request, response);
+            }
+        };
+
+        http.addFilterBefore(veridotFilter, UsernamePasswordAuthenticationFilter.class)
+            .authorizeHttpRequests(auth -> auth.anyRequest().authenticated());
+        return http.build();
+    }
+}</code></pre>
+
+    <h2 id="batch-processing">How to Process Tokens in Batches</h2>
+    <p>When executing background jobs, migrating databases, or parsing bulk API keys, verifying tokens sequentially introduces high processing latency. Use Java's virtual threads or parallel streams to process verifications concurrently:</p>
+
+    <pre><code class="language-java">import io.github.cyfko.veridot.core.*;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
+
+public class BatchProcessor {
+    private final TokenVerifier verifier;
+
+    public BatchProcessor(TokenVerifier verifier) {
+        this.verifier = verifier;
+    }
+
+    public Map<String, Boolean> verifyTokensInBatch(List<String> tokens) {
+        Map<String, Boolean> results = new ConcurrentHashMap<>();
+        
+        // Use parallel stream to utilize all CPU cores
+        tokens.parallelStream().forEach(token -> {
+            try {
+                VerifiedData<String> result = verifier.verify(token, payload -> payload);
+                results.put(token, result.isLive());
+            } catch (Exception e) {
+                results.put(token, false); // Mark invalid/expired
+            }
+        });
+        
+        return results;
+    }
+}</code></pre>
+
+    <h2 id="caching-configs">How to Tune Caching Configurations</h2>
+    <p>Optimize verifier throughput by adjusting caching thresholds. Edit these values in your JVM parameters or config files:</p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Cache Setting</th>
+                <th>Recommended Value</th>
+                <th>Reason</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>VDOT_CAPABILITY_CACHE_TTL_SECONDS</code></td>
+                <td><code>300</code> (5 minutes)</td>
+                <td>Avoids redundant authorization checks on stable capability scopes.</td>
+            </tr>
+            <tr>
+                <td><code>VDOT_CAPABILITY_NEGATIVE_CACHE_TTL_SECONDS</code></td>
+                <td><code>10</code></td>
+                <td>Blocks brute-force signature request loops from hitting the broker database.</td>
+            </tr>
+            <tr>
+                <td><code>veridot.reconciliation.interval.minutes</code></td>
+                <td><code>5</code></td>
+                <td>Tight reconciliation windows ensure quick recovery if local updates miss network packets.</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h2 id="custom-validators">How to Implement a Custom Validator</h2>
+    <p>A custom Validator validates database status tables or broker transport payloads before the processor parses the envelope. To configure a validator, extend the core validation chain:</p>
+
+    <pre><code class="language-java">import io.github.cyfko.veridot.core.impl.DefaultValidator;
+import io.github.cyfko.veridot.core.exceptions.EnvelopeValidationException;
+
+public class CustomPayloadValidator extends DefaultValidator {
+    
+    @Override
+    public void validateEnvelopeStructure(byte[] envelopeBytes) throws EnvelopeValidationException {
+        // Enforce basic structure validation (e.g. check version or magic bytes)
+        super.validateEnvelopeStructure(envelopeBytes);
+        
+        // Custom constraint: Envelopes must be smaller than 4096 bytes
+        if (envelopeBytes.length > 4096) {
+            throw new EnvelopeValidationException("Envelope exceeds maximum size payload limit");
+        }
+    }
+}</code></pre>
+</section>

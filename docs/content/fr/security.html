@@ -1,0 +1,29 @@
+<section>
+    <h1 id="security-policy">Sécurité Opérationnelle & Directives</h1>
+    <p>L'exploitation de Veridot en production exige le respect rigoureux des contraintes de synchronisation d'horloge et de gestion des clés.</p>
+
+    <h2 id="clock-synchronization">Synchronisation d'Horloge (NTP)</h2>
+    <p>Veridot s'appuie sur des horodatages précis pour définir la validité des clés et des sessions. Une dérive d'horloge peut introduire des failles de sécurité ou provoquer des rejets inattendus.</p>
+    
+    <div class="alert alert-danger">
+        <div class="alert-title">Seuil Maximal de Dérive Temporelle</div>
+        <p>L'écart de temps maximal toléré entre un nœud d'émission et un validateur est de <strong>5 minutes</strong>. Tous les serveurs doivent synchroniser leurs horloges système via NTP.</p>
+    </div>
+
+    <h3>Exemple de Configuration NTP (systemd-timesyncd)</h3>
+    <p>Éditez le fichier de configuration <code>/etc/systemd/timesyncd.conf</code> sur vos instances Linux :</p>
+    <pre><code>[Time]
+NTP=pool.ntp.org time.google.com
+FallbackNTP=ubuntu.pool.ntp.org</code></pre>
+    <p>Activez et vérifiez l'état de la synchronisation à l'aide de la console :</p>
+    <pre><code class="language-bash">sudo systemctl restart systemd-timesyncd
+timedatectl status</code></pre>
+
+    <h2 id="kms-invariants">Invariants TrustRoot & KMS</h2>
+    <p>L'interface <code>TrustRoot</code> constitue la racine de confiance pour toutes les validations cryptographiques. Suivez ces invariants :</p>
+    <ul>
+        <li><strong>Conception Fail-Closed (Verrouillage par défaut) :</strong> Si le TrustRoot ne parvient pas à contacter le KMS pour résoudre une clé publique, il doit immédiatement lever une exception et rejeter le jeton.</li>
+        <li><strong>Moindre Privilège :</strong> Les instances de validation n'ont besoin que d'un accès en lecture au broker. Les clés privées de signature doivent rester confinées dans le module HSM/KMS.</li>
+        <li><strong>Rotation des Clés :</strong> Renouvelez les clés racines annuellement. Les clés éphémères d'époque doivent être régénérées toutes les heures (paramètre <code>VDOT_KEYS_ROTATION_MINUTES</code>).</li>
+    </ul>
+</section>
