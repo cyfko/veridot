@@ -1,28 +1,65 @@
 <section>
-    <h1 id="operational-security">Operational Security & Constraints</h1>
-    <p>Using Veridot in a secure manner requires understanding and maintaining key environment requirements, specifically regarding clock synchronization and cache configuration.</p>
+    <h1 id="operational-security">Operational Security & Guidelines</h1>
+    <p>Operating Veridot in a secure environment requires strict adherence to system requirements, clock synchronization, and proper key hierarchy resolution.</p>
     
-    <h2 id="clock-synchronization">Clock Synchronization & Skew</h2>
-    <p>Because Veridot signs and validates liveness heartbeats containing absolute UNIX timestamps, system clocks on all nodes must be synchronized using NTP (Network Time Protocol).</p>
+    <h2 id="clock-synchronization">Clock Synchronization & Skew Constraints</h2>
+    <p>Veridot relies on absolute time thresholds to establish session liveness (via <code>LIVENESS</code> entries) and key epoch validity. If system clocks drift significantly across instances, validation failures or window bypasses might occur.</p>
     
     <div class="alert alert-danger">
-        <div class="alert-title">Maximum Allowed Clock Skew</div>
-        <p>The maximum tolerated clock skew between any signer and any verifier is <strong>5 minutes</strong>. If a verifier detects a token timestamp skewing beyond this threshold, validation will fail-safe and reject the token.</p>
+        <div class="alert-title">Strict Time Skew Threshold (&sect;9.1)</div>
+        <p>The maximum allowed clock skew between any signer node and any verifying gateway is <strong>5 minutes</strong>. Gateways must synchronize their system clocks using NTP (Network Time Protocol) to ensure skews remain well below 50 milliseconds in production.</p>
     </div>
 
-    <h2 id="caching-tradeoffs">Authorization Capability Caching</h2>
-    <p>To keep latency extremely low (sub-millisecond), verifying nodes cache publisher authorization capabilities locally using TTLs. However, this introduces a latency window during which a revoked capability might still be treated as valid.</p>
-    
-    <h3>Positive Caching (Default: 60s)</h3>
-    <p>Controls how long a verified publisher capability is trusted. A lower TTL reduces revocation detection delay but increases network lookup overhead on the broker.</p>
+    <h3>Recommended NTP Configuration (systemd-timesyncd example)</h3>
+    <p>Ensure timesyncd is active and configured with reliable pools in <code>/etc/systemd/timesyncd.conf</code>:</p>
+    <pre><code>[Time]
+NTP=pool.ntp.org time.google.com
+FallbackNTP=ubuntu.pool.ntp.org</code></pre>
 
-    <h3>Negative Caching (Default: 5s)</h3>
-    <p>Controls how long a failed authorization check is cached. This is critical to prevent denial-of-service (DoS) patterns where an unauthorized node bombards the verifier with requests, triggering database lookup loops.</p>
-
-    <h2 id="signature-algorithms">Recommended Algorithms</h2>
-    <p>Use modern, strong cryptographic algorithms to protect the envelope signatures:</p>
+    <h2 id="trustroot-security-invariants">TrustRoot & KMS Security Invariants</h2>
+    <p>The <code>TrustRoot</code> interface resolves public keys for validating the signatures on envelopes. It forms the foundation of Veridot's security model:</p>
     <ul>
-        <li><strong>Ed25519 (Recommended):</strong> Provides high-speed signature verification and small signature sizes, ideal for high-throughput API gateways.</li>
-        <li><strong>RSA 3072/4096:</strong> Secure choice for compatibility with enterprise HSMs. Avoid RSA keys smaller than 2048 bits.</li>
+        <li><strong>Fail-Safe Design:</strong> If the <code>TrustRoot</code> becomes unavailable (e.g. KMS connection lost), the verifier must immediately fail-closed and reject all incoming tokens rather than falling back to trust-all mode.</li>
+        <li><strong>Issuer Isolation:</strong> Ephemeral keys must be signed by the corresponding long-term issuer key. A compromise of an issuer key only affects the sessions created by that specific issuer, preventing lateral tenant compromise.</li>
     </ul>
+
+    <h2 id="protocol-error-codes">Protocol Error Codes Reference</h2>
+    <p>When validation or operation fails, Veridot throws exceptions containing standardized error codes. Use this table to diagnose issues:</p>
+    
+    <table>
+        <thead>
+            <tr>
+                <th>Error Code</th>
+                <th>Identifier</th>
+                <th>Description / Resolution</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>0x01</code></td>
+                <td><code>INVALID_SIGNATURE</code></td>
+                <td>The envelope signature is corrupt or signed by an untrusted key. Check TrustRoot configuration.</td>
+            </tr>
+            <tr>
+                <td><code>0x02</code></td>
+                <td><code>EXPIRED_LIVENESS</code></td>
+                <td>The session has exceeded its heartbeat TTL. The user is logged out or the signer renewal thread stopped.</td>
+            </tr>
+            <tr>
+                <td><code>0x03</code></td>
+                <td><code>FENCE_TOKEN_STALE</code></td>
+                <td>A concurrency write conflict occurred. A newer signer node has taken ownership. Retry the operation.</td>
+            </tr>
+            <tr>
+                <td><code>0x04</code></td>
+                <td><code>CAPACITY_EXCEEDED</code></td>
+                <td>The maximum concurrent session capacity defined in CONFIG has been reached and policy is set to REJECT.</td>
+            </tr>
+            <tr>
+                <td><code>0x05</code></td>
+                <td><code>TRANSPORT_UNAVAILABLE</code></td>
+                <td>The verifier cannot read or write to the shared metadata broker (ex. Kafka partition offline, SQL database down).</td>
+            </tr>
+        </tbody>
+    </table>
 </section>

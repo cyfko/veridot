@@ -1,53 +1,66 @@
 <section>
     <h1 id="architecture-systeme">Architecture Système & Protocole V4</h1>
-    <p>Veridot V4 fonctionne en publiant des entrées signées cryptographiquement vers un broker de métadonnées partagé à haute disponibilité. Les nœuds de vérification lisent ce broker et maintiennent une vue locale de l'état tout en garantissant des invariants de sécurité stricts.</p>
+    <p>Veridot V4 est construit sur un modèle de réplication d'événements hautement optimisé. Le protocole garantit que tous les nœuds de vérification maintiennent la cohérence de l'état de sécurité sans goulot d'étranglement.</p>
     
     <h2 id="format-d-enveloppe-binaire">Format de l'Enveloppe Binaire</h2>
-    <p>Chaque message propagé par le broker est encapsulé dans une enveloppe binaire compacte (<code>Envelope</code>). Son format de sérialisation est structuré ainsi :</p>
+    <p>Toutes les transitions d'état (ex. CONFIG, KEY_EPOCH, LIVENESS) sont empaquetées dans une enveloppe binaire signée cryptographiquement. Son format a été conçu pour un parsing rapide et sans copie :</p>
     
-    <pre><code>+-----------------+-------------------+-------------------+-------------------+
-|  Magic (1B)     | Version (1B)      | Entry Type (1B)   | Flags (1B)        |
-|  valeur : 0x04  | valeur : 0x01     | (ex. CONFIG)      | (bitmask)         |
-+-----------------+-------------------+-------------------+-------------------+
-|  Scope Length   | Scope Value (Var) | Key Length (2B)   | Key Value (Var)   |
-+-----------------+-------------------+-------------------+-------------------+
-|  Version (8B)   | Timestamp (8B)    | Issuer ID Length  | Issuer ID Value   |
-+-----------------+-------------------+-------------------+-------------------+
-|  Payload Length | Payload Bytes     | Signature Alg     | Signature Bytes   |
-+-----------------+-------------------+-------------------+-------------------+</code></pre>
+    <pre><code>Offset (Octet) | Taille (Octets) | Nom du champ      | Description
+---------------+-----------------+-------------------+-----------------------------------
+0              | 1               | Magic Version     | Identifiant de protocole (doit être 0x04)
+1              | 1               | Entry Type        | Type de payload (1-5)
+2              | 1               | Flags             | Indicateurs de compression ou d'état
+3              | 1               | Sig Alg           | Identifiant de l'algorithme de signature (ex. 0x01)
+4-5            | 2               | Scope Length      | Longueur de la chaîne Scope
+6-X            | Var             | Scope Value       | Chaîne UTF-8 (ex. "group:user-123")
+X+1 - X+2      | 2               | Key Length        | Longueur de la sous-clé de session
+X+3 - Y        | Var             | Key Value         | Chaîne UTF-8 (ex. "session-9942")
+Y+1 - Y+8      | 8               | Version           | Numéro de version de séquence strictement croissant
+Y+9 - Y+16     | 8               | Timestamp         | Date de publication en millisecondes
+Y+17 - Y+18    | 2               | Issuer ID Length  | Longueur de l'identifiant de l'émetteur
+Y+19 - Z       | Var             | Issuer ID Value   | Identifiant UTF-8 du signataire
+Z+1 - Z+4      | 4               | Payload Length    | Longueur de la payload interne
+Z+5 - W        | Var             | Payload Bytes     | Octets encodés de la payload
+W+1 - W+2      | 2               | Signature Length  | Longueur de la signature cryptographique
+W+3 - Fin      | Var             | Signature Bytes   | Signature calculée sur les octets canoniques</code></pre>
 
-    <h2 id="types-d-entrees">Types d'Entrées du Protocole</h2>
-    <p>Le système utilise 5 types de messages principaux pour synchroniser l'état et appliquer les règles :</p>
+    <h2 id="types-de-payloads">Types de Payloads du Protocole</h2>
+    <p>Veridot définit 5 structures de payloads spécialisées encodées en format compact :</p>
     <ul>
-        <li><strong>CONFIG :</strong> Définit la capacité maximale de sessions, les politiques d'éviction, les TTL par défaut et la validité de la configuration.</li>
-        <li><strong>KEY_EPOCH :</strong> Publie les clés de rotation temporaires, les octets de clé publique éphémère et les signatures associées.</li>
-        <li><strong>LIVENESS :</strong> Signaux de vie périodiques (heartbeats). Un état peut être <code>ACTIVE</code> (actif) ou <code>REVOKED</code> (révoqué).</li>
-        <li><strong>FENCE :</strong> Établit l'ordre d'écriture et exclut (fence) les éditeurs concurrents ou obsolètes lors des modifications de capacité.</li>
-        <li><strong>SNAPSHOT_MARKER :</strong> Publié périodiquement lors des réconciliations pour établir un nouveau filigrane anti-rollback.</li>
+        <li><strong>CONFIG (Type 0x01) :</strong> Définit les limites de capacité (ex. maximum 5 appareils actifs), la politique d'éviction (FIFO / REJECT) et les TTL par défaut.</li>
+        <li><strong>KEY_EPOCH (Type 0x02) :</strong> Représente les clés éphémères de rotation. Contient la clé publique brute, l'intervalle de validité de rotation, et le jeton JWT optionnel (en mode indirect).</li>
+        <li><strong>LIVENESS (Type 0x03) :</strong> Signal de vie des sessions actives. Statut configuré à <code>ACTIVE</code> (mises à jour régulières) ou <code>REVOKED</code> (déconnexion explicite).</li>
+        <li><strong>FENCE (Type 0x04) :</strong> Jetons de barrière (FENCE) contenant un compteur monotone. Utilisé pour valider les écritures concurrentes et isoler les éditeurs.</li>
+        <li><strong>SNAPSHOT_MARKER (Type 0x05) :</strong> Publié périodiquement lors des réconciliations. Définit le filigrane de base sur tous les serveurs.</li>
     </ul>
 
-    <h2 id="diagramme-de-flux">Flux de Réplication de l'État</h2>
+    <h2 id="invariants-de-filigrane">Suivi de Version & Anti-Rollback</h2>
+    <p>Pour prévenir les attaques par rejeu (où un attaquant réémet une ancienne enveloppe ACTIVE pour réactiver un jeton révoqué), Veridot applique **l'invariant de version monotone** :</p>
+    
+    <div class="alert alert-note">
+        <div class="alert-title">Règle de Monotonicité</div>
+        <p>Pour chaque ressource unique (Scope + Type + Key), les validateurs conservent un filigrane local <code>W(id)</code>. Lorsqu'une nouvelle enveloppe arrive avec la version <code>V</code> :</p>
+        <p style="text-align: center; font-family: var(--font-mono); font-weight: 600;">Si V &le; W(id), l'enveloppe est immédiatement rejetée.</p>
+        <p style="text-align: center; font-family: var(--font-mono); font-weight: 600;">Si V &gt; W(id), l'enveloppe est acceptée et W(id) &larr; V.</p>
+    </div>
+
+    <p>Cela garantit que l'état du système ne peut jamais reculer dans le temps, même si la base de données subit un retard de réplication.</p>
+
+    <h2 id="protocole-de-fencing">Protocole de Fencing (&sect;9.4)</h2>
+    <p>Lorsque plusieurs nœuds tentent de modifier la capacité d'un groupe simultanément, Veridot utilise les **jetons FENCE** pour ordonner les écritures :</p>
+    
     <div class="mermaid">
         sequenceDiagram
             autonumber
-            participant Signer as Instance DataSigner
+            participant NodeA as Nœud Signataire A
             participant Broker as Broker de Métadonnées
-            participant Verifier as Instance TokenVerifier
-            
-            Signer->>Broker: Publie KEY_EPOCH (nouvelle session)
-            Signer->>Broker: Publie LIVENESS (ACTIVE)
-            Broker-->>Verifier: Réplication asynchrone des messages
-            Verifier->>Verifier: Mise à jour du filigrane local (Watermark) & Cache
-            Note over Verifier: La validation du jeton réussit localement (sub-ms)
-    </div>
+            participant NodeB as Nœud Signataire B
 
-    <h2 id="garanties-anti-rollback">Garanties Anti-Rollback & Réconciliation</h2>
-    <p>Une vulnérabilité majeure des systèmes décentralisés est l'attaque par rejeu, où un attaquant réémet un ancien état "actif". Veridot élimine ce risque grâce à deux invariants clés :</p>
-    
-    <div class="alert alert-warning">
-        <div class="alert-title">Filigrane Strict (Watermarking)</div>
-        <p>Chaque nœud maintient un <code>VersionWatermark</code> qui suit la version de séquence la plus élevée vue pour chaque ressource. Si un nœud reçoit un message ayant une version inférieure ou égale au filigrane local, il est immédiatement rejeté.</p>
+            Note over NodeA, NodeB: Les deux nœuds tentent de créer une session
+            NodeA->>Broker: Écrit FENCE (compteur = 12)
+            Note over Broker: Écriture FENCE validée. Le filigrane passe à 12.
+            NodeB->>Broker: Écrit FENCE (compteur = 11)
+            Note over Broker: Rejeté ! La version 11 est inférieure au filigrane 12.
+            NodeB->>NodeB: Échoue par sécurité (erreur FENCE_TOKEN_STALE)
     </div>
-
-    <p>Pour synchroniser les filigranes locaux, le <code>ReconciliationManager</code> exécute des boucles de réconciliation périodiques. Il effectue un snapshot du broker, agrège l'état actif, et publie un <code>SNAPSHOT_MARKER</code> signé pour aligner le filigrane de base sur toutes les instances en cours d'exécution.</p>
 </section>

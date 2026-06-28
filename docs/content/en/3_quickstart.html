@@ -1,9 +1,9 @@
 <section>
     <h1 id="quickstart-guide">Quickstart Guide</h1>
-    <p>Get up and running with Veridot in under 5 minutes. Learn how to import the dependency and run your first cryptographic signature and validation loop.</p>
+    <p>This guide will help you install Veridot Core, configure a verifier instance, sign a cryptographic session token, validate it, and execute a revocation loop.</p>
     
-    <h2 id="installation">Installation</h2>
-    <p>Choose your build tool to add the Veridot Core dependency to your project:</p>
+    <h2 id="installation">Step 1: Installation</h2>
+    <p>Include the Veridot Core library in your project build file:</p>
     
     <div class="code-tabs">
         <div class="code-tabs-header">
@@ -22,32 +22,35 @@
         </div>
     </div>
 
-    <h2 id="first-signature-verification">First Token Signing & Verification</h2>
-    <p>Here is a complete Java example demonstrating how to initialize a signer/verifier, sign user payload data, and verify it locally:</p>
+    <h2 id="first-session-loop">Step 2: Implement Token Signing & Verification</h2>
+    <p>Create a class named <code>VeridotDemo.java</code> in your project. This sample code demonstrates the complete life cycle of a session under the Veridot protocol:</p>
 
     <pre><code class="language-java">import io.github.cyfko.veridot.core.*;
 import io.github.cyfko.veridot.core.impl.*;
+import io.github.cyfko.veridot.core.exceptions.*;
 import java.security.*;
 
-public class VeridotQuickstart {
+public class VeridotDemo {
     public static void main(String[] args) throws Exception {
-        // 1. Initialize a simple in-memory broker (for testing)
+        // 1. Initialize an InMemoryBroker for local testing
         Broker broker = new InMemoryBroker();
         
-        // 2. Generate long-term cryptographic keys (RSA 2048)
-        KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");
-        kpg.initialize(2048);
-        KeyPair keyPair = kpg.generateKeyPair();
+        // 2. Generate a long-term cryptographic key pair (RSA 2048) for the signer
+        KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
+        keyGen.initialize(2048);
+        KeyPair keyPair = keyGen.generateKeyPair();
         
-        // 3. Define the TrustRoot anchor
+        // 3. Define the TrustRoot to resolve the public key dynamically
         TrustRoot trustRoot = new PublicKeyTrustRoot() {
             @Override
             public PublicKey resolve(String issuer) {
+                // In production, resolve this key from a KMS or public key store
                 return keyPair.getPublic();
             }
             @Override
             public boolean isRootIdentity(String issuer) {
-                return "root-admin".equals(issuer);
+                // Identify the root publisher identity
+                return "auth-authority-01".equals(issuer);
             }
         };
 
@@ -55,34 +58,55 @@ public class VeridotQuickstart {
         GenericSignerVerifier service = new GenericSignerVerifier(
             broker,
             trustRoot,
-            "root-admin",
+            "auth-authority-01",
             keyPair.getPrivate(),
             (byte) 0x01 // Envelope signature algorithm (SHA256withRSA)
         );
 
-        // 5. Configure the signing operation (session validity)
+        System.out.println("Veridot service initialized successfully.");
+
+        // 5. Sign a session for "user-99" with 10 minutes validity
         Configurer configurer = BasicConfigurer.builder()
-            .groupId("user-sessions")
-            .sequenceId("session-xyz-123")
-            .validity(300) // valid for 5 minutes
+            .groupId("user-99")
+            .sequenceId("session-abc-456")
+            .validity(600) // Duration in seconds (10 minutes)
+            .distribution(DistributionMode.DIRECT) // Return a standard JWT
             .build();
 
-        // 6. Sign the payload data
-        String token = service.sign("User ID: 9942", configurer);
-        System.out.println("Generated JWT Token or Message ID: " + token);
+        String token = service.sign("{\"role\":\"admin\",\"name\":\"Alice\"}", configurer);
+        System.out.println("\nGenerated JWT Token:\n" + token);
 
-        // 7. Verify the token locally
-        VerifiedData&lt;String&gt; verified = service.verify(token, payload -> payload);
-        System.out.println("Verification Succeeded! Data: " + verified.data());
-        System.out.println("Session Status: " + (verified.isLive() ? "LIVE" : "EXPIRED"));
-        
-        // Clean up internal schedulers
+        // 6. Verify the token immediately
+        System.out.println("\n--- Verifying active token ---");
+        try {
+            VerifiedData&lt;String&gt; verified = service.verify(token, payload -> payload);
+            System.out.println("Verification succeeded!");
+            System.out.println("Payload data: " + verified.data());
+            System.out.println("Is session active: " + verified.isLive());
+        } catch (Exception e) {
+            System.err.println("Verification failed: " + e.getMessage());
+        }
+
+        // 7. Revoke the session manually
+        System.out.println("\n--- Revoking the session ---");
+        service.revoke(Scope.group("user-99"), "session-abc-456");
+
+        // 8. Try verifying again. It must fail instantly
+        System.out.println("\n--- Verifying revoked token ---");
+        try {
+            service.verify(token, payload -> payload);
+            System.err.println("CRITICAL ERROR: Token was verified after revocation!");
+        } catch (BrokerExtractionException e) {
+            System.out.println("Success: Token verification failed as expected. Reason: " + e.getMessage());
+        }
+
+        // Shutdown background reconciliation schedulers
         service.close();
     }
 }</code></pre>
 
     <div class="alert alert-note">
-        <div class="alert-title">Distribution Modes</div>
-        <p>By default, <code>DistributionMode.DIRECT</code> yields a self-contained JWT. You can set <code>.distribution(DistributionMode.INDIRECT)</code> to return a short, opaque message identifier (useful for keeping payload network overhead low).</p>
+        <div class="alert-title">Compilation Requirement</div>
+        <p>Ensure your project runs on Java 17 or higher, as Veridot makes intensive use of modern Java language features (records, switch pattern matching).</p>
     </div>
 </section>

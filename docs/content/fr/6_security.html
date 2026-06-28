@@ -1,28 +1,65 @@
 <section>
-    <h1 id="securite-operationnelle">Sécurité Opérationnelle & Contraintes</h1>
-    <p>Utiliser Veridot de manière sécurisée nécessite de comprendre et de respecter certains prérequis environnementaux, notamment en ce qui concerne la synchronisation des horloges et la configuration des caches.</p>
+    <h1 id="securite-operationnelle">Sécurité Opérationnelle & Bonnes Pratiques</h1>
+    <p>Exploiter Veridot dans un environnement de production exige le respect rigoureux des contraintes de synchronisation temporelle et de résolution des clés de confiance.</p>
     
-    <h2 id="synchronisation-horloges">Synchronisation des Horloges & Décalage</h2>
-    <p>Puisque Veridot valide des signaux de vie contenant des horodatages absolus (timestamps UNIX), les horloges de tous les serveurs doivent être rigoureusement synchronisées (ex. via NTP).</p>
+    <h2 id="synchronisation-temporelle">Synchronisation Temporelle & Dérive d'Horloge</h2>
+    <p>Veridot s'appuie sur des timestamps absolus pour valider la durée de vie des sessions (via les entrées <code>LIVENESS</code>) et la validité des clés éphémères. Si les horloges des serveurs dérivent, la validation échouera par sécurité.</p>
     
     <div class="alert alert-danger">
-        <div class="alert-title">Décalage Maximum Toléré</div>
-        <p>Le décalage d'horloge (clock skew) maximum toléré entre un émetteur et un vérificateur est de <strong>5 minutes</strong>. Si un vérificateur détecte un jeton dont la date s'écarte de plus de 5 minutes par rapport à l'heure locale, la validation échouera par sécurité.</p>
+        <div class="alert-title">Seuil Strict de Dérive Temporelle (&sect;9.1)</div>
+        <p>Le décalage d'horloge (clock skew) maximum toléré entre un signataire et un vérificateur est de <strong>5 minutes</strong>. Les nœuds de production doivent synchroniser leurs horloges système via le protocole NTP pour maintenir une dérive inférieure à 50ms.</p>
     </div>
 
-    <h2 id="compromis-mise-en-cache">Mise en Cache des Capacités</h2>
-    <p>Pour maintenir une latence sub-milliseconde, les nœuds de vérification mettent en cache les autorisations. Cela introduit un délai de propagation pour la prise en compte des changements :</p>
-    
-    <h3>Cache Positif (Par défaut : 60s)</h3>
-    <p>Détermine pendant combien de temps une autorisation valide est gardée en cache. Un TTL plus court améliore la réactivité de la révocation mais augmente la charge sur la base de données.</p>
+    <h3>Configuration NTP Recommandée (exemple systemd-timesyncd)</h3>
+    <p>Assurez-vous que timesyncd est actif et configuré dans <code>/etc/systemd/timesyncd.conf</code> :</p>
+    <pre><code>[Time]
+NTP=pool.ntp.org time.google.com
+FallbackNTP=ubuntu.pool.ntp.org</code></pre>
 
-    <h3>Cache Négatif (Par défaut : 5s)</h3>
-    <p>Détermine pendant combien de temps un échec d'autorisation est gardé en cache. Cela est crucial pour bloquer les attaques de déni de service (DoS) où un nœud non autorisé envoie des requêtes en boucle pour forcer des lectures base de données.</p>
-
-    <h2 id="algorithmes-recommandes">Algorithmes Cryptographiques Recommandés</h2>
-    <p>Utilisez des algorithmes robustes pour protéger les signatures des enveloppes :</p>
+    <h2 id="invariants-trustroot">Invariants de Sécurité du TrustRoot & KMS</h2>
+    <p>L'interface <code>TrustRoot</code> résout les clés publiques nécessaires à la validation des enveloppes. Elle est le socle de sécurité de Veridot :</p>
     <ul>
-        <li><strong>Ed25519 (Recommandé) :</strong> Offre une validation ultra-rapide et des signatures compactes, idéales pour les passerelles API.</li>
-        <li><strong>RSA 3072/4096 :</strong> Choix traditionnel pour la compatibilité avec les HSM d'entreprise. Évitez les clés inférieures à 2048 bits.</li>
+        <li><strong>Conception Fail-Closed (Verrouillage par défaut) :</strong> Si le KMS ou le <code>TrustRoot</code> est indisponible, le vérificateur doit rejeter immédiatement tous les jetons plutôt que de tolérer des jetons non vérifiés.</li>
+        <li><strong>Isolation des Émetteurs (Issuers) :</strong> Les clés éphémères doivent être validées avec la clé à long terme de l'émetteur concerné. La compromission d'un émetteur n'affecte pas les autres, garantissant l'étanchéité multi-tenant.</li>
     </ul>
+
+    <h2 id="codes-d-erreur">Référence des Codes d'Erreur du Protocole</h2>
+    <p>Lorsque le protocole rencontre un problème, les exceptions contiennent des codes d'erreur standardisés. Référez-vous à ce tableau pour le diagnostic :</p>
+    
+    <table>
+        <thead>
+            <tr>
+                <th>Code</th>
+                <th>Identifiant</th>
+                <th>Description / Résolution</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>0x01</code></td>
+                <td><code>INVALID_SIGNATURE</code></td>
+                <td>La signature de l'enveloppe est corrompue ou signée par une clé non autorisée par le TrustRoot.</td>
+            </tr>
+            <tr>
+                <td><code>0x02</code></td>
+                <td><code>EXPIRED_LIVENESS</code></td>
+                <td>La session a dépassé sa durée de vie heartbeat. L'utilisateur a été déconnecté ou le thread renouvellement est arrêté.</td>
+            </tr>
+            <tr>
+                <td><code>0x03</code></td>
+                <td><code>FENCE_TOKEN_STALE</code></td>
+                <td>Conflit d'écriture concurrent. Un signataire plus récent a pris le contrôle de la capacité. Réessayez l'opération.</td>
+            </tr>
+            <tr>
+                <td><code>0x04</code></td>
+                <td><code>CAPACITY_EXCEEDED</code></td>
+                <td>Le nombre maximal de sessions concurrentes défini dans CONFIG est atteint et la politique d'éviction est REJECT.</td>
+            </tr>
+            <tr>
+                <td><code>0x05</code></td>
+                <td><code>TRANSPORT_UNAVAILABLE</code></td>
+                <td>Le vérificateur ne peut plus lire/écrire sur le broker de métadonnées (ex. partition Kafka hors-ligne ou base SQL injoignable).</td>
+            </tr>
+        </tbody>
+    </table>
 </section>

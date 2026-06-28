@@ -1,61 +1,75 @@
 <section>
     <h1 id="introduction-a-veridot">Introduction à Veridot</h1>
-    <p class="lead">Veridot est un protocole de vérification de jetons cryptographiques à haute performance et une bibliothèque Java conçue pour les architectures distribuées modernes à grande échelle. Il résout le compromis classique entre la révocation immédiate et la scalabilité du système.</p>
+    <p class="lead">Veridot est un protocole de vérification de jetons cryptographiques à haute performance et une bibliothèque Java de niveau entreprise conçue pour les architectures distribuées à grande échelle. Il résout le compromis classique entre la validation de jetons à latence ultra-faible et la révocation immédiate.</p>
     
-    <h2 id="le-defi-de-la-revocation">Le défi de la révocation distribuée</h2>
-    <p>Dans les systèmes distribués, valider l'identité et les autorisations repose généralement sur deux approches, qui introduisent toutes deux des limites opérationnelles :</p>
-    <ul>
-        <li><strong>L'introspection d'état (Lente et Centralisée) :</strong> Le service de vérification effectue un appel réseau (HTTP/RPC ou base de données) pour vérifier si le jeton est toujours valide. Cela crée un goulot d'étranglement critique et un point de défaillance unique (SPOF).</li>
-        <li><strong>La validation de JWT sans état (Rapide mais Révocation Difficile) :</strong> Les validateurs vérifient cryptographiquement le JWT localement à l'aide d'une clé publique. Bien qu'ultra-rapide (inférieur à la milliseconde), révoquer un jeton compromis instantanément est impossible sans rajouter des listes noires centralisées.</li>
-    </ul>
-
-    <h2 id="l-approche-veridot">La Solution Veridot</h2>
-    <p>Veridot offre la rapidité d'une vérification locale sans état couplée à la réactivité instantanée d'un système de révocation. Il repose sur trois piliers fondamentaux :</p>
+    <h2 id="le-paradoxe-de-la-revocation-distribuee">Le Paradoxe de la Révocation Distribuée</h2>
+    <p>Les architectures modernes de microservices exigent une authentification rapide, sécurisée et hautement scalable. Traditionnellement, les développeurs doivent choisir entre deux modèles architecturaux imparfaits :</p>
     
-    <div class="alert alert-note">
-        <div class="alert-title">Piliers Fondamentaux</div>
-        <ul>
-            <li><strong>Vérification Localisée :</strong> Les nœuds de vérification cachent le contexte de sécurité et valident les jetons localement avec des garanties cryptographiques.</li>
-            <li><strong>Réplication Asynchrone de l'État :</strong> Les modifications d'état (configurations, époques de clé, signaux de vie) sont répliquées asynchronement via un broker partagé à haute performance (ex. Kafka ou SQL).</li>
-            <li><strong>Invariants de Filigrane (Watermark) :</strong> Un système anti-rollback strict empêche le rejeu de snapshots anciens, assurant une sécurité absolue.</li>
-        </ul>
+    <div class="alert alert-warning">
+        <div class="alert-title">Le Compromis de l'Authentification</div>
+        <p><strong>1. L'Introspection d'État (OAuth2 / Requêtes de Base de Données)</strong><br>
+        Le service de vérification effectue une requête réseau synchrone vers un serveur d'autorisation central ou une base de données pour chaque requête API. Bien que cela permette une révocation immédiate, cela crée un goulot d'étranglement de performance, ajoute 10-150ms de latence par requête, et introduit un point de défaillance unique (SPOF).</p>
+        <p><strong>2. La Validation de JWT sans état (Stateless)</strong><br>
+        Les services de vérification valident cryptographiquement les jetons localement à l'aide d'une clé publique mise en cache. C'est extrêmement rapide (inférieur à la milliseconde) et résistant aux pannes réseau. Cependant, une fois le jeton signé, il ne peut plus être révoqué avant l'expiration de sa durée de vie (TTL), exposant le système à des failles si le jeton est volé.</p>
     </div>
 
-    <h2 id="analyse-comparative">Comparatif avec les Standards du Marché</h2>
+    <h2 id="la-solution-veridot">La Solution Veridot</h2>
+    <p>Veridot résout ce paradoxe. Il offre la rapidité d'une vérification locale sans état couplée à la réactivité instantanée d'un système de révocation. Il repose sur une architecture de réplication des métadonnées :</p>
+    <ul>
+        <li><strong>Cache Cryptographique Local :</strong> Les nœuds de vérification maintiennent un cache local et thread-safe des clés de session actives, des clés de rotation publiques et des contraintes de configuration.</li>
+        <li><strong>Réplication Asynchrone de l'État :</strong> Les transitions d'état (nouvelles sessions, révocations, changements de règles) sont publiées dans un journal distribué à haut débit (comme Apache Kafka ou une base de données SQL) et propagées de manière asynchrone à tous les vérificateurs.</li>
+        <li><strong>Invariants de Filigrane (Version Watermark) :</strong> Un protocole mathématique strict de suivi de version protège le système contre les attaques par rejeu, les partitions réseau et le rollback d'anciens états.</li>
+    </ul>
+
+    <h2 id="comparatif-architectural-detaille">Comparatif Architectural Détaillé</h2>
     <table>
         <thead>
             <tr>
-                <th>Caractéristique</th>
-                <th>JWT Classique</th>
-                <th>Introspection OAuth</th>
+                <th>Métrique Opérationnelle</th>
+                <th>JWT Classique (Stateless)</th>
+                <th>Introspection OAuth (Stateful)</th>
                 <th>Veridot V4.0.0</th>
             </tr>
         </thead>
         <tbody>
             <tr>
                 <td><strong>Latence de Vérification</strong></td>
-                <td>Inférieure à la ms (Local)</td>
-                <td>10ms - 100ms (Appel réseau)</td>
-                <td><strong>Inférieure à la ms</strong> (Local)</td>
+                <td>&lt; 1 ms (Validation cryptographique locale)</td>
+                <td>15 ms - 150 ms (Appel réseau synchrone)</td>
+                <td><strong>&lt; 1 ms</strong> (Vérification en cache local)</td>
             </tr>
             <tr>
                 <td><strong>Délai de Révocation</strong></td>
-                <td>Aucun (Attente de l'expiration)</td>
+                <td>Aucun (Attente de l'expiration du jeton)</td>
                 <td>Immédiat</td>
-                <td><strong>Quasi-Instante</strong> (Propagation asynchrone)</td>
+                <td><strong>&lt; 1 seconde</strong> (Propagation asynchrone d'événements)</td>
             </tr>
             <tr>
-                <td><strong>Résilience Hors-ligne</strong></td>
-                <td>Élevée</td>
-                <td>Faible (Panne du serveur central)</td>
-                <td><strong>Élevée</strong> (Repli sur filigrane local)</td>
+                <td><strong>Charge Base de Données</strong></td>
+                <td>Nulle (Aucune requête SQL)</td>
+                <td>Élevée (Interrogation SQL par requête)</td>
+                <td><strong>Très Faible</strong> (Lecture seule des mises à jour du broker)</td>
             </tr>
             <tr>
-                <td><strong>Protection Anti-Rollback</strong></td>
+                <td><strong>Résilience aux Pannes Réseau</strong></td>
+                <td>Excellente (Vérification autonome)</td>
+                <td>Très Faible (Panne si le serveur d'authentification tombe)</td>
+                <td><strong>Élevée</strong> (Maintien de la vérification locale autonome)</td>
+            </tr>
+            <tr>
+                <td><strong>Sécurité Anti-Rollback</strong></td>
                 <td>N/A</td>
-                <td>Élevée (Vérification centrale)</td>
-                <td><strong>Garantie cryptographiquement</strong></td>
+                <td>Élevée</td>
+                <td><strong>Garantie Cryptographiquement</strong> (Watermarks)</td>
             </tr>
         </tbody>
     </table>
+
+    <h2 id="scenarios-de-panne-resolus-par-veridot">Scénarios Réels Résolus par Veridot</h2>
+    
+    <h3>Scénario A : Vol d'une Clé d'API</h3>
+    <p>Un attaquant vole une clé d'API utilisateur. Avec un JWT classique, la clé reste valide jusqu'à son expiration (ex. 1 heure). Avec Veridot, l'administrateur émet un événement de révocation. En quelques millisecondes, la révocation est propagée aux passerelles API et le jeton volé est rejeté.</p>
+
+    <h3>Scénario B : Panne de la Base de Données Centrale</h3>
+    <p>Dans un système d'introspection d'état, si la base de données s'arrête, tout le trafic API s'arrête. Sous Veridot, les validateurs continuent à valider les jetons existants grâce à leur cache local, assurant la continuité d'activité pendant la résolution de la panne.</p>
 </section>
