@@ -1,9 +1,9 @@
 <section>
     <h1 id="guide-de-demarrage-rapide">Guide de Démarrage Rapide</h1>
-    <p>Démarrez avec Veridot en moins de 5 minutes. Apprenez à intégrer la dépendance et à exécuter votre première signature et validation cryptographique.</p>
+    <p>Ce guide vous aidera à installer Veridot Core, configurer une instance de vérification, signer un jeton de session cryptographique, le valider et exécuter une boucle de révocation.</p>
     
-    <h2 id="installation">Installation</h2>
-    <p>Sélectionnez votre outil de build pour ajouter la dépendance Veridot Core à votre projet :</p>
+    <h2 id="installation">Étape 1 : Installation</h2>
+    <p>Ajoutez la bibliothèque Veridot Core à votre fichier de build :</p>
     
     <div class="code-tabs">
         <div class="code-tabs-header">
@@ -22,32 +22,35 @@
         </div>
     </div>
 
-    <h2 id="premiere-signature-verification">Première Signature & Vérification</h2>
-    <p>Voici un exemple complet en Java démontrant comment initialiser un signataire/vérificateur, signer une payload utilisateur et la valider localement :</p>
+    <h2 id="premiere-boucle-session">Étape 2 : Signature & Vérification d'un Jeton</h2>
+    <p>Créez une classe nommée <code>VeridotDemo.java</code> dans votre projet. Ce code illustre le cycle de vie complet d'une session sous le protocole Veridot :</p>
 
     <pre><code class="language-java">import io.github.cyfko.veridot.core.*;
 import io.github.cyfko.veridot.core.impl.*;
+import io.github.cyfko.veridot.core.exceptions.*;
 import java.security.*;
 
-public class VeridotQuickstart {
+public class VeridotDemo {
     public static void main(String[] args) throws Exception {
-        // 1. Initialise un broker simple en mémoire (pour les tests)
+        // 1. Initialise un InMemoryBroker pour les tests locaux
         Broker broker = new InMemoryBroker();
         
-        // 2. Génère des clés cryptographiques à long terme (RSA 2048)
-        KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");
-        kpg.initialize(2048);
-        KeyPair keyPair = kpg.generateKeyPair();
+        // 2. Génère une paire de clés cryptographiques à long terme (RSA 2048) pour le signataire
+        KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
+        keyGen.initialize(2048);
+        KeyPair keyPair = keyGen.generateKeyPair();
         
-        // 3. Définit l'ancre de confiance TrustRoot
+        // 3. Définit le TrustRoot pour résoudre la clé publique dynamiquement
         TrustRoot trustRoot = new PublicKeyTrustRoot() {
             @Override
             public PublicKey resolve(String issuer) {
+                // En production, résolvez cette clé depuis un KMS ou un coffre-fort de clés
                 return keyPair.getPublic();
             }
             @Override
             public boolean isRootIdentity(String issuer) {
-                return "root-admin".equals(issuer);
+                // Identifie l'identité émettrice racine
+                return "auth-authority-01".equals(issuer);
             }
         };
 
@@ -55,34 +58,55 @@ public class VeridotQuickstart {
         GenericSignerVerifier service = new GenericSignerVerifier(
             broker,
             trustRoot,
-            "root-admin",
+            "auth-authority-01",
             keyPair.getPrivate(),
-            (byte) 0x01 // Algorithme de signature d'enveloppe (SHA256withRSA)
+            (byte) 0x01 // Algorithme de signature de l'enveloppe (SHA256withRSA)
         );
 
-        // 5. Configure l'opération de signature (validité de session)
+        System.out.println("Service Veridot initialisé avec succès.");
+
+        // 5. Signe une session pour "user-99" avec une validité de 10 minutes
         Configurer configurer = BasicConfigurer.builder()
-            .groupId("user-sessions")
-            .sequenceId("session-xyz-123")
-            .validity(300) // valide pendant 5 minutes
+            .groupId("user-99")
+            .sequenceId("session-abc-456")
+            .validity(600) // Durée en secondes (10 minutes)
+            .distribution(DistributionMode.DIRECT) // Renvoie un jeton JWT standard
             .build();
 
-        // 6. Signe la payload utilisateur
-        String token = service.sign("User ID: 9942", configurer);
-        System.out.println("Token JWT ou ID de Message généré : " + token);
+        String token = service.sign("{\"role\":\"admin\",\"name\":\"Alice\"}", configurer);
+        System.out.println("\nJeton JWT généré :\n" + token);
 
-        // 7. Vérifie le jeton localement
-        VerifiedData&lt;String&gt; verified = service.verify(token, payload -> payload);
-        System.out.println("Vérification Réussie ! Données : " + verified.data());
-        System.out.println("Statut Session : " + (verified.isLive() ? "ACTIF" : "EXPIRE"));
-        
-        // Arrête les planificateurs internes
+        // 6. Vérifie le jeton immédiatement
+        System.out.println("\n--- Vérification du jeton actif ---");
+        try {
+            VerifiedData&lt;String&gt; verified = service.verify(token, payload -> payload);
+            System.out.println("Vérification réussie !");
+            System.out.println("Données de la payload : " + verified.data());
+            System.out.println("La session est active : " + verified.isLive());
+        } catch (Exception e) {
+            System.err.println("Échec de la vérification : " + e.getMessage());
+        }
+
+        // 7. Révocation manuelle de la session
+        System.out.println("\n--- Révocation de la session ---");
+        service.revoke(Scope.group("user-99"), "session-abc-456");
+
+        // 8. Tente une nouvelle vérification. Elle doit échouer instantanément
+        System.out.println("\n--- Vérification du jeton révoqué ---");
+        try {
+            service.verify(token, payload -> payload);
+            System.err.println("ERREUR CRITIQUE : Le jeton a été vérifié après révocation !");
+        } catch (BrokerExtractionException e) {
+            System.out.println("Succès : La vérification du jeton a échoué comme prévu. Raison : " + e.getMessage());
+        }
+
+        // Fermeture des planificateurs de réconciliation en arrière-plan
         service.close();
     }
 }</code></pre>
 
     <div class="alert alert-note">
-        <div class="alert-title">Modes de Distribution</div>
-        <p>Par défaut, <code>DistributionMode.DIRECT</code> renvoie un JWT autonome. Vous pouvez utiliser <code>.distribution(DistributionMode.INDIRECT)</code> pour renvoyer un identifiant opaque court (pratique pour minimiser l'overhead réseau).</p>
+        <div class="alert-title">Version de Java requise</div>
+        <p>Assurez-vous que votre projet utilise Java 17 ou supérieur, car Veridot exploite intensivement les fonctionnalités modernes du langage (records, pattern matching sur switch).</p>
     </div>
 </section>

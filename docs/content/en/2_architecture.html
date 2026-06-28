@@ -1,53 +1,66 @@
 <section>
     <h1 id="system-architecture">System Architecture & Protocol V4</h1>
-    <p>Veridot V4 operates by publishing cryptographically signed entries to a shared, high-availability metadata broker. Verifying nodes read from this broker, maintaining a local view of the state while guaranteeing safety invariants.</p>
+    <p>Veridot V4 is built on a highly optimized, event-driven replication model. The protocol ensures that all verifying nodes maintain security state consistency without central coordination bottlenecks.</p>
     
-    <h2 id="binary-envelope-format">Binary Envelope Format</h2>
-    <p>Every message propagated through the broker is wrapped in a compact binary <code>Envelope</code>. The wire format is structured as follows:</p>
+    <h2 id="binary-envelope-format">Binary Envelope Wire Format</h2>
+    <p>All state transitions (e.g., CONFIG, KEY_EPOCH, LIVENESS) are packed into a cryptographically signed binary envelope before replication. The exact layout is designed for fast, zero-copy parsing:</p>
     
-    <pre><code>+-----------------+-------------------+-------------------+-------------------+
-|  Magic (1B)     | Version (1B)      | Entry Type (1B)   | Flags (1B)        |
-|  value: 0x04    | value: 0x01       | (e.g. CONFIG)     | (bitmask)         |
-+-----------------+-------------------+-------------------+-------------------+
-|  Scope Length   | Scope Value (Var) | Key Length (2B)   | Key Value (Var)   |
-+-----------------+-------------------+-------------------+-------------------+
-|  Version (8B)   | Timestamp (8B)    | Issuer ID Length  | Issuer ID Value   |
-+-----------------+-------------------+-------------------+-------------------+
-|  Payload Length | Payload Bytes     | Signature Alg     | Signature Bytes   |
-+-----------------+-------------------+-------------------+-------------------+</code></pre>
+    <pre><code>Byte Offset | Size (Bytes) | Field Name         | Description
+------------+--------------+--------------------+-----------------------------------
+0           | 1            | Magic Version      | Protocol identifier. Must be 0x04
+1           | 1            | Entry Type         | Type of message payload (1-5)
+2           | 1            | Flags              | Bitmask for compression or state
+3           | 1            | Sig Alg            | Signature algorithm identifier (ex. 0x01)
+4-5         | 2            | Scope Length       | Length of the resource Scope string
+6-X         | Var          | Scope Value        | UTF-8 string (ex. "group:user-123")
+X+1 - X+2   | 2            | Key Length         | Length of the sub-key identifier
+X+3 - Y     | Var          | Key Value          | UTF-8 string (ex. "session-9942")
+Y+1 - Y+8   | 8            | Version            | Monotonically increasing sequence version
+Y+9 - Y+16  | 8            | Timestamp          | Epoch milliseconds of publication
+Y+17 - Y+18 | 2            | Issuer ID Length   | Length of publisher identifier
+Y+19 - Z    | Var          | Issuer ID Value    | UTF-8 string of signer identity
+Z+1 - Z+4   | 4            | Payload Length     | Length of the inner payload
+Z+5 - W     | Var          | Payload Bytes      | Encoded inner payload bytes
+W+1 - W+2   | 2            | Signature Length   | Length of the cryptographic signature
+W+3 - End   | Var          | Signature Bytes    | Signature over canonical signing bytes</code></pre>
 
-    <h2 id="entry-types">Protocol Entry Types</h2>
-    <p>The system uses 5 primary message types to synchronize states and enforce rules:</p>
+    <h2 id="entry-payloads-tlv">Entry Payload Types</h2>
+    <p>Veridot defines 5 specialized payload structures encoded using protobuf or compact TLV:</p>
     <ul>
-        <li><strong>CONFIG:</strong> Defines maximum session capacities, eviction policies, default TTLs, and configuration validity.</li>
-        <li><strong>KEY_EPOCH:</strong> Publishes rotation keys, ephemeral public key bytes, validity intervals, and signatures.</li>
-        <li><strong>LIVENESS:</strong> Periodic heartbeats sent by active signers. A state can be marked as <code>ACTIVE</code> or <code>REVOKED</code>.</li>
-        <li><strong>FENCE:</strong> Used to establish write order and fence out stale or concurrent publishers during state mutations.</li>
-        <li><strong>SNAPSHOT_MARKER:</strong> Published periodically during reconciliation to establish a fresh anti-rollback watermark.</li>
+        <li><strong>CONFIG (Type 0x01):</strong> Dictates group capacity limits (e.g., maximum 5 active devices), eviction strategies (FIFO / REJECT), and default TTL windows.</li>
+        <li><strong>KEY_EPOCH (Type 0x02):</strong> Represents ephemeral keys rotated by signers. Contains the raw public key bytes, rotation validity range, and the optional encrypted payload JWT (in indirect mode).</li>
+        <li><strong>LIVENESS (Type 0x03):</strong> Heartbeat signal of active sessions. Status is set to <code>ACTIVE</code> (regular updates) or <code>REVOKED</code> (explicit logout).</li>
+        <li><strong>FENCE (Type 0x04):</strong> Fencing tokens containing a monotonic fence counter. Used to validate state modifications and isolate concurrent publishers.</li>
+        <li><strong>SNAPSHOT_MARKER (Type 0x05):</strong> Published periodically during global database reconciliation. Sets a baseline watermark across all verifiers.</li>
     </ul>
 
-    <h2 id="data-flow-diagram">State Replication Flow</h2>
+    <h2 id="anti-rollback-invariants">Version Watermarking & Anti-Rollback</h2>
+    <p>To prevent replay attacks (where an attacker replays a stale LIVENESS ACTIVE envelope to reactivate a revoked session), Veridot enforces the <strong>Monotonic Version Invariant</strong>:</p>
+    
+    <div class="alert alert-note">
+        <div class="alert-title">Monotonicity Rule</div>
+        <p>For every unique resource identifier (Scope + Entry Type + Key), verifiers maintain a local watermark <code>W(id)</code>. When a new envelope is received with version <code>V</code>:</p>
+        <p style="text-align: center; font-family: var(--font-mono); font-weight: 600;">If V &le; W(id), the envelope is rejected.</p>
+        <p style="text-align: center; font-family: var(--font-mono); font-weight: 600;">If V &gt; W(id), the envelope is accepted and W(id) &larr; V.</p>
+    </div>
+
+    <p>This ensures that status updates can never be rolled back to a previous state, even if the database is restored from a backup or suffers from replica lag.</p>
+
+    <h2 id="fencing-protocol">Fencing Protocol (&sect;9.4)</h2>
+    <p>When multiple nodes attempt to mutate a group's capacity concurrently (e.g. starting sessions simultaneously), Veridot uses <strong>FENCE Tokens</strong> to guarantee serializeability:</p>
+    
     <div class="mermaid">
         sequenceDiagram
             autonumber
-            participant Signer as DataSigner Instance
-            participant Broker as Shared Metadata Broker
-            participant Verifier as TokenVerifier Instance
-            
-            Signer->>Broker: Publish KEY_EPOCH (active session)
-            Signer->>Broker: Publish LIVENESS (ACTIVE)
-            Broker-->>Verifier: Replicate new entries asynchronously
-            Verifier->>Verifier: Update local VersionWatermark & Cache
-            Note over Verifier: Token validation succeeds locally (sub-ms)
-    </div>
+            participant NodeA as Signer Node A
+            participant Broker as Metadata Broker
+            participant NodeB as Signer Node B
 
-    <h2 id="anti-rollback-guarantees">Anti-Rollback & Reconciliation</h2>
-    <p>A major vulnerability in decentralized status systems is the <em>replay attack</em>, where an attacker intercepts a stale "active" status and republishes it. Veridot eliminates this vulnerability using two invariants:</p>
-    
-    <div class="alert alert-warning">
-        <div class="alert-title">Strict Watermarking</div>
-        <p>Every node maintains a <code>VersionWatermark</code> that tracks the highest seen sequence version for every resource scope. If a node receives a message with a version number less than or equal to the local watermark, it is immediately discarded as stale.</p>
+            Note over NodeA, NodeB: Both nodes want to sign new sessions
+            NodeA->>Broker: Write FENCE (fenceCounter = 12)
+            Note over Broker: FENCE write succeeds. Watermark is updated to 12.
+            NodeB->>Broker: Write FENCE (fenceCounter = 11)
+            Note over Broker: Rejected! Version 11 is less than watermark 12.
+            NodeB->>NodeB: Fails safe (throws FENCE_TOKEN_STALE)
     </div>
-
-    <p>To reconcile local watermarks with the broker state, the <code>ReconciliationManager</code> runs periodic reconciliation loops. It snapshots the broker, aggregates active states, and publishes a signed <code>SNAPSHOT_MARKER</code> to align the watermark baseline across all running instances.</p>
 </section>

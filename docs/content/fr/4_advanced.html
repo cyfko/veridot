@@ -1,37 +1,82 @@
 <section>
-    <h1 id="guides-avances">Guides d'Implémentation Avancés</h1>
-    <p>Explorez les fonctionnalités opérationnelles profondes de Veridot V4, y compris le stockage des métadonnées, la révocation temps réel et la rotation des clés.</p>
+    <h1 id="guides-d-implémentation-avancés">Guides d'Implémentation Avancés</h1>
+    <p>Cette section détaille comment intégrer Veridot dans des architectures de production réelles, configurer les caches et déployer des brokers distribués.</p>
     
-    <h2 id="revocation-jetons">Révocation de Jetons</h2>
-    <p>Veridot fournit deux niveaux de révocation : la révocation d'une session individuelle, et la révocation globale d'un groupe. La révocation s'effectue via l'interface <code>TokenRevoker</code>.</p>
+    <h2 id="broker-base-de-donnees-sql">Broker Base de Données en Production (SQL)</h2>
+    <p>L'utilisation d'une base de données relationnelle (PostgreSQL, MySQL, SQL Server) comme broker est idéale pour les architectures microservices classiques. Cela nécessite un pool de connexions (comme HikariCP) et une table dédiée. Voici une configuration prête pour la production :</p>
+
+    <pre><code class="language-java">import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
+import io.github.cyfko.veridot.core.Broker;
+import io.github.cyfko.veridot.databases.DatabaseBroker;
+
+public class DatabaseBrokerFactory {
+    public static Broker createPostgresBroker() {
+        HikariConfig config = new HikariConfig();
+        config.setJdbcUrl("jdbc:postgresql://db-server.internal:5432/veridot_db");
+        config.setUsername("veridot_app");
+        config.setPassword("secure-database-password");
+        
+        // Paramètres d'optimisation de performance
+        config.setMaximumPoolSize(15);
+        config.setMinimumIdle(5);
+        config.setIdleTimeout(30000);
+        config.setConnectionTimeout(5000);
+        config.addDataSourceProperty("cachePrepStmts", "true");
+        config.addDataSourceProperty("prepStmtCacheSize", "250");
+        config.addDataSourceProperty("prepStmtCacheSqlLimit", "2048");
+
+        HikariDataSource dataSource = new HikariDataSource(config);
+        
+        // "broker_messages" est la table de stockage des enveloppes binaires
+        return new DatabaseBroker(dataSource, "broker_messages");
+    }
+}</code></pre>
+
+    <h3>Schéma de la base de données (Exemple DDL PostgreSQL)</h3>
+    <pre><code class="language-sql">CREATE TABLE broker_messages (
+    storage_key BYTEA PRIMARY KEY,
+    entry_bytes BYTEA NOT NULL,
+    version BIGINT NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_broker_messages_version ON broker_messages(version);</code></pre>
+
+    <h2 id="broker-apache-kafka">Broker Apache Kafka en Production</h2>
+    <p>Pour les déploiements à très grande échelle et multi-régions, Apache Kafka est le broker de métadonnées recommandé. Il fournit une réplication des événements ultra-rapide. Le <code>KafkaBroker</code> utilise une instance **RocksDB** embarquée pour les lectures locales ultra-rapides :</p>
+
+    <pre><code class="language-java">import io.github.cyfko.veridot.core.Broker;
+import io.github.cyfko.veridot.kafka.KafkaBroker;
+import java.util.Properties;
+
+public class KafkaBrokerFactory {
+    public static Broker createKafkaBroker() {
+        Properties props = new Properties();
+        
+        // Serveurs du cluster Kafka
+        props.put("bootstrap.servers", "kafka-broker-01:9092,kafka-broker-02:9092");
+        
+        // Répertoire local de cache persistant RocksDB
+        props.put("embedded.db.path", "/var/lib/veridot/rocksdb_cache");
+        
+        // Topic Kafka utilisé pour la réplication (doit être pré-créé)
+        props.put("broker.topic", "veridot-state-replication");
+        
+        // Configuration de sécurité SASL_SSL
+        props.put("security.protocol", "SASL_SSL");
+        props.put("sasl.mechanism", "PLAIN");
+        props.put("sasl.jaas.config", "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"app\" password=\"secret\";");
+
+        return new KafkaBroker(props);
+    }
+}</code></pre>
+
+    <h2 id="defense-cache-negatif">Protection des Bases de Données via le Cache Négatif</h2>
+    <p>Dans les architectures distribuées, les passerelles API sont régulièrement la cible de requêtes non autorisées. Si chaque échec d'autorisation déclenchait une requête SQL synchrone pour vérifier la capacité de l'émetteur, la base de données serait rapidement submergée (vulnérabilité aux attaques par déni de service).</p>
     
     <div class="alert alert-note">
-        <div class="alert-title">Aucune Suppression Physique</div>
-        <p>Dans la V4, révoquer ne supprime pas de lignes de la base de données. Le système écrit une enveloppe signée <code>LIVENESS</code> avec le statut <code>REVOKED</code>. Les vérificateurs locaux interceptent immédiatement ce signal et bloquent le jeton.</p>
+        <div class="alert-title">Rôle du Cache Négatif</div>
+        <p>Lorsqu'un validateur traite un jeton signé par un émetteur non autorisé, l'autorisation échoue. Veridot met cet échec en cache localement pendant une courte durée (définie par <code>VDOT_CAPABILITY_NEGATIVE_CACHE_TTL_SECONDS</code>, par défaut 5s). Durant cette fenêtre, toutes les requêtes ultérieures de cet émetteur sont immédiatement rejetées en local sans interroger le broker, protégeant ainsi votre base de données des attaques par force brute à haut débit.</p>
     </div>
-
-    <pre><code class="language-java">// Révoquer une session unique (via son sequenceId unique)
-service.revoke(Scope.group("user-1234"), "session-xyz-123");
-
-// Révoquer toutes les sessions d'un groupe (ex. déconnexion globale d'un utilisateur)
-service.revoke(Scope.group("user-1234"), null);</code></pre>
-
-    <h2 id="brokers-metadonnees">Brokers de Métadonnées Distribués</h2>
-    <p>Le broker est responsable de la réplication des messages. Veridot fournit des adaptateurs pour plusieurs backends :</p>
-    
-    <h3>1. Broker Apache Kafka (Recommandé pour la haute performance)</h3>
-    <p>Assure une réplication temps réel ultra-rapide (inférieure à la seconde) à l'aide d'un log transactionnel distribué. Disponible dans <code>veridot-kafka</code> :</p>
-    <pre><code class="language-java">Properties kafkaProps = new Properties();
-kafkaProps.put("bootstrap.servers", "localhost:9092");
-kafkaProps.put("embedded.db.path", "/var/lib/veridot-rocksdb");
-Broker kafkaBroker = new KafkaBroker(kafkaProps);</code></pre>
-
-    <h3>2. Broker Base de Données (SQL)</h3>
-    <p>Utilise des bases relationnelles comme PostgreSQL, MySQL ou MS SQL Server comme broker de messages. Disponible dans <code>veridot-databases</code> :</p>
-    <pre><code class="language-java">HikariDataSource dataSource = new HikariDataSource();
-dataSource.setJdbcUrl("jdbc:postgresql://localhost:5432/veridot");
-Broker sqlBroker = new DatabaseBroker(dataSource, "broker_messages");</code></pre>
-
-    <h2 id="rotation-cles">Rotation des Clés Éphémères</h2>
-    <p>Afin de limiter les risques d'exposition des clés privées, Veridot effectue une rotation automatique en arrière-plan. Le <code>KeyRotationService</code> génère des paires de clés éphémères (RSA ou Ed25519) à courte durée de vie. Les clés publiques correspondantes sont publiées sous forme d'enveloppes <code>KEY_EPOCH</code> sur le broker afin que les vérificateurs puissent les récupérer et les valider dynamiquement.</p>
 </section>
