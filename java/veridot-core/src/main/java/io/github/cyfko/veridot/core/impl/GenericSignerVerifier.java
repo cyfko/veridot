@@ -35,6 +35,7 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
     // Delegates
     private final KeyRotationService keyRotationService;
     final ReconciliationManager reconciliationManager = new ReconciliationManager();
+    final CapabilityVerifier capabilityVerifier = new CapabilityVerifier();
     private final EntryPublisher entryPublisher = new EntryPublisher();
     private final ConfigResolver configResolver = new ConfigResolver();
     private final LivenessChecker livenessChecker = new LivenessChecker();
@@ -136,8 +137,7 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             } catch (Exception ignored) {}
 
             // 1. Resolve Config
-            CapabilityVerifier capVerifier = new CapabilityVerifier();
-            ConfigPayload config = configResolver.resolve(scope, siteId, broker, trustRoot, capVerifier, watermark);
+            ConfigPayload config = configResolver.resolve(scope, siteId, broker, trustRoot, capabilityVerifier, watermark);
             if (config == null) {
                 config = defaultConfig;
             }
@@ -228,9 +228,8 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             EntryId keyEpochId = new EntryId(scope, EntryType.KEY_EPOCH, sequenceId);
 
             // Run verification pipeline (Steps 1-7)
-            CapabilityVerifier capVerifier = new CapabilityVerifier();
             KeyEpochPayload epochPayload = entryVerifier.verifyKeyEpoch(
-                keyEpochId, broker, trustRoot, watermark, capVerifier, livenessChecker, System.currentTimeMillis()
+                keyEpochId, broker, trustRoot, watermark, capabilityVerifier, livenessChecker, System.currentTimeMillis()
             );
 
             String resolvedJwt = jwtToken;
@@ -283,7 +282,6 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         try {
             if (sequenceId == null) {
                 // Revoke all active sessions in V4
-                CapabilityVerifier capVerifier = new CapabilityVerifier();
                 List<SessionCounter.SessionInfo> active = sessionCounter.listActive(scope, broker, trustRoot, watermark, livenessChecker, now);
                 for (SessionCounter.SessionInfo session : active) {
                     EntryId liveEntryId = new EntryId(scope, EntryType.LIVENESS, session.sessionKey());
@@ -339,9 +337,8 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
 
         try {
             // Verify our own capability before publishing config (§7.4)
-            CapabilityVerifier capVerifier = new CapabilityVerifier();
             if (!trustRoot.isRootIdentity(signerId)) {
-                capVerifier.assertAuthorized(signerId, targetScope, broker, trustRoot);
+                capabilityVerifier.assertAuthorized(signerId, targetScope, broker, trustRoot);
             }
 
             entryPublisher.publish(EntryType.CONFIG, targetScope, "", version, payload.encode(), longTermPrivateKey, envelopeSigAlg, signerId, broker)
@@ -363,13 +360,11 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         }
 
         long now = System.currentTimeMillis();
-        CapabilityVerifier capVerifier = new CapabilityVerifier();
-
         if (Protocol.isMessageId(s)) {
             String[] parts = Protocol.parseMessageId(s);
             EntryId liveEntryId = new EntryId(Scope.group(parts[1]), EntryType.LIVENESS, parts[2]);
             try {
-                livenessChecker.assertLive(liveEntryId, broker, trustRoot, watermark, capVerifier, now);
+                livenessChecker.assertLive(liveEntryId, broker, trustRoot, watermark, capabilityVerifier, now);
                 return true;
             } catch (Exception e) {
                 return false;

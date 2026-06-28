@@ -5,12 +5,16 @@ abstract class ConstantDefault {
     static final long KEYS_ROTATION_MINUTES = 1440; // 24 hours
     static final int  ASYMMETRIC_KEY_SIZE   = 3072;  // RSA-3072 (NIST recommendation post-2030)
     static final long RECONCILIATION_INTERVAL_MINUTES = 15;
+    static final long CAPABILITY_CACHE_TTL_SECONDS = 60;
+    static final long CAPABILITY_NEGATIVE_CACHE_TTL_SECONDS = 5;
 }
 
 /// Defines environment variable names.
 abstract class Env {
     static final String KEYS_ROTATION_MINUTES = "VDOT_KEYS_ROTATION_MINUTES";
     static final String RECONCILIATION_INTERVAL_MINUTES = "VDOT_RECONCILIATION_INTERVAL_MINUTES";
+    static final String CAPABILITY_CACHE_TTL_SECONDS = "VDOT_CAPABILITY_CACHE_TTL_SECONDS";
+    static final String CAPABILITY_NEGATIVE_CACHE_TTL_SECONDS = "VDOT_CAPABILITY_NEGATIVE_CACHE_TTL_SECONDS";
 }
 
 /**
@@ -106,6 +110,16 @@ public abstract class Config {
      */
     public static final long MAX_CLOCK_DRIFT_SECONDS = 300;
 
+    /**
+     * How long verified capabilities are cached (positive caching).
+     */
+    public static final long CAPABILITY_CACHE_TTL_SECONDS;
+
+    /**
+     * How long invalid/denied capability results are cached to prevent hammering (negative caching).
+     */
+    public static final long CAPABILITY_NEGATIVE_CACHE_TTL_SECONDS;
+
     static {
         long parsedRotation = ConstantDefault.KEYS_ROTATION_MINUTES;
         final var rotationRate = System.getenv(Env.KEYS_ROTATION_MINUTES);
@@ -150,5 +164,49 @@ public abstract class Config {
             }
         }
         RECONCILIATION_INTERVAL_MINUTES = parsedReconciliation;
+
+        long parsedCapCache = ConstantDefault.CAPABILITY_CACHE_TTL_SECONDS;
+        final var capCacheRate = System.getenv(Env.CAPABILITY_CACHE_TTL_SECONDS);
+        if (capCacheRate != null) {
+            try {
+                long parsed = Long.parseLong(capCacheRate);
+                if (parsed >= 0) {
+                    parsedCapCache = parsed;
+                } else {
+                    System.getLogger(Config.class.getName()).log(
+                            System.Logger.Level.WARNING,
+                            "Ignoring invalid " + Env.CAPABILITY_CACHE_TTL_SECONDS + "=" + parsed
+                                    + " (must be >= 0). Using default: " + ConstantDefault.CAPABILITY_CACHE_TTL_SECONDS);
+                }
+            } catch (NumberFormatException e) {
+                System.getLogger(Config.class.getName()).log(
+                        System.Logger.Level.WARNING,
+                        "Ignoring non-numeric " + Env.CAPABILITY_CACHE_TTL_SECONDS + "='" + capCacheRate
+                                + "'. Using default: " + ConstantDefault.CAPABILITY_CACHE_TTL_SECONDS);
+            }
+        }
+        CAPABILITY_CACHE_TTL_SECONDS = parsedCapCache;
+
+        long parsedCapNegCache = ConstantDefault.CAPABILITY_NEGATIVE_CACHE_TTL_SECONDS;
+        final var capNegCacheRate = System.getenv(Env.CAPABILITY_NEGATIVE_CACHE_TTL_SECONDS);
+        if (capNegCacheRate != null) {
+            try {
+                long parsed = Long.parseLong(capNegCacheRate);
+                if (parsed >= 0) {
+                    parsedCapNegCache = parsed;
+                } else {
+                    System.getLogger(Config.class.getName()).log(
+                            System.Logger.Level.WARNING,
+                            "Ignoring invalid " + Env.CAPABILITY_NEGATIVE_CACHE_TTL_SECONDS + "=" + parsed
+                                    + " (must be >= 0). Using default: " + ConstantDefault.CAPABILITY_NEGATIVE_CACHE_TTL_SECONDS);
+                }
+            } catch (NumberFormatException e) {
+                System.getLogger(Config.class.getName()).log(
+                        System.Logger.Level.WARNING,
+                        "Ignoring non-numeric " + Env.CAPABILITY_NEGATIVE_CACHE_TTL_SECONDS + "='" + capNegCacheRate
+                                + "'. Using default: " + ConstantDefault.CAPABILITY_NEGATIVE_CACHE_TTL_SECONDS);
+            }
+        }
+        CAPABILITY_NEGATIVE_CACHE_TTL_SECONDS = parsedCapNegCache;
     }
 }
