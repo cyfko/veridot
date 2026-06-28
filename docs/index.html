@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Veridot V4.0.0 Documentation</title>
+    <meta name="description" content="Official documentation for Veridot, a decentralized, high-performance cryptographic token verification protocol and Java library.">
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    
+    <!-- Mermaid.js for Diagrams -->
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <script>
+        mermaid.initialize({
+            startOnLoad: false,
+            theme: 'dark',
+            securityLevel: 'loose',
+            themeVariables: {
+                background: '#0f172a',
+                primaryColor: '#312e81',
+                primaryTextColor: '#f3f4f6',
+                lineColor: '#8b5cf6'
+            }
+        });
+    </script>
+    
+    <!-- Stylesheet -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-layout">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <span class="logo-icon">💠</span>
+                    <span class="logo-text">Veridot</span>
+                    <span class="logo-version">v4.0.0</span>
+                </div>
+                <button class="menu-close-btn" id="menu-close-btn">×</button>
+            </div>
+            
+            <!-- Language Switcher -->
+            <div class="lang-selector">
+                <button class="lang-btn active" data-lang="en">EN</button>
+                <button class="lang-btn" data-lang="fr">FR</button>
+            </div>
+
+            <!-- Search -->
+            <div class="search-container">
+                <input type="text" id="search-input" placeholder="Search docs..." autocomplete="off">
+                <div class="search-results" id="search-results"></div>
+            </div>
+
+            <!-- Navigation Links -->
+            <nav class="nav-menu">
+                <div class="nav-section-title" id="nav-title-getting-started">Getting Started</div>
+                <ul class="nav-list">
+                    <li><a href="#introduction" class="nav-link active" data-section="1_introduction" id="link-intro">Introduction</a></li>
+                    <li><a href="#quickstart" class="nav-link" data-section="3_quickstart" id="link-quickstart">Quickstart Guide</a></li>
+                </ul>
+
+                <div class="nav-section-title" id="nav-title-core-concepts">Core Concepts</div>
+                <ul class="nav-list">
+                    <li><a href="#architecture" class="nav-link" data-section="2_architecture" id="link-architecture">System Architecture</a></li>
+                    <li><a href="#security" class="nav-link" data-section="6_security" id="link-security">Operational Security</a></li>
+                </ul>
+
+                <div class="nav-section-title" id="nav-title-developer-guides">Developer Guides</div>
+                <ul class="nav-list">
+                    <li><a href="#advanced" class="nav-link" data-section="4_advanced" id="link-advanced">Advanced Guides</a></li>
+                    <li><a href="#reference" class="nav-link" data-section="5_reference" id="link-reference">API Reference</a></li>
+                </ul>
+            </nav>
+        </aside>
+
+        <!-- Top Bar for Mobile -->
+        <header class="mobile-header">
+            <button class="menu-toggle-btn" id="menu-toggle-btn">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
+            <div class="logo">
+                <span class="logo-icon">💠</span>
+                <span class="logo-text">Veridot</span>
+            </div>
+            <div class="mobile-lang-selector">
+                <button class="lang-btn active" data-lang="en">EN</button>
+                <button class="lang-btn" data-lang="fr">FR</button>
+            </div>
+        </header>
+
+        <!-- Main Content Area -->
+        <main class="main-content" id="main-content">
+            <article class="content-body" id="content-body">
+                <!-- Dynamic Content Injected Here -->
+                <div class="loading-spinner"></div>
+            </article>
+            
+            <footer class="content-footer">
+                <p>© 2026 Veridot Protocol Team. Released under the MIT License.</p>
+            </footer>
+        </main>
+
+        <!-- Right TOC Sidebar -->
+        <aside class="toc-sidebar" id="toc-sidebar">
+            <div class="toc-title" id="toc-title-text">On this page</div>
+            <nav class="toc-menu" id="toc-menu">
+                <!-- Dynamically generated TOC links -->
+            </nav>
+        </aside>
+    </div>
+
+    <!-- Application Script -->
+    <script src="app.js"></script>
+</body>
+</html>

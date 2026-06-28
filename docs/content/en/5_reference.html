@@ -1,0 +1,67 @@
+<section>
+    <h1 id="api-reference">API & Configuration Reference</h1>
+    <p>Complete documentation for Veridot's core classes, public interfaces, and operational configuration keys.</p>
+    
+    <h2 id="core-interfaces">Core Public Interfaces</h2>
+    <p>The library's surface is split into clean, modular interfaces depending on the target role:</p>
+    
+    <h3>1. DataSigner</h3>
+    <p>Used by issuing services to generate signed session tokens.</p>
+    <pre><code class="language-java">public interface DataSigner {
+    String sign(Object data, Configurer configurer);
+}</code></pre>
+
+    <h3>2. TokenVerifier</h3>
+    <p>Used by verifying services/gateways to validate tokens locally.</p>
+    <pre><code class="language-java">public interface TokenVerifier {
+    &lt;T&gt; VerifiedData&lt;T&gt; verify(String token, Function&lt;String, T&gt; deserializer)
+        throws BrokerExtractionException;
+}</code></pre>
+
+    <h3>3. TokenRevoker</h3>
+    <p>Used by administration tools or security services to invalidate tokens.</p>
+    <pre><code class="language-java">public interface TokenRevoker {
+    void revoke(Scope scope, String sequenceId);
+}</code></pre>
+
+    <h3>4. TokenTracker</h3>
+    <p>Used to query the active state and details of active or revoked sessions.</p>
+    <pre><code class="language-java">public interface TokenTracker {
+    List&lt;SessionInfo&gt; listActive(Scope scope);
+}</code></pre>
+
+    <h2 id="configuration-keys">Configuration Reference</h2>
+    <p>Configure Veridot instances at startup using the following variables (or environment properties):</p>
+    
+    <table>
+        <thead>
+            <tr>
+                <th>Property / Var</th>
+                <th>Default</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>VDOT_KEYS_ROTATION_MINUTES</code></td>
+                <td><code>60</code></td>
+                <td>Interval at which the ephemeral keys are rotated.</td>
+            </tr>
+            <tr>
+                <td><code>VDOT_RECONCILIATION_INTERVAL_MINUTES</code></td>
+                <td><code>10</code></td>
+                <td>Reconciliation scheduler loop frequency.</td>
+            </tr>
+            <tr>
+                <td><code>VDOT_CAPABILITY_CACHE_TTL_SECONDS</code></td>
+                <td><code>60</code></td>
+                <td>TTL for positive authorization capabilities cache.</td>
+            </tr>
+            <tr>
+                <td><code>VDOT_CAPABILITY_NEGATIVE_CACHE_TTL_SECONDS</code></td>
+                <td><code>5</code></td>
+                <td>TTL for negative/failed authorization capabilities cache.</td>
+            </tr>
+        </tbody>
+    </table>
+</section>

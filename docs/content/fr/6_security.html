@@ -1,0 +1,28 @@
+<section>
+    <h1 id="securite-operationnelle">Sécurité Opérationnelle & Contraintes</h1>
+    <p>Utiliser Veridot de manière sécurisée nécessite de comprendre et de respecter certains prérequis environnementaux, notamment en ce qui concerne la synchronisation des horloges et la configuration des caches.</p>
+    
+    <h2 id="synchronisation-horloges">Synchronisation des Horloges & Décalage</h2>
+    <p>Puisque Veridot valide des signaux de vie contenant des horodatages absolus (timestamps UNIX), les horloges de tous les serveurs doivent être rigoureusement synchronisées (ex. via NTP).</p>
+    
+    <div class="alert alert-danger">
+        <div class="alert-title">Décalage Maximum Toléré</div>
+        <p>Le décalage d'horloge (clock skew) maximum toléré entre un émetteur et un vérificateur est de <strong>5 minutes</strong>. Si un vérificateur détecte un jeton dont la date s'écarte de plus de 5 minutes par rapport à l'heure locale, la validation échouera par sécurité.</p>
+    </div>
+
+    <h2 id="compromis-mise-en-cache">Mise en Cache des Capacités</h2>
+    <p>Pour maintenir une latence sub-milliseconde, les nœuds de vérification mettent en cache les autorisations. Cela introduit un délai de propagation pour la prise en compte des changements :</p>
+    
+    <h3>Cache Positif (Par défaut : 60s)</h3>
+    <p>Détermine pendant combien de temps une autorisation valide est gardée en cache. Un TTL plus court améliore la réactivité de la révocation mais augmente la charge sur la base de données.</p>
+
+    <h3>Cache Négatif (Par défaut : 5s)</h3>
+    <p>Détermine pendant combien de temps un échec d'autorisation est gardé en cache. Cela est crucial pour bloquer les attaques de déni de service (DoS) où un nœud non autorisé envoie des requêtes en boucle pour forcer des lectures base de données.</p>
+
+    <h2 id="algorithmes-recommandes">Algorithmes Cryptographiques Recommandés</h2>
+    <p>Utilisez des algorithmes robustes pour protéger les signatures des enveloppes :</p>
+    <ul>
+        <li><strong>Ed25519 (Recommandé) :</strong> Offre une validation ultra-rapide et des signatures compactes, idéales pour les passerelles API.</li>
+        <li><strong>RSA 3072/4096 :</strong> Choix traditionnel pour la compatibilité avec les HSM d'entreprise. Évitez les clés inférieures à 2048 bits.</li>
+    </ul>
+</section>

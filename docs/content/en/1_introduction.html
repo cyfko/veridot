@@ -1,0 +1,61 @@
+<section>
+    <h1 id="introduction-to-veridot">Introduction to Veridot</h1>
+    <p class="lead">Veridot is a high-performance cryptographic token verification protocol and Java library designed for modern, large-scale distributed architectures. It addresses the classic trade-off between instant revocation verification and system scalability.</p>
+    
+    <h2 id="the-challenge">The Distributed Revocation Challenge</h2>
+    <p>In distributed systems, validating identity and authorization tokens typically falls into one of two patterns, both of which introduce operational pain points:</p>
+    <ul>
+        <li><strong>Stateful Token Introspection (Slow & Centralized):</strong> The verifying service makes a network call (HTTP/RPC or direct database lookup) to verify if a token is still active. This creates a critical bottleneck, introduces latency, and forms a single point of failure (SPOF).</li>
+        <li><strong>Stateless JWT Validation (Fast but Hard to Revoke):</strong> Verifying services cryptographically validate the JWT locally using a public key. While extremely fast (sub-millisecond), revoking a compromised token instantly is practically impossible without resorting to blacklists that reintroduce state bottlenecks.</li>
+    </ul>
+
+    <h2 id="the-veridot-approach">The Veridot Solution</h2>
+    <p>Veridot achieves the speed of local stateless verification with the instant responsiveness of a stateful revocation system. It is built on three core pillars:</p>
+    
+    <div class="alert alert-note">
+        <div class="alert-title">Core Pillars</div>
+        <ul>
+            <li><strong>Localized Verification:</strong> Verifying nodes cache security contexts and validate tokens locally with cryptographic guarantees, achieving sub-millisecond latencies.</li>
+            <li><strong>Asynchronous Status Replication:</strong> State updates, including configurations, key epochs, and liveness signals, are replicated asynchronously to all nodes via a fast shared broker (e.g., Kafka or SQL databases).</li>
+            <li><strong>Version Watermark Invariants:</strong> A strict anti-rollback system ensures that verifying nodes can never be tricked by stale state replays, enforcing absolute safety.</li>
+        </ul>
+    </div>
+
+    <h2 id="comparative-analysis">Comparison with Industry Standards</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Feature</th>
+                <th>Standard JWT</th>
+                <th>OAuth Introspection</th>
+                <th>Veridot V4.0.0</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>Verification Latency</strong></td>
+                <td>Sub-millisecond (Local)</td>
+                <td>10ms - 100ms (Network call)</td>
+                <td><strong>Sub-millisecond</strong> (Local)</td>
+            </tr>
+            <tr>
+                <td><strong>Revocation Latency</strong></td>
+                <td>None (Must wait for expiry)</td>
+                <td>Immediate</td>
+                <td><strong>Near-Instant</strong> (Asynchronous propagation)</td>
+            </tr>
+            <tr>
+                <td><strong>Offline Resilience</strong></td>
+                <td>High</td>
+                <td>Low (Fails when server is down)</td>
+                <td><strong>High</strong> (Falls back to local watermarks)</td>
+            </tr>
+            <tr>
+                <td><strong>Anti-Rollback Protection</strong></td>
+                <td>N/A</td>
+                <td>High (Centralized check)</td>
+                <td><strong>Cryptographically Guaranteed</strong></td>
+            </tr>
+        </tbody>
+    </table>
+</section>

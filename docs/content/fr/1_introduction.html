@@ -1,0 +1,61 @@
+<section>
+    <h1 id="introduction-a-veridot">Introduction à Veridot</h1>
+    <p class="lead">Veridot est un protocole de vérification de jetons cryptographiques à haute performance et une bibliothèque Java conçue pour les architectures distribuées modernes à grande échelle. Il résout le compromis classique entre la révocation immédiate et la scalabilité du système.</p>
+    
+    <h2 id="le-defi-de-la-revocation">Le défi de la révocation distribuée</h2>
+    <p>Dans les systèmes distribués, valider l'identité et les autorisations repose généralement sur deux approches, qui introduisent toutes deux des limites opérationnelles :</p>
+    <ul>
+        <li><strong>L'introspection d'état (Lente et Centralisée) :</strong> Le service de vérification effectue un appel réseau (HTTP/RPC ou base de données) pour vérifier si le jeton est toujours valide. Cela crée un goulot d'étranglement critique et un point de défaillance unique (SPOF).</li>
+        <li><strong>La validation de JWT sans état (Rapide mais Révocation Difficile) :</strong> Les validateurs vérifient cryptographiquement le JWT localement à l'aide d'une clé publique. Bien qu'ultra-rapide (inférieur à la milliseconde), révoquer un jeton compromis instantanément est impossible sans rajouter des listes noires centralisées.</li>
+    </ul>
+
+    <h2 id="l-approche-veridot">La Solution Veridot</h2>
+    <p>Veridot offre la rapidité d'une vérification locale sans état couplée à la réactivité instantanée d'un système de révocation. Il repose sur trois piliers fondamentaux :</p>
+    
+    <div class="alert alert-note">
+        <div class="alert-title">Piliers Fondamentaux</div>
+        <ul>
+            <li><strong>Vérification Localisée :</strong> Les nœuds de vérification cachent le contexte de sécurité et valident les jetons localement avec des garanties cryptographiques.</li>
+            <li><strong>Réplication Asynchrone de l'État :</strong> Les modifications d'état (configurations, époques de clé, signaux de vie) sont répliquées asynchronement via un broker partagé à haute performance (ex. Kafka ou SQL).</li>
+            <li><strong>Invariants de Filigrane (Watermark) :</strong> Un système anti-rollback strict empêche le rejeu de snapshots anciens, assurant une sécurité absolue.</li>
+        </ul>
+    </div>
+
+    <h2 id="analyse-comparative">Comparatif avec les Standards du Marché</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Caractéristique</th>
+                <th>JWT Classique</th>
+                <th>Introspection OAuth</th>
+                <th>Veridot V4.0.0</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>Latence de Vérification</strong></td>
+                <td>Inférieure à la ms (Local)</td>
+                <td>10ms - 100ms (Appel réseau)</td>
+                <td><strong>Inférieure à la ms</strong> (Local)</td>
+            </tr>
+            <tr>
+                <td><strong>Délai de Révocation</strong></td>
+                <td>Aucun (Attente de l'expiration)</td>
+                <td>Immédiat</td>
+                <td><strong>Quasi-Instante</strong> (Propagation asynchrone)</td>
+            </tr>
+            <tr>
+                <td><strong>Résilience Hors-ligne</strong></td>
+                <td>Élevée</td>
+                <td>Faible (Panne du serveur central)</td>
+                <td><strong>Élevée</strong> (Repli sur filigrane local)</td>
+            </tr>
+            <tr>
+                <td><strong>Protection Anti-Rollback</strong></td>
+                <td>N/A</td>
+                <td>Élevée (Vérification centrale)</td>
+                <td><strong>Garantie cryptographiquement</strong></td>
+            </tr>
+        </tbody>
+    </table>
+</section>

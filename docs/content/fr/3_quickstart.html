@@ -1,0 +1,88 @@
+<section>
+    <h1 id="guide-de-demarrage-rapide">Guide de Démarrage Rapide</h1>
+    <p>Démarrez avec Veridot en moins de 5 minutes. Apprenez à intégrer la dépendance et à exécuter votre première signature et validation cryptographique.</p>
+    
+    <h2 id="installation">Installation</h2>
+    <p>Sélectionnez votre outil de build pour ajouter la dépendance Veridot Core à votre projet :</p>
+    
+    <div class="code-tabs">
+        <div class="code-tabs-header">
+            <button class="code-tab-btn active" data-tab="maven">Maven</button>
+            <button class="code-tab-btn" data-tab="gradle">Gradle</button>
+        </div>
+        <div class="code-tabs-content active" data-tab="maven">
+            <pre><code>&lt;dependency&gt;
+    &lt;groupId&gt;io.github.cyfko&lt;/groupId&gt;
+    &lt;artifactId&gt;veridot-core&lt;/artifactId&gt;
+    &lt;version&gt;4.0.0&lt;/version&gt;
+&lt;/dependency&gt;</code></pre>
+        </div>
+        <div class="code-tabs-content" data-tab="gradle">
+            <pre><code>implementation 'io.github.cyfko:veridot-core:4.0.0'</code></pre>
+        </div>
+    </div>
+
+    <h2 id="premiere-signature-verification">Première Signature & Vérification</h2>
+    <p>Voici un exemple complet en Java démontrant comment initialiser un signataire/vérificateur, signer une payload utilisateur et la valider localement :</p>
+
+    <pre><code class="language-java">import io.github.cyfko.veridot.core.*;
+import io.github.cyfko.veridot.core.impl.*;
+import java.security.*;
+
+public class VeridotQuickstart {
+    public static void main(String[] args) throws Exception {
+        // 1. Initialise un broker simple en mémoire (pour les tests)
+        Broker broker = new InMemoryBroker();
+        
+        // 2. Génère des clés cryptographiques à long terme (RSA 2048)
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");
+        kpg.initialize(2048);
+        KeyPair keyPair = kpg.generateKeyPair();
+        
+        // 3. Définit l'ancre de confiance TrustRoot
+        TrustRoot trustRoot = new PublicKeyTrustRoot() {
+            @Override
+            public PublicKey resolve(String issuer) {
+                return keyPair.getPublic();
+            }
+            @Override
+            public boolean isRootIdentity(String issuer) {
+                return "root-admin".equals(issuer);
+            }
+        };
+
+        // 4. Instancie le service GenericSignerVerifier
+        GenericSignerVerifier service = new GenericSignerVerifier(
+            broker,
+            trustRoot,
+            "root-admin",
+            keyPair.getPrivate(),
+            (byte) 0x01 // Algorithme de signature d'enveloppe (SHA256withRSA)
+        );
+
+        // 5. Configure l'opération de signature (validité de session)
+        Configurer configurer = BasicConfigurer.builder()
+            .groupId("user-sessions")
+            .sequenceId("session-xyz-123")
+            .validity(300) // valide pendant 5 minutes
+            .build();
+
+        // 6. Signe la payload utilisateur
+        String token = service.sign("User ID: 9942", configurer);
+        System.out.println("Token JWT ou ID de Message généré : " + token);
+
+        // 7. Vérifie le jeton localement
+        VerifiedData&lt;String&gt; verified = service.verify(token, payload -> payload);
+        System.out.println("Vérification Réussie ! Données : " + verified.data());
+        System.out.println("Statut Session : " + (verified.isLive() ? "ACTIF" : "EXPIRE"));
+        
+        // Arrête les planificateurs internes
+        service.close();
+    }
+}</code></pre>
+
+    <div class="alert alert-note">
+        <div class="alert-title">Modes de Distribution</div>
+        <p>Par défaut, <code>DistributionMode.DIRECT</code> renvoie un JWT autonome. Vous pouvez utiliser <code>.distribution(DistributionMode.INDIRECT)</code> pour renvoyer un identifiant opaque court (pratique pour minimiser l'overhead réseau).</p>
+    </div>
+</section>

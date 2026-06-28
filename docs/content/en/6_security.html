@@ -1,0 +1,28 @@
+<section>
+    <h1 id="operational-security">Operational Security & Constraints</h1>
+    <p>Using Veridot in a secure manner requires understanding and maintaining key environment requirements, specifically regarding clock synchronization and cache configuration.</p>
+    
+    <h2 id="clock-synchronization">Clock Synchronization & Skew</h2>
+    <p>Because Veridot signs and validates liveness heartbeats containing absolute UNIX timestamps, system clocks on all nodes must be synchronized using NTP (Network Time Protocol).</p>
+    
+    <div class="alert alert-danger">
+        <div class="alert-title">Maximum Allowed Clock Skew</div>
+        <p>The maximum tolerated clock skew between any signer and any verifier is <strong>5 minutes</strong>. If a verifier detects a token timestamp skewing beyond this threshold, validation will fail-safe and reject the token.</p>
+    </div>
+
+    <h2 id="caching-tradeoffs">Authorization Capability Caching</h2>
+    <p>To keep latency extremely low (sub-millisecond), verifying nodes cache publisher authorization capabilities locally using TTLs. However, this introduces a latency window during which a revoked capability might still be treated as valid.</p>
+    
+    <h3>Positive Caching (Default: 60s)</h3>
+    <p>Controls how long a verified publisher capability is trusted. A lower TTL reduces revocation detection delay but increases network lookup overhead on the broker.</p>
+
+    <h3>Negative Caching (Default: 5s)</h3>
+    <p>Controls how long a failed authorization check is cached. This is critical to prevent denial-of-service (DoS) patterns where an unauthorized node bombards the verifier with requests, triggering database lookup loops.</p>
+
+    <h2 id="signature-algorithms">Recommended Algorithms</h2>
+    <p>Use modern, strong cryptographic algorithms to protect the envelope signatures:</p>
+    <ul>
+        <li><strong>Ed25519 (Recommended):</strong> Provides high-speed signature verification and small signature sizes, ideal for high-throughput API gateways.</li>
+        <li><strong>RSA 3072/4096:</strong> Secure choice for compatibility with enterprise HSMs. Avoid RSA keys smaller than 2048 bits.</li>
+    </ul>
+</section>

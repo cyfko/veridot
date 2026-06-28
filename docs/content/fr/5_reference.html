@@ -1,0 +1,67 @@
+<section>
+    <h1 id="reference-api">Référence API & Configuration</h1>
+    <p>Documentation complète des classes fondamentales, des interfaces publiques et des clés de configuration opérationnelles de Veridot.</p>
+    
+    <h2 id="interfaces-clefs">Interfaces Publiques Majeures</h2>
+    <p>L'interface de programmation est segmentée en rôles distincts pour plus de modularité :</p>
+    
+    <h3>1. DataSigner</h3>
+    <p>Utilisé par les services d'émission pour générer les jetons signés.</p>
+    <pre><code class="language-java">public interface DataSigner {
+    String sign(Object data, Configurer configurer);
+}</code></pre>
+
+    <h3>2. TokenVerifier</h3>
+    <p>Utilisé par les passerelles API / services pour valider localement les jetons.</p>
+    <pre><code class="language-java">public interface TokenVerifier {
+    &lt;T&gt; VerifiedData&lt;T&gt; verify(String token, Function&lt;String, T&gt; deserializer)
+        throws BrokerExtractionException;
+}</code></pre>
+
+    <h3>3. TokenRevoker</h3>
+    <p>Utilisé par les consoles d'administration ou modules de sécurité pour révoquer des sessions.</p>
+    <pre><code class="language-java">public interface TokenRevoker {
+    void revoke(Scope scope, String sequenceId);
+}</code></pre>
+
+    <h3>4. TokenTracker</h3>
+    <p>Utilisé pour inspecter et lister les informations sur les sessions actives ou révoquées.</p>
+    <pre><code class="language-java">public interface TokenTracker {
+    List&lt;SessionInfo&gt; listActive(Scope scope);
+}</code></pre>
+
+    <h2 id="cles-configuration">Clés de Configuration</h2>
+    <p>Configurez les instances Veridot au démarrage à l'aide des variables d'environnement (ou propriétés système) suivantes :</p>
+    
+    <table>
+        <thead>
+            <tr>
+                <th>Variable d'environnement</th>
+                <th>Valeur par défaut</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>VDOT_KEYS_ROTATION_MINUTES</code></td>
+                <td><code>60</code></td>
+                <td>Intervalle de rotation des clés de signature éphémères.</td>
+            </tr>
+            <tr>
+                <td><code>VDOT_RECONCILIATION_INTERVAL_MINUTES</code></td>
+                <td><code>10</code></td>
+                <td>Fréquence de la boucle de réconciliation de filigrane (watermark).</td>
+            </tr>
+            <tr>
+                <td><code>VDOT_CAPABILITY_CACHE_TTL_SECONDS</code></td>
+                <td><code>60</code></td>
+                <td>Durée de mise en cache positive des capacités d'autorisation.</td>
+            </tr>
+            <tr>
+                <td><code>VDOT_CAPABILITY_NEGATIVE_CACHE_TTL_SECONDS</code></td>
+                <td><code>5</code></td>
+                <td>Durée de mise en cache négative (échec d'autorisation) des capacités.</td>
+            </tr>
+        </tbody>
+    </table>
+</section>
