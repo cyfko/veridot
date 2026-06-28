@@ -1,0 +1,28 @@
+<section>
+    <h1 id="changelog">Journal des Modifications : Veridot V4</h1>
+    <p>Cette page liste les notes de version et les améliorations de Veridot V4.0.0.</p>
+
+    <h2 id="v4-0-0">v4.0.0 (28-06-2026)</h2>
+    <p>La version Veridot V4.0.0 introduit le protocole filaire V4, la gestion structurelle des droits de publication et des mécanismes avancés de fencing.</p>
+    
+    <h3>Nouvelles Fonctionnalités</h3>
+    <ul>
+        <li><strong>Délégation de Capabilité Structurelle (&sect;6) :</strong> Ajout du type d'entrée <code>CAPABILITY</code>. L'autorisation d'émettre sur un scope est validée cryptographiquement en vérifiant la chaîne de délégation jusqu'à la racine TrustRoot.</li>
+        <li><strong>Fencing Monotone de Capacité (&sect;9) :</strong> Ajout du type d'entrée <code>FENCE</code> contenant un compteur incrémentiel pour sérialiser les écritures de quota de session sans verrou distribué.</li>
+        <li><strong>Cache RocksDB Off-heap :</strong> Le module Kafka intègre une base RocksDB locale pour supporter le cache de millions de sessions actives sans surcharger la mémoire heap de la JVM.</li>
+        <li><strong>Parsing Zero-copy :</strong> Optimisation de l'analyseur d'enveloppe binaire pour des temps de validation de structure inférieurs à la microseconde.</li>
+    </ul>
+
+    <h3>Changements et Améliorations</h3>
+    <ul>
+        <li>L'identifiant magique de l'enveloppe binaire passe à <code>0x56 0x44</code> (version de protocole 4).</li>
+        <li>Renforcement du contrôle de dérive d'horloge (limite stricte à 5 minutes) via NTP pour les clés et les heartbeats.</li>
+        <li>Renommage du service <code>ReconciliationService</code> en <code>WatermarkReconciler</code>.</li>
+    </ul>
+
+    <h3>Dépréciations et Suppressions</h3>
+    <ul>
+        <li>Suppression de l'ancienne configuration de résolveur de clés à plat V3.</li>
+        <li>Suppression du fallback synchrone par requêtes Jwks.</li>
+    </ul>
+</section>

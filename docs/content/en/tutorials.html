@@ -1,0 +1,127 @@
+<section>
+    <h1 id="tutorials">Tutorials</h1>
+    <p>These hands-on tutorials will teach you how to build your first Veridot project, verify tokens at the gateway level, and write custom validation rules.</p>
+
+    <h2 id="first-project">Tutorial 1: Building Your First Project</h2>
+    <p>In this tutorial, we will set up a standard Java project structure with Maven and implement a mock authentication system using Veridot.</p>
+    
+    <h3>Step A: Directory Structure</h3>
+    <pre><code>my-veridot-project/
+├── pom.xml
+└── src/
+    └── main/
+        └── java/
+            └── com/
+                └── example/
+                    └── AuthServer.java</code></pre>
+
+    <h3>Step B: pom.xml Configuration</h3>
+    <pre><code class="language-xml">&lt;project xmlns="http://maven.apache.org/POM/4.0.0"&gt;
+    &lt;modelVersion&gt;4.0.0&lt;/modelVersion&gt;
+    &lt;groupId&gt;com.example&lt;/groupId&gt;
+    &lt;artifactId&gt;my-veridot-project&lt;/artifactId&gt;
+    &lt;version&gt;1.0-SNAPSHOT&lt;/version&gt;
+    &lt;properties&gt;
+        &lt;maven.compiler.source&gt;17&lt;/maven.compiler.source&gt;
+        &lt;maven.compiler.target&gt;17&lt;/maven.compiler.target&gt;
+    &lt;/properties&gt;
+    &lt;dependencies&gt;
+        &lt;dependency&gt;
+            &lt;groupId&gt;io.github.cyfko&lt;/groupId&gt;
+            &lt;artifactId&gt;veridot-core&lt;/artifactId&gt;
+            &lt;version&gt;4.0.0&lt;/version&gt;
+        &lt;/dependency&gt;
+    &lt;/dependencies&gt;
+&lt;/project&gt;</code></pre>
+
+    <h2 id="verify-token">Tutorial 2: Verifying a Token</h2>
+    <p>This tutorial shows how an API gateway microservice verifies an incoming user token. Veridot validates token structure, signature, and liveness locally without calling the issuer.</p>
+
+    <pre><code class="language-java">import io.github.cyfko.veridot.core.*;
+import io.github.cyfko.veridot.core.impl.*;
+import io.github.cyfko.veridot.core.exceptions.*;
+import java.security.PublicKey;
+
+public class GatewayVerifier {
+    private final TokenVerifier verifier;
+
+    public GatewayVerifier(Broker broker, PublicKey authorityPublicKey) {
+        // Setup trust root with issuer identity check
+        TrustRoot trustRoot = new PublicKeyTrustRoot() {
+            @Override
+            public PublicKey resolve(String issuer) {
+                return authorityPublicKey;
+            }
+            @Override
+            public boolean isRootIdentity(String issuer) {
+                return "auth-authority-01".equals(issuer);
+            }
+        };
+
+        // Initialize TokenVerifier
+        this.verifier = new GenericSignerVerifier(broker, trustRoot);
+    }
+
+    public String handleRequest(String authHeader) {
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            return "401 Unauthorized - Missing Token";
+        }
+        
+        String token = authHeader.substring(7);
+        try {
+            // Verify and extract payload
+            VerifiedData<String> verified = verifier.verify(token, payload -> payload);
+            
+            // Success
+            return "200 OK - Access Granted. User details: " + verified.data();
+        } catch (BrokerExtractionException e) {
+            // Handle stale or revoked states
+            return "403 Forbidden - Token Invalid or Revoked: " + e.getMessage();
+        } catch (Exception e) {
+            // Cryptographic or envelope parsing failure
+            return "401 Unauthorized - Verification Failed: " + e.getMessage();
+        }
+    }
+}</code></pre>
+
+    <h2 id="custom-rule">Tutorial 3: Writing a Custom Rule</h2>
+    <p>Rules in Veridot run during the verification pipeline. You can enforce policies like domain restrictions or minimum user levels by writing custom rules.</p>
+    
+    <p>Create a class that implements the <code>Rule</code> interface. This example ensures that only users with a verified email address can access the system:</p>
+
+    <pre><code class="language-java">package com.example;
+
+import io.github.cyfko.veridot.core.Rule;
+import io.github.cyfko.veridot.core.exceptions.RuleValidationException;
+import java.util.Map;
+
+public class EmailVerificationRule implements Rule {
+    
+    @Override
+    public String getName() {
+        return "EMAIL_VERIFICATION_RULE";
+    }
+
+    @Override
+    public void validate(Map<String, Object> claims) throws RuleValidationException {
+        Object emailVerified = claims.get("email_verified");
+        
+        if (emailVerified == null) {
+            throw new RuleValidationException("Email status missing from token claims");
+        }
+        
+        if (emailVerified instanceof Boolean && !((Boolean) emailVerified)) {
+            throw new RuleValidationException("Email address must be verified");
+        }
+        
+        if (emailVerified instanceof String && !"true".equalsIgnoreCase((String) emailVerified)) {
+            throw new RuleValidationException("Email address must be verified");
+        }
+    }
+}</code></pre>
+
+    <p>To register your custom rule, pass it to the verifier builder during initialization:</p>
+    <pre><code class="language-java">GenericSignerVerifier verifier = GenericSignerVerifier.builder(broker, trustRoot)
+    .addRule(new EmailVerificationRule())
+    .build();</code></pre>
+</section>

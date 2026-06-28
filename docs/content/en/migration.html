@@ -1,0 +1,61 @@
+<section>
+    <h1 id="migration-guide">Migration Guide: V3 to V4</h1>
+    <p>This guide explains how to migrate your existing systems from Veridot Protocol V3 to Protocol V4.</p>
+
+    <h2 id="protocol-differences">V3 vs V4 Differences</h2>
+    <p>Veridot V4 introduces major changes to the wire format, authorization structure, and key management:</p>
+    <ul>
+        <li><strong>Wire Format:</strong> The envelope magic bytes changed from <code>0x56 0x33</code> to <code>0x56 0x44</code>, and version marker field validation is strictly enforced.</li>
+        <li><strong>Capability Model:</strong> V4 introduces structural authorization via the <code>CAPABILITY</code> entry type. In V3, authorization was handled implicitly or by application code. In V4, any config or fence write must prove its capability chain.</li>
+        <li><strong>Fencing and evictions:</strong> V4 introduces monotonic FENCE tokens to securely manage session quotas under concurrent signers.</li>
+    </ul>
+
+    <h2 id="migrating-keys">Migrating Key Material</h2>
+    <p>In Protocol V3, public keys were stored as raw certificate strings or Jwks. In V4, keys are distributed using <code>KEY_EPOCH</code> payloads carrying DER-encoded public key bytes.</p>
+    <p>To upgrade your keys:</p>
+    <ol>
+        <li>Export the long-term public keys of your issuers as PEM/DER files.</li>
+        <li>Publish a <code>CAPABILITY</code> grant for each issuer, authorizing them to publish on their respective scopes.</li>
+        <li>Publish the initial <code>KEY_EPOCH</code> containing the ephemeral signing key under the newly authorized issuer.</li>
+    </ol>
+
+    <h2 id="coexistence">Coexistence & Zero-Downtime Upgrades</h2>
+    <p>During the upgrade window, gateways must verify both V3 and V4 tokens. To implement a zero-downtime migration, configure a dual-verification pipeline:</p>
+
+    <pre><code class="language-java">import io.github.cyfko.veridot.core.*;
+import io.github.cyfko.veridot.core.exceptions.*;
+
+public class DualVerifier {
+    private final TokenVerifier v4Verifier;
+    private final io.github.cyfko.veridot.v3.TokenVerifier v3Verifier; // From legacy v3 library
+
+    public DualVerifier(TokenVerifier v4Verifier, io.github.cyfko.veridot.v3.TokenVerifier v3Verifier) {
+        this.v4Verifier = v4Verifier;
+        this.v3Verifier = v3Verifier;
+    }
+
+    public VerifiedData<String> verify(String token) throws Exception {
+        // Step 1: Detect version from token header or envelope bytes
+        if (token.startsWith("VD04") || token.startsWith("{\"alg\":") || token.startsWith("eyJ")) {
+            try {
+                // Try V4 verification path
+                return v4Verifier.verify(token, payload -> payload);
+            } catch (Exception e) {
+                // If it fails, check if it's a legacy V3 token
+                if (isV3Token(token)) {
+                    return v3Verifier.verify(token);
+                }
+                throw e;
+            }
+        }
+        
+        // Fallback to V3
+        return v3Verifier.verify(token);
+    }
+
+    private boolean isV3Token(String token) {
+        // Custom logic to identify V3 signature markers
+        return token.contains("v3-sig-marker");
+    }
+}</code></pre>
+</section>

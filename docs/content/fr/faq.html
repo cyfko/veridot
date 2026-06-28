@@ -1,0 +1,25 @@
+<section>
+    <h1 id="faq">Foire Aux Questions</h1>
+    <p>Cette FAQ regroupe les questions fréquentes et les conseils de dépannage pour Veridot.</p>
+
+    <h2 id="why-rejected">Pourquoi mon jeton est-il rejeté ?</h2>
+    <p>Si la signature cryptographique est valide mais que la vérification échoue, vérifiez :</p>
+    <ul>
+        <li><strong>Expiration du statut actif :</strong> Le heartbeat (liveness) a expiré. Assurez-vous que l'émetteur publie régulièrement l'attestation <code>LIVENESS(ACTIVE)</code> avant le timestamp <code>validUntil</code>.</li>
+        <li><strong>Dérive d'horloge :</strong> Si l'écart d'heure entre verifiers et signers dépasse 5 minutes, la validation de <code>KEY_EPOCH</code> échouera. Activez NTP.</li>
+        <li><strong>Version obsolète :</strong> L'enveloppe reçue possède une version inférieure ou égale au filigrane (watermark) local.</li>
+    </ul>
+
+    <h2 id="slow-propagation">Pourquoi les révocations mettent-elles du temps à se propager ?</h2>
+    <p>Si une révocation met plus d'une seconde à se propager :</p>
+    <ul>
+        <li><strong>Partitions Kafka :</strong> Vérifiez la répartition de vos partitions et assurez-vous que chaque validateur utilise un groupe de consommateurs unique pour éviter les blocages.</li>
+        <li><strong>Indexation SQL :</strong> Dans le cas d'un broker SQL, vérifiez que l'index sur la colonne <code>version</code> est bien actif.</li>
+    </ul>
+
+    <h2 id="thread-safety">La bibliothèque Veridot est-elle thread-safe ?</h2>
+    <p>Oui. La classe <code>GenericSignerVerifier</code> ainsi que les adaptateurs de brokers sont thread-safe et conçus pour être déclarés comme Singletons dans des environnements multi-threadés.</p>
+
+    <h2 id="mobile-support">Puis-je valider des jetons sur mobile ou navigateur ?</h2>
+    <p>Non. Les applications mobiles et les navigateurs ne peuvent pas stocker de clés de confiance de manière sécurisée ni se connecter au broker. Ils doivent appeler une passerelle API intermédiaire qui valide le jeton via le SDK Veridot.</p>
+</section>

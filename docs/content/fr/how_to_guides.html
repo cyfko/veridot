@@ -1,0 +1,147 @@
+<section>
+    <h1 id="how-to-guides">Guides Pratiques</h1>
+    <p>Ces guides proposent des solutions concrètes et des exemples de code prêts à l'emploi pour intégrer Veridot dans vos architectures.</p>
+
+    <h2 id="spring-boot">Intégration avec Spring Boot & Spring Security</h2>
+    <p>Le filtre de sécurité suivant intercepte les requêtes HTTP pour valider le jeton Veridot localement :</p>
+
+    <pre><code class="language-java">import io.github.cyfko.veridot.core.*;
+import io.github.cyfko.veridot.core.impl.*;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import jakarta.servlet.Filter;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.web.filter.OncePerRequestFilter;
+import java.security.PublicKey;
+
+@Configuration
+public class VeridotSecurityConfig {
+
+    @Bean
+    public Broker veridotBroker() {
+        return new InMemoryBroker(); // À remplacer par DatabaseBroker ou KafkaBroker en production
+    }
+
+    @Bean
+    public TokenVerifier veridotVerifier(Broker broker) {
+        TrustRoot trustRoot = new PublicKeyTrustRoot() {
+            @Override public PublicKey resolve(String issuer) { return null; /* Charger depuis KMS */ }
+            @Override public boolean isRootIdentity(String issuer) { return "root".equals(issuer); }
+        };
+        return new GenericSignerVerifier(broker, trustRoot);
+    }
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http, TokenVerifier verifier) throws Exception {
+        Filter veridotFilter = new OncePerRequestFilter() {
+            @Override
+            protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+                    throws java.io.IOException, jakarta.servlet.ServletException {
+                String header = request.getHeader("Authorization");
+                if (header != null && header.startsWith("Bearer ")) {
+                    String token = header.substring(7);
+                    try {
+                        VerifiedData<String> verified = verifier.verify(token, payload -> payload);
+                        // Configurer le contexte de sécurité Spring...
+                    } catch (Exception e) {
+                        response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Jeton Invalide");
+                        return;
+                    }
+                }
+                filterChain.doFilter(request, response);
+            }
+        };
+
+        http.addFilterBefore(veridotFilter, UsernamePasswordAuthenticationFilter.class)
+            .authorizeHttpRequests(auth -> auth.anyRequest().authenticated());
+        return http.build();
+    }
+}</code></pre>
+
+    <h2 id="batch-processing">Traitement de Jetons par Lots (Batch)</h2>
+    <p>Pour traiter des volumes importants de jetons, utilisez les streams parallèles Java afin d'exploiter les threads virtuels et optimiser le temps d'exécution :</p>
+
+    <pre><code class="language-java">import io.github.cyfko.veridot.core.*;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+public class BatchProcessor {
+    private final TokenVerifier verifier;
+
+    public BatchProcessor(TokenVerifier verifier) {
+        this.verifier = verifier;
+    }
+
+    public Map<String, Boolean> verifyTokensInBatch(List<String> tokens) {
+        Map<String, Boolean> results = new ConcurrentHashMap<>();
+        
+        // Utilisation du parallel stream pour répartir la charge sur les cœurs CPU
+        tokens.parallelStream().forEach(token -> {
+            try {
+                VerifiedData<String> result = verifier.verify(token, payload -> payload);
+                results.put(token, result.isLive());
+            } catch (Exception e) {
+                results.put(token, false); // Jeton invalide ou révoqué
+            }
+        });
+        
+        return results;
+    }
+}</code></pre>
+
+    <h2 id="caching-configs">Configuration et Optimisation des Caches</h2>
+    <p>Ajustez les paramètres de cache du moteur Veridot dans vos variables d'environnement :</p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Paramètre de Cache</th>
+                <th>Valeur Recommandée</th>
+                <th>Objectif</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>VDOT_CAPABILITY_CACHE_TTL_SECONDS</code></td>
+                <td><code>300</code> (5 minutes)</td>
+                <td>Évite les vérifications répétitives des autorisations de scope stables.</td>
+            </tr>
+            <tr>
+                <td><code>VDOT_CAPABILITY_NEGATIVE_CACHE_TTL_SECONDS</code></td>
+                <td><code>10</code></td>
+                <td>Bloque les requêtes malveillantes répétées sans surcharger le broker.</td>
+            </tr>
+            <tr>
+                <td><code>veridot.reconciliation.interval.minutes</code></td>
+                <td><code>5</code></td>
+                <td>Garantit la resynchronisation rapide en cas de perte réseau ponctuelle.</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h2 id="custom-validators">Implémenter un Validateur Personnalisé</h2>
+    <p>Un validateur vérifie l'intégrité de l'enveloppe avant l'analyse par le processeur. Pour cela, étendez le validateur par défaut :</p>
+
+    <pre><code class="language-java">import io.github.cyfko.veridot.core.impl.DefaultValidator;
+import io.github.cyfko.veridot.core.exceptions.EnvelopeValidationException;
+
+public class CustomPayloadValidator extends DefaultValidator {
+    
+    @Override
+    public void validateEnvelopeStructure(byte[] envelopeBytes) throws EnvelopeValidationException {
+        // Validation de structure héritée
+        super.validateEnvelopeStructure(envelopeBytes);
+        
+        // Règle personnalisée : Taille maximale de l'enveloppe fixée à 4096 octets
+        if (envelopeBytes.length > 4096) {
+            throw new EnvelopeValidationException("L'enveloppe dépasse la taille maximale autorisée");
+        }
+    }
+}</code></pre>
+</section>
