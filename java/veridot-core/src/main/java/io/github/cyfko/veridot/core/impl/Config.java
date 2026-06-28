@@ -1,5 +1,9 @@
 package io.github.cyfko.veridot.core.impl;
 
+import java.util.Set;
+import java.util.HashSet;
+import java.util.Collections;
+
 /// Provide defaults to some constants.
 abstract class ConstantDefault {
     static final long KEYS_ROTATION_MINUTES = 1440; // 24 hours
@@ -7,6 +11,8 @@ abstract class ConstantDefault {
     static final long RECONCILIATION_INTERVAL_MINUTES = 15;
     static final long CAPABILITY_CACHE_TTL_SECONDS = 60;
     static final long CAPABILITY_NEGATIVE_CACHE_TTL_SECONDS = 5;
+    static final long MAX_CLOCK_DRIFT_SECONDS = 300;
+    static final int  MIN_RSA_KEY_LENGTH = 2048;
 }
 
 /// Defines environment variable names.
@@ -15,6 +21,9 @@ abstract class Env {
     static final String RECONCILIATION_INTERVAL_MINUTES = "VDOT_RECONCILIATION_INTERVAL_MINUTES";
     static final String CAPABILITY_CACHE_TTL_SECONDS = "VDOT_CAPABILITY_CACHE_TTL_SECONDS";
     static final String CAPABILITY_NEGATIVE_CACHE_TTL_SECONDS = "VDOT_CAPABILITY_NEGATIVE_CACHE_TTL_SECONDS";
+    static final String CLOCK_DRIFT_TOLERANCE_SECONDS = "VDOT_CLOCK_DRIFT_TOLERANCE_SECONDS";
+    static final String ALLOWED_SIG_ALGS = "VDOT_ALLOWED_SIG_ALGS";
+    static final String MIN_RSA_KEY_LENGTH = "VDOT_MIN_RSA_KEY_LENGTH";
 }
 
 /**
@@ -108,7 +117,18 @@ public abstract class Config {
     /**
      * Maximum allowed clock drift between signer and verifier (§9.1).
      */
-    public static final long MAX_CLOCK_DRIFT_SECONDS = 300;
+    public static final long MAX_CLOCK_DRIFT_SECONDS;
+
+    /**
+     * Allowed signature algorithms for envelopes.
+     * Contains 0x01 (RSA-SHA256) and/or 0x02 (Ed25519).
+     */
+    public static final Set<Byte> ALLOWED_SIG_ALGS;
+
+    /**
+     * Minimum allowed RSA public key size in bits.
+     */
+    public static final int MIN_RSA_KEY_LENGTH;
 
     /**
      * How long verified capabilities are cached (positive caching).
@@ -208,5 +228,72 @@ public abstract class Config {
             }
         }
         CAPABILITY_NEGATIVE_CACHE_TTL_SECONDS = parsedCapNegCache;
+
+        long parsedClockDrift = ConstantDefault.MAX_CLOCK_DRIFT_SECONDS;
+        final var clockDriftRate = System.getenv(Env.CLOCK_DRIFT_TOLERANCE_SECONDS);
+        if (clockDriftRate != null) {
+            try {
+                long parsed = Long.parseLong(clockDriftRate);
+                if (parsed >= 0 && parsed <= 600) {
+                    parsedClockDrift = parsed;
+                } else {
+                    System.getLogger(Config.class.getName()).log(
+                            System.Logger.Level.WARNING,
+                            "Ignoring invalid " + Env.CLOCK_DRIFT_TOLERANCE_SECONDS + "=" + parsed
+                                    + " (must be between 0 and 600). Using default: " + ConstantDefault.MAX_CLOCK_DRIFT_SECONDS);
+                }
+            } catch (NumberFormatException e) {
+                System.getLogger(Config.class.getName()).log(
+                        System.Logger.Level.WARNING,
+                        "Ignoring non-numeric " + Env.CLOCK_DRIFT_TOLERANCE_SECONDS + "='" + clockDriftRate
+                                + "'. Using default: " + ConstantDefault.MAX_CLOCK_DRIFT_SECONDS);
+            }
+        }
+        MAX_CLOCK_DRIFT_SECONDS = parsedClockDrift;
+
+        int parsedMinRsa = ConstantDefault.MIN_RSA_KEY_LENGTH;
+        final var minRsaVal = System.getenv(Env.MIN_RSA_KEY_LENGTH);
+        if (minRsaVal != null) {
+            try {
+                int parsed = Integer.parseInt(minRsaVal);
+                if (parsed >= 1024) {
+                    parsedMinRsa = parsed;
+                } else {
+                    System.getLogger(Config.class.getName()).log(
+                            System.Logger.Level.WARNING,
+                            "Ignoring invalid " + Env.MIN_RSA_KEY_LENGTH + "=" + parsed
+                                    + " (must be >= 1024). Using default: " + ConstantDefault.MIN_RSA_KEY_LENGTH);
+                }
+            } catch (NumberFormatException e) {
+                System.getLogger(Config.class.getName()).log(
+                        System.Logger.Level.WARNING,
+                        "Ignoring non-numeric " + Env.MIN_RSA_KEY_LENGTH + "='" + minRsaVal
+                                + "'. Using default: " + ConstantDefault.MIN_RSA_KEY_LENGTH);
+            }
+        }
+        MIN_RSA_KEY_LENGTH = parsedMinRsa;
+
+        Set<Byte> parsedAlgs = new HashSet<>();
+        final var allowedAlgsVal = System.getenv(Env.ALLOWED_SIG_ALGS);
+        if (allowedAlgsVal != null && !allowedAlgsVal.isBlank()) {
+            String[] parts = allowedAlgsVal.split(",");
+            for (String part : parts) {
+                String clean = part.trim().toUpperCase();
+                if (clean.equals("RSA") || clean.equals("1") || clean.equals("0X01")) {
+                    parsedAlgs.add((byte) 0x01);
+                } else if (clean.equals("ED25519") || clean.equals("EDDSA") || clean.equals("2") || clean.equals("0X02")) {
+                    parsedAlgs.add((byte) 0x02);
+                } else {
+                    System.getLogger(Config.class.getName()).log(
+                            System.Logger.Level.WARNING,
+                            "Ignoring unknown signature algorithm in " + Env.ALLOWED_SIG_ALGS + ": '" + part + "'");
+                }
+            }
+        }
+        if (parsedAlgs.isEmpty()) {
+            parsedAlgs.add((byte) 0x01);
+            parsedAlgs.add((byte) 0x02);
+        }
+        ALLOWED_SIG_ALGS = Collections.unmodifiableSet(parsedAlgs);
     }
 }

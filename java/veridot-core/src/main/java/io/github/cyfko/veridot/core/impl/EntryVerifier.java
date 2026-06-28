@@ -69,8 +69,8 @@ final class EntryVerifier {
         }
 
         // Step 6: Temporal validation (§5.3)
-        // 1. now >= validFrom - 300000 (5 min drift)
-        if (nowMillis < payload.validFrom() - 300000) {
+        // 1. now >= validFrom - Config.MAX_CLOCK_DRIFT_SECONDS * 1000L
+        if (nowMillis < payload.validFrom() - Config.MAX_CLOCK_DRIFT_SECONDS * 1000L) {
             throw new VeridotException(ErrorCode.KEY_EPOCH_EXPIRED, loggable, 
                 "KEY_EPOCH not valid yet (now=" + nowMillis + ", validFrom=" + payload.validFrom() + ")");
         }

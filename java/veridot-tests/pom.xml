@@ -45,6 +45,12 @@
             <version>4.0.0</version>
         </dependency>
         <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-clients</artifactId>
+            <version>3.9.0</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
             <groupId>io.github.cyfko</groupId>
             <artifactId>veridot-databases</artifactId>
             <version>4.0.0</version>

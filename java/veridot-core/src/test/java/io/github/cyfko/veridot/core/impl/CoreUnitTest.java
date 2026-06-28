@@ -182,4 +182,33 @@ public class CoreUnitTest {
         wm2.restore(snap);
         assertEquals(5L, wm2.current(id));
     }
+
+    @Test
+    public void testRsaKeySizeRestriction() throws Exception {
+        KeyPairGenerator rsaGen = KeyPairGenerator.getInstance("RSA");
+        rsaGen.initialize(1024);
+        KeyPair shortKey = rsaGen.generateKeyPair();
+        
+        TrustRoot badTrust = new PublicKeyTrustRoot() {
+            @Override
+            public PublicKey resolve(String issuer) {
+                return shortKey.getPublic();
+            }
+            @Override
+            public boolean isRootIdentity(String issuer) {
+                return true;
+            }
+        };
+
+        Scope scope = Scope.parse("group:user-123");
+        Envelope envelope = new Envelope(
+            Envelope.PROTO_VERSION, EntryType.KEY_EPOCH, (byte) 0x00, scope, "session-A",
+            10L, System.currentTimeMillis(), "root-rsa", new byte[0], (byte) 0x01, new byte[0]
+        );
+        
+        SignatureVerifier verifier = new SignatureVerifier();
+        VeridotException ex = assertThrows(VeridotException.class, () -> verifier.verify(envelope, badTrust));
+        assertEquals(ErrorCode.SIGALG_KEY_MISMATCH, ex.getErrorCode());
+        assertTrue(ex.getMessage().contains("RSA key size must be at least"));
+    }
 }

@@ -23,6 +23,10 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
 
     private static final Logger logger = Logger.getLogger(GenericSignerVerifier.class.getName());
     private static final ObjectMapper objectMapper = new ObjectMapper();
+    static {
+        // Enforce secure deserialization by disabling default typing (Finding R4 mitigation)
+        objectMapper.deactivateDefaultTyping();
+    }
 
     private final Broker broker;
     private final TrustRoot trustRoot;

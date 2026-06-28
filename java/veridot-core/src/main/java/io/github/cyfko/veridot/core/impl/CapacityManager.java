@@ -38,8 +38,8 @@ final class CapacityManager {
         long now = System.currentTimeMillis();
 
         // 1. Acquire FENCE grant (§9.4)
-        // Set fence validity duration to 5 minutes
-        long fenceValidUntil = now + 300000;
+        // Set fence validity duration based on clock drift config
+        long fenceValidUntil = now + Config.MAX_CLOCK_DRIFT_SECONDS * 1000L;
         try {
             fenceManager.acquire(groupScope, processorId, fenceValidUntil, publisher, broker, trustRoot, watermark, signingKey, sigAlg, issuerId);
         } catch (VeridotException e) {
