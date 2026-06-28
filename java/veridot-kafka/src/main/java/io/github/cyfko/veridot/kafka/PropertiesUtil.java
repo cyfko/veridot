@@ -19,6 +19,10 @@ abstract class PropertiesUtil {
         props.setProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         props.setProperty(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "true");
 
+        if (!props.containsKey(ConsumerConfig.GROUP_ID_CONFIG)) {
+            props.setProperty(ConsumerConfig.GROUP_ID_CONFIG, "veridot-group-" + java.util.UUID.randomUUID());
+        }
+
         if (!props.containsKey(VerifierConfig.EMBEDDED_DB_PATH_CONFIG)){
             props.setProperty(VerifierConfig.EMBEDDED_DB_PATH_CONFIG, Constant.EMBEDDED_DATABASE_PATH);
         }

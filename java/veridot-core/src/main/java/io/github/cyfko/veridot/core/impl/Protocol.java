@@ -67,7 +67,7 @@ public class Protocol {
      * @param sequenceId sequence identifier
      * @return {@code "3:<groupId>:<sequenceId>"}
      */
-    static String buildMessageId(String groupId, String sequenceId) {
+    public static String buildMessageId(String groupId, String sequenceId) {
         return VERSION_STR + FIELD_SEP + groupId + FIELD_SEP + sequenceId;
     }
 
@@ -83,7 +83,7 @@ public class Protocol {
      * @param properties ordered map of property name → raw string value
      * @return full V3 message: {@code "3:<groupId>:<sequenceId>|name:b64val,..."}
      */
-    static String buildMessage(String groupId, String sequenceId, Map<String, String> properties) {
+    public static String buildMessage(String groupId, String sequenceId, Map<String, String> properties) {
         String header = buildMessageId(groupId, sequenceId);
         String metadata = properties.entrySet().stream()
                 .map(e -> e.getKey() + FIELD_SEP + base64UrlEncode(e.getValue()))
@@ -95,7 +95,7 @@ public class Protocol {
      * Overload of {@link #buildMessage(String, String, Map)} that accepts an already
      * composed messageId (useful for reserved keys such as config keys).
      */
-    static String buildMessage(String messageId, Map<String, String> properties) {
+    public static String buildMessage(String messageId, Map<String, String> properties) {
         String metadata = properties.entrySet().stream()
                 .map(e -> e.getKey() + FIELD_SEP + base64UrlEncode(e.getValue()))
                 .collect(Collectors.joining(PROP_SEP));
@@ -111,7 +111,7 @@ public class Protocol {
      * @return {@code String[3] = {versionStr, groupId, sequenceId}}
      * @throws IllegalArgumentException if the format is invalid or version is unsupported
      */
-    static String[] parseMessageId(String messageOrId) {
+    public static String[] parseMessageId(String messageOrId) {
         // Strip metadata block if present
         String headerPart = messageOrId.contains(META_SEP)
                 ? messageOrId.substring(0, messageOrId.indexOf(META_SEP))
@@ -171,7 +171,7 @@ public class Protocol {
      * Returns the broker key prefix for all sequences of a given group.
      * <p>Example: {@code groupPrefix("user123")} → {@code "3:user123:"}</p>
      */
-    static String groupPrefix(String groupId) {
+    public static String groupPrefix(String groupId) {
         return VERSION_STR + FIELD_SEP + groupId + FIELD_SEP;
     }
 
@@ -199,7 +199,7 @@ public class Protocol {
      * Returns {@code true} if the messageId's sequenceId is a reserved sequence
      * (pattern: {@code __NAME__}).
      */
-    static boolean isReservedSequence(String messageId) {
+    public static boolean isReservedSequence(String messageId) {
         try {
             String seqId = parseMessageId(messageId)[2];
             return seqId.startsWith("__") && seqId.endsWith("__");
@@ -259,7 +259,7 @@ public class Protocol {
      * @param fieldName name of the field (for error messages)
      * @throws IllegalArgumentException if the identifier is null, blank, or malformed
      */
-    static void validateIdentifier(String id, String fieldName) {
+    public static void validateIdentifier(String id, String fieldName) {
         if (id == null || !IDENTIFIER_PATTERN.matcher(id).matches()) {
             throw new IllegalArgumentException(
                     fieldName + " must be 1-125 printable characters excluding :,| and whitespace, got: " + id);
@@ -285,7 +285,7 @@ public class Protocol {
      * @param props     the metadata properties map (raw values, not base64-encoded)
      * @return the canonical byte array to be signed/verified
      */
-    static byte[] buildCanonicalBytes(String messageId, Map<String, String> props) {
+    public static byte[] buildCanonicalBytes(String messageId, Map<String, String> props) {
         TreeMap<String, String> sorted = new TreeMap<>(props);
         sorted.remove(PROP_SIG);
         sorted.remove(PROP_TOKEN);
@@ -317,7 +317,7 @@ public class Protocol {
     /**
      * Encodes a raw string value to Base64url without padding.
      */
-    static String base64UrlEncode(String value) {
+    public static String base64UrlEncode(String value) {
         return Base64.getUrlEncoder()
                 .withoutPadding()
                 .encodeToString(value.getBytes(StandardCharsets.UTF_8));
@@ -326,7 +326,7 @@ public class Protocol {
     /**
      * Decodes a Base64url-encoded string (with or without padding) to its raw UTF-8 value.
      */
-    static String base64UrlDecode(String encoded) {
+    public static String base64UrlDecode(String encoded) {
         return new String(Base64.getUrlDecoder().decode(encoded), StandardCharsets.UTF_8);
     }
 

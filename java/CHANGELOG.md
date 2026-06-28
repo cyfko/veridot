@@ -5,6 +5,22 @@ All notable changes to the Veridot project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.0] - 2026-06-28
+
+### ⚠️ Breaking Changes
+
+- **MetadataBroker interface removed** — Replaced by `Broker` interface for Protocol V4 storage.
+- **TrustAnchor interface removed** — Replaced by `TrustRoot` interface for Protocol V4 root identity and key resolution.
+- **Verification exceptions unified** — `V4Exception` is renamed to `VeridotException` and serves as the root unchecked exception.
+- **V3-V4 adapters and compatibility interfaces removed** — Classes like `KafkaMetadataBrokerAdapter` and `DatabaseMetadataBroker` have been deleted. Database and Kafka persistence are implemented directly in `DatabaseBroker` and `KafkaBroker` respectively.
+- **Encapsulation consolidation** — Internal implementation helper classes (e.g., `LivenessChecker`, `SessionCounter`, `TlvCodec`, and payloads) have been made package-private and grouped directly under the `io.github.cyfko.veridot.core.impl` package to isolate them from public API consumption.
+
+### Added
+
+- **Protocol V4 implementation** — Full implementation of the V4 protocol, resolving structural and cryptographic verification vulnerabilities (RFC flaws F-01 through F-09).
+- **Physical deletion via Broker** — `DatabaseBroker` and `KafkaBroker` now support entry deletion (SQL DELETE / Kafka tombstones) when `put()` is called with an empty byte payload (`length == 0`).
+- **Resource safety** — Constructor leak protections and thread termination awaits implemented in `KafkaBroker` to prevent JVM crashes (`SIGSEGV`) when closing RocksDB.
+
 ## [3.1.0] - 2026-06-27
 
 ### ⚠️ Breaking Behavior

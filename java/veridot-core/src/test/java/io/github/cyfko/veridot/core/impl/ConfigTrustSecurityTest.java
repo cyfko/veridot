@@ -2,10 +2,11 @@ package io.github.cyfko.veridot.core.impl;
 
 import io.github.cyfko.veridot.core.EvictionPolicy;
 import io.github.cyfko.veridot.core.ConfigScope;
+import io.github.cyfko.veridot.core.InMemoryBroker;
+import io.github.cyfko.veridot.core.PublicKeyTrustRoot;
+import io.github.cyfko.veridot.core.exceptions.VeridotException;
 
-import io.github.cyfko.veridot.core.InMemoryMetadataBroker;
-import io.github.cyfko.veridot.core.TrustAnchor;
-import io.github.cyfko.veridot.core.exceptions.TrustResolutionException;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -13,41 +14,37 @@ import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.PublicKey;
 import java.security.SecureRandom;
-import java.time.Instant;
-import java.util.Base64;
-import java.util.LinkedHashMap;
-import java.util.Map;
+import java.security.Signature;
+import java.util.OptionalInt;
+import java.util.OptionalLong;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class ConfigTrustSecurityTest {
 
-    private InMemoryMetadataBroker broker;
+    private InMemoryBroker broker;
     private TestTrustSetup trust;
 
     @BeforeEach
     void setUp() {
-        broker = new InMemoryMetadataBroker();
+        broker = new InMemoryBroker();
         trust = TestTrustSetup.create();
+    }
+
+    private boolean hasKeyEpoch(String groupId, String sessionKey) {
+        EntryId id = new EntryId(Scope.group(groupId), EntryType.KEY_EPOCH, sessionKey);
+        return broker.containsKey(id.storageKey());
     }
 
     @Test
     void forged_config_without_signature_is_ignored() throws InterruptedException {
-        // Create signer/verifier with default maxSessions = -1 (unlimited)
         var sv = trust.newSignerVerifier(broker);
 
-        // Attacker writes an unsigned config with maxSessions = 1
-        long now = Instant.now().getEpochSecond();
-        Map<String, String> props = new LinkedHashMap<>();
-        props.put(Protocol.PROP_MAX, "1");
-        props.put(Protocol.PROP_POL, EvictionPolicy.REJECT.name());
-        props.put(Protocol.PROP_DTTL, "600");
-        props.put(Protocol.PROP_TS, String.valueOf(now));
-        props.put(Protocol.PROP_EXP, String.valueOf(now + 3600));
-
-        String key = Protocol.buildLocalConfigKey("group1");
-        String unsignedMsg = Protocol.buildMessage(key, props);
-        broker.send(key, unsignedMsg);
+        // Attacker writes an unsigned/malformed config with maxSessions = 1 directly into the broker
+        EntryId configId = new EntryId(Scope.group("group1"), EntryType.CONFIG, "");
+        // Just put random invalid bytes to simulate invalid signature/forged config
+        broker.put(configId.storageKey(), new byte[]{1, 2, 3, 4}).join();
 
         // Sign two sessions. Since unsigned config is ignored, no exception should be thrown
         assertDoesNotThrow(() -> {
@@ -56,9 +53,8 @@ class ConfigTrustSecurityTest {
             sv.sign("d2", BasicConfigurer.builder().groupId("group1").sequenceId("s2").validity(600).build());
         });
 
-        // The default limit should be used (no eviction, both remain)
-        assertTrue(broker.containsKey("3:group1:s1"));
-        assertTrue(broker.containsKey("3:group1:s2"));
+        assertTrue(hasKeyEpoch("group1", "s1"));
+        assertTrue(hasKeyEpoch("group1", "s2"));
     }
 
     @Test
@@ -66,19 +62,23 @@ class ConfigTrustSecurityTest {
         var sv = trust.newSignerVerifier(broker);
 
         // Attacker writes a config with a fake signature
-        long now = Instant.now().getEpochSecond();
-        Map<String, String> props = new LinkedHashMap<>();
-        props.put(Protocol.PROP_MAX, "1");
-        props.put(Protocol.PROP_POL, EvictionPolicy.REJECT.name());
-        props.put(Protocol.PROP_DTTL, "600");
-        props.put(Protocol.PROP_TS, String.valueOf(now));
-        props.put(Protocol.PROP_EXP, String.valueOf(now + 3600));
-        props.put(Protocol.PROP_SID, "attacker-sid");
-        props.put(Protocol.PROP_SIG, "YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY"); // fake b64 signature
+        EntryId configId = new EntryId(Scope.group("group1"), EntryType.CONFIG, "");
+        ConfigPayload payload = new ConfigPayload(OptionalInt.of(1), (byte) 0x04, OptionalLong.empty(), Optional.empty(), Optional.empty(), OptionalLong.of(3600000L));
+        
+        EnvelopeBuilder builder = new EnvelopeBuilder()
+            .entryType(EntryType.CONFIG)
+            .flags((byte) 0x00)
+            .scope(Scope.group("group1"))
+            .key("")
+            .version(1L)
+            .timestamp(System.currentTimeMillis())
+            .issuer("attacker-sid")
+            .payload(payload.encode())
+            .sigAlg((byte) 0x01);
 
-        String key = Protocol.buildLocalConfigKey("group1");
-        String fakeSignedMsg = Protocol.buildMessage(key, props);
-        broker.send(key, fakeSignedMsg);
+        byte[] badSignature = new byte[256]; // Fake signature
+        byte[] encoded = Envelope.encode(builder, badSignature);
+        broker.put(configId.storageKey(), encoded).join();
 
         // Sign two sessions. The forged config must be ignored.
         assertDoesNotThrow(() -> {
@@ -87,46 +87,64 @@ class ConfigTrustSecurityTest {
             sv.sign("d2", BasicConfigurer.builder().groupId("group1").sequenceId("s2").validity(600).build());
         });
 
-        assertTrue(broker.containsKey("3:group1:s1"));
-        assertTrue(broker.containsKey("3:group1:s2"));
+        assertTrue(hasKeyEpoch("group1", "s1"));
+        assertTrue(hasKeyEpoch("group1", "s2"));
     }
 
     @Test
     void config_with_unavailable_trust_anchor_falls_back_without_blocking_sign() throws InterruptedException {
-        // Create custom TrustAnchor that throws UNAVAILABLE
-        TrustAnchor badAnchor = new TrustAnchor.PublicKeyResolver() {
+        PublicKeyTrustRoot badTrustRoot = new PublicKeyTrustRoot() {
             @Override
-            public PublicKey resolve(String sid) throws TrustResolutionException {
-                throw new TrustResolutionException.Unavailable("KMS is down");
+            public PublicKey resolve(String issuer) {
+                throw new VeridotException(ErrorCode.TRANSPORT_UNAVAILABLE, null, "KMS is down");
+            }
+            @Override
+            public boolean isRootIdentity(String issuer) {
+                return false;
             }
         };
 
-        var sv = new GenericSignerVerifier(broker, badAnchor, trust.signerId, trust.longTermKeyPair.getPrivate());
+        var sv = new GenericSignerVerifier(broker, badTrustRoot, trust.signerId, trust.longTermKeyPair.getPrivate(), (byte) 0x01);
 
         // Publish a config signed with a valid signature format
-        long now = Instant.now().getEpochSecond();
-        Map<String, String> props = new LinkedHashMap<>();
-        props.put(Protocol.PROP_MAX, "1");
-        props.put(Protocol.PROP_POL, EvictionPolicy.REJECT.name());
-        props.put(Protocol.PROP_DTTL, "600");
-        props.put(Protocol.PROP_TS, String.valueOf(now));
-        props.put(Protocol.PROP_EXP, String.valueOf(now + 3600));
-        props.put(Protocol.PROP_SID, trust.signerId);
+        long now = System.currentTimeMillis();
+        EntryId configId = new EntryId(Scope.group("group1"), EntryType.CONFIG, "");
+        ConfigPayload payload = new ConfigPayload(OptionalInt.of(1), (byte) 0x04, OptionalLong.empty(), Optional.empty(), Optional.empty(), OptionalLong.of(3600000L));
         
-        String key = Protocol.buildLocalConfigKey("group1");
-        String signedMsg = Protocol.buildMessage(key, props);
-        broker.send(key, signedMsg);
+        EnvelopeBuilder builder = new EnvelopeBuilder()
+            .entryType(EntryType.CONFIG)
+            .flags((byte) 0x00)
+            .scope(Scope.group("group1"))
+            .key("")
+            .version(1L)
+            .timestamp(now)
+            .issuer(trust.signerId)
+            .payload(payload.encode())
+            .sigAlg((byte) 0x01);
 
-        // Sign a session. It should not throw because badAnchor throwing Unavailable
-        // on config check should be caught and fallback to default (unlimited), not throw.
+        // Sign it with valid long term key
+        try {
+            Signature sig = Signature.getInstance("SHA256withRSA");
+            sig.initSign(trust.longTermKeyPair.getPrivate());
+            Envelope tempEnv = new Envelope(Envelope.PROTO_VERSION, EntryType.CONFIG, (byte) 0x00, Scope.group("group1"), "", 1L, now, trust.signerId, payload.encode(), (byte) 0x01, new byte[0]);
+            sig.update(tempEnv.canonicalSigningBytes());
+            byte[] signature = sig.sign();
+            byte[] encoded = Envelope.encode(builder, signature);
+            broker.put(configId.storageKey(), encoded).join();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+
+        // Sign a session. It should not throw because badTrustRoot throwing on config check
+        // should be caught and fallback to default (unlimited), not throw.
         assertDoesNotThrow(() -> {
             sv.sign("d1", BasicConfigurer.builder().groupId("group1").sequenceId("s1").validity(600).build());
             Thread.sleep(100);
             sv.sign("d2", BasicConfigurer.builder().groupId("group1").sequenceId("s2").validity(600).build());
         });
 
-        assertTrue(broker.containsKey("3:group1:s1"));
-        assertTrue(broker.containsKey("3:group1:s2"));
+        assertTrue(hasKeyEpoch("group1", "s1"));
+        assertTrue(hasKeyEpoch("group1", "s2"));
     }
 
     @Test
@@ -146,8 +164,8 @@ class ConfigTrustSecurityTest {
             sv.sign("d2", BasicConfigurer.builder().groupId("group1").sequenceId("s2").validity(600).build());
         });
 
-        assertTrue(broker.containsKey("3:group1:s1"));
-        assertTrue(broker.containsKey("3:group1:s2"));
+        assertTrue(hasKeyEpoch("group1", "s1"));
+        assertTrue(hasKeyEpoch("group1", "s2"));
     }
 
     @Test
@@ -168,27 +186,50 @@ class ConfigTrustSecurityTest {
 
     @Test
     void isAuthorizedForScope_custom_denial_blocks_config() {
-        // Create custom TrustAnchor that denies authorization for group "group-denied"
-        TrustAnchor authAnchor = new TrustAnchor.PublicKeyResolver() {
+        // Create custom TrustRoot that is not root identity
+        PublicKeyTrustRoot authRoot = new PublicKeyTrustRoot() {
             @Override
-            public PublicKey resolve(String sid) throws TrustResolutionException {
+            public PublicKey resolve(String issuer) {
                 return trust.longTermKeyPair.getPublic();
             }
 
             @Override
-            public boolean isAuthorizedForScope(String sid, String scopeKey) {
-                // Deny if scope key contains "group-denied"
-                return !scopeKey.contains("group-denied");
+            public boolean isRootIdentity(String issuer) {
+                return false; // Not a root identity, so needs capability to publish config!
             }
         };
 
-        var sv = new GenericSignerVerifier(broker, authAnchor, trust.signerId, trust.longTermKeyPair.getPrivate());
+        var sv = new GenericSignerVerifier(broker, authRoot, trust.signerId, trust.longTermKeyPair.getPrivate(), (byte) 0x01);
 
-        // Publish config for group-denied
-        sv.publishConfig(ConfigScope.LOCAL, "group-denied", 1, EvictionPolicy.REJECT, 600, 3600);
+        // Publish config for group-denied directly to broker
+        try {
+            long now = System.currentTimeMillis();
+            EntryId configId = new EntryId(Scope.group("group-denied"), EntryType.CONFIG, "");
+            ConfigPayload payload = new ConfigPayload(OptionalInt.of(1), (byte) 0x04, OptionalLong.empty(), Optional.empty(), Optional.empty(), OptionalLong.of(3600000L));
+            
+            EnvelopeBuilder builder = new EnvelopeBuilder()
+                .entryType(EntryType.CONFIG)
+                .flags((byte) 0x00)
+                .scope(Scope.group("group-denied"))
+                .key("")
+                .version(1L)
+                .timestamp(now)
+                .issuer(trust.signerId)
+                .payload(payload.encode())
+                .sigAlg((byte) 0x01);
 
-        // Sign two sessions. Since isAuthorizedForScope returned false, the config is ignored,
-        // so no SessionCapacityExceededException is thrown.
+            Signature sig = Signature.getInstance("SHA256withRSA");
+            sig.initSign(trust.longTermKeyPair.getPrivate());
+            Envelope tempEnv = new Envelope(Envelope.PROTO_VERSION, EntryType.CONFIG, (byte) 0x00, Scope.group("group-denied"), "", 1L, now, trust.signerId, payload.encode(), (byte) 0x01, new byte[0]);
+            sig.update(tempEnv.canonicalSigningBytes());
+            byte[] signature = sig.sign();
+            byte[] encoded = Envelope.encode(builder, signature);
+            broker.put(configId.storageKey(), encoded).join();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+
+        // Sign two sessions. Since the issuer is not authorized (no capability in broker), the config is ignored.
         assertDoesNotThrow(() -> {
             sv.sign("d1", BasicConfigurer.builder().groupId("group-denied").sequenceId("s1").validity(600).build());
             sv.sign("d2", BasicConfigurer.builder().groupId("group-denied").sequenceId("s2").validity(600).build());
@@ -208,30 +249,63 @@ class ConfigTrustSecurityTest {
         // 3. Publish local config for "group-X": maxSessions = 2, REJECT
         sv.publishConfig(ConfigScope.LOCAL, "group-X", 2, EvictionPolicy.REJECT, 600, 3600);
 
-        // 4. Manually publish a valid signed key announcement containing the PROP_SITE = site-A property
+        // Sign first session with siteId = site-A. Since we resolve siteId dynamically, we can sign the first session
+        // using a configurer or manually publish a KEY_EPOCH with site-A.
+        // Let's manually publish a valid KEY_EPOCH envelope for group-X, session s1 containing site-A
+        long now = System.currentTimeMillis();
         KeyPairGenerator gen = KeyPairGenerator.getInstance("RSA");
         gen.initialize(2048, new SecureRandom());
         KeyPair groupKp = gen.generateKeyPair();
-        String pubKeyBase64 = Base64.getUrlEncoder().withoutPadding().encodeToString(groupKp.getPublic().getEncoded());
 
-        long now = Instant.now().getEpochSecond();
-        Map<String, String> announceProps = new LinkedHashMap<>();
-        announceProps.put(Protocol.PROP_ALG, "rsa");
-        announceProps.put(Protocol.PROP_PK, pubKeyBase64);
-        announceProps.put(Protocol.PROP_TS, String.valueOf(now));
-        announceProps.put(Protocol.PROP_TTL, "600");
-        announceProps.put(Protocol.PROP_SID, trust.signerId);
-        announceProps.put(Protocol.PROP_SITE, "site-A");
+        KeyEpochPayload announcePayload = new KeyEpochPayload(
+            (byte) 0x01, 1L, groupKp.getPublic().getEncoded(), now, now + 3600000L, "site-A", null
+        );
 
-        String msgId = Protocol.buildMessageId("group-X", "s1");
-        String sigB64 = TrustedAnnouncement.sign(msgId, announceProps, trust.longTermKeyPair.getPrivate());
-        announceProps.put(Protocol.PROP_SIG, sigB64);
+        EnvelopeBuilder builder = new EnvelopeBuilder()
+            .entryType(EntryType.KEY_EPOCH)
+            .flags((byte) 0x00)
+            .scope(Scope.group("group-X"))
+            .key("s1")
+            .version(1L)
+            .timestamp(now)
+            .issuer(trust.signerId)
+            .payload(announcePayload.encode())
+            .sigAlg((byte) 0x01);
 
-        String message = Protocol.buildMessage("group-X", "s1", announceProps);
-        broker.send(msgId, message);
+        Signature sig = Signature.getInstance("SHA256withRSA");
+        sig.initSign(trust.longTermKeyPair.getPrivate());
+        Envelope tempEnv = new Envelope(Envelope.PROTO_VERSION, EntryType.KEY_EPOCH, (byte) 0x00, Scope.group("group-X"), "s1", 1L, now, trust.signerId, announcePayload.encode(), (byte) 0x01, new byte[0]);
+        sig.update(tempEnv.canonicalSigningBytes());
+        byte[] signature = sig.sign();
+        byte[] encoded = Envelope.encode(builder, signature);
+        
+        EntryId id = new EntryId(Scope.group("group-X"), EntryType.KEY_EPOCH, "s1");
+        broker.put(id.storageKey(), encoded).join();
+
+        // Also we need to publish liveness for s1 so it is counted as active
+        EntryId liveId = new EntryId(Scope.group("group-X"), EntryType.LIVENESS, "s1");
+        // Create active liveness payload
+        LivenessPayload livePayload = new LivenessPayload((byte) 0x01, now, now + 3600000L);
+        EnvelopeBuilder liveBuilder = new EnvelopeBuilder()
+            .entryType(EntryType.LIVENESS)
+            .flags((byte) 0x00)
+            .scope(Scope.group("group-X"))
+            .key("s1")
+            .version(1L)
+            .timestamp(now)
+            .issuer(trust.signerId)
+            .payload(livePayload.encode())
+            .sigAlg((byte) 0x01);
+            
+        Envelope tempLive = new Envelope(Envelope.PROTO_VERSION, EntryType.LIVENESS, (byte) 0x00, Scope.group("group-X"), "s1", 1L, now, trust.signerId, livePayload.encode(), (byte) 0x01, new byte[0]);
+        sig.initSign(trust.longTermKeyPair.getPrivate());
+        sig.update(tempLive.canonicalSigningBytes());
+        byte[] liveSig = sig.sign();
+        byte[] liveEncoded = Envelope.encode(liveBuilder, liveSig);
+        broker.put(liveId.storageKey(), liveEncoded).join();
 
         // Since local config maxSessions = 2, REJECT is the highest priority:
-        // Sign 2nd session: ok (reuses/extends the resolved site config structure internally)
+        // Sign 2nd session: ok (uses/extends the resolved site config structure internally)
         sv.sign("d2", BasicConfigurer.builder().groupId("group-X").sequenceId("s2").validity(600).build());
 
         // Sign 3rd session: should throw SessionCapacityExceededException because local config (max=2) overrides site (max=3) and global (max=5)

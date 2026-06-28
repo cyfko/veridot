@@ -4,9 +4,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](../../LICENSE)
 [![Java 17+](https://img.shields.io/badge/Java-17%2B-orange.svg)](https://openjdk.org/)
 
-Kafka + RocksDB implementation of the [`MetadataBroker`](../veridot-core/src/main/java/io/github/cyfko/veridot/core/MetadataBroker.java) interface.
+Kafka + RocksDB implementation of the [`Broker`](../veridot-core/src/main/java/io/github/cyfko/veridot/core/Broker.java) interface (Protocol V4).
 
-This is the **recommended broker** for production deployments. Key announcements are broadcast via Kafka and cached locally in RocksDB — verification reads never hit the network.
+This is the **recommended broker** for production deployments. Protocol entries are broadcast via Kafka and cached locally in RocksDB — verification reads never hit the network.
 
 ---
 
@@ -15,19 +15,20 @@ This is the **recommended broker** for production deployments. Key announcements
 ```
 Signer node                          Verifier nodes (all)
 ───────────                          ─────────────────────
-send(key, msg)                       Kafka consumer loop
-  ├─ sendLocal() → RocksDB           ├─ poll() every ~500ms
-  └─ Kafka producer → topic          ├─ write to RocksDB
-                                     └─ verify() reads RocksDB (<1ms)
+put(key, bytes)                      Kafka consumer loop
+  ├─ write to local RocksDB           ├─ poll() every ~500ms
+  └─ Kafka producer → topic           ├─ write/delete RocksDB entries
+                                      └─ get() reads local RocksDB (<1ms)
 
-revoke() → __REVOKE__ tombstone  →   Kafka consumer
-                                     └─ delete from RocksDB
+put(key, new byte[0]) → tombstone →  Kafka consumer
+                                      └─ delete from RocksDB
 ```
 
-- **Fan-out**: one Kafka topic, all consumers receive all announcements.
+- **Fan-out**: one Kafka topic, all consumers receive all entries.
 - **Local cache**: RocksDB handles all `get()` calls without network I/O.
-- **Race-free**: `sendLocal()` pre-populates RocksDB before the Kafka send, so `verify()` on the same node works immediately.
-- **Compaction**: expired entries (`timestamp + ttl + 300 < now`) are purged every 5 minutes.
+- **Race-free**: the signer writes to local RocksDB before the Kafka send, so `verify()` on the same node succeeds immediately.
+- **Tombstone deletion**: a `put(key, new byte[0])` publishes a Kafka null-payload tombstone and deletes the local RocksDB entry.
+- **TTL compaction**: expired entries are purged automatically by RocksDB's built-in TTL support.
 
 ---
 
@@ -38,19 +39,19 @@ revoke() → __REVOKE__ tombstone  →   Kafka consumer
 <dependency>
     <groupId>io.github.cyfko</groupId>
     <artifactId>veridot-core</artifactId>
-    <version>3.1.0</version>
+    <version>4.0.0</version>
 </dependency>
 <dependency>
     <groupId>io.github.cyfko</groupId>
     <artifactId>veridot-kafka</artifactId>
-    <version>3.1.0</version>
+    <version>4.0.0</version>
 </dependency>
 ```
 
 ```gradle
 // Gradle
-implementation 'io.github.cyfko:veridot-core:3.1.0'
-implementation 'io.github.cyfko:veridot-kafka:3.1.0'
+implementation 'io.github.cyfko:veridot-core:4.0.0'
+implementation 'io.github.cyfko:veridot-kafka:4.0.0'
 ```
 
 ---
@@ -60,7 +61,7 @@ implementation 'io.github.cyfko:veridot-kafka:3.1.0'
 ### Programmatic configuration (recommended for production)
 
 ```java
-import io.github.cyfko.veridot.kafka.KafkaMetadataBrokerAdapter;
+import io.github.cyfko.veridot.kafka.KafkaBroker;
 
 Properties props = new Properties();
 
@@ -78,21 +79,29 @@ props.setProperty("ssl.endpoint.identification.algorithm", "https");
 props.setProperty("ssl.truststore.location", "/etc/ssl/kafka.truststore.jks");
 props.setProperty("ssl.truststore.password", System.getenv("TRUSTSTORE_PASSWORD"));
 
-MetadataBroker broker = KafkaMetadataBrokerAdapter.of(props);
+Broker broker = KafkaBroker.of(props);
 ```
 
 ### Environment-variable configuration (simple deployments)
 
 ```java
 // Reads all config from environment variables (see table below)
-MetadataBroker broker = KafkaMetadataBrokerAdapter.of();
+Broker broker = KafkaBroker.of();
+```
+
+The broker implements `AutoCloseable` — always close it when your application shuts down:
+
+```java
+try (Broker broker = KafkaBroker.of(props)) {
+    // use broker
+}
 ```
 
 ---
 
 ## Configuration reference
 
-### Kafka properties passed to `KafkaMetadataBrokerAdapter.of(props)`
+### Kafka properties passed to `KafkaBroker.of(props)`
 
 All standard Kafka producer/consumer properties are supported. The most relevant:
 
@@ -108,29 +117,26 @@ All standard Kafka producer/consumer properties are supported. The most relevant
 | `ssl.endpoint.identification.algorithm` | — | `https` to enforce hostname verification | — |
 | `compression.type` | — | `none`, `gzip`, `snappy`, `lz4` | `none` |
 
-### Environment variables (used by `KafkaMetadataBrokerAdapter.of()`)
+### Environment variables (used by `KafkaBroker.of()`)
 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `VDOT_KAFKA_BOOSTRAP_SERVERS` | Kafka bootstrap servers | `localhost:9092` |
-| `VDOT_TOKEN_VERIFIER_TOPIC` | Kafka topic for metadata | `token-verifier` |
+| `VDOT_TOKEN_VERIFIER_TOPIC` | Kafka topic for protocol entries | `token-verifier` |
 | `VDOT_EMBEDDED_DATABASE_PATH` | RocksDB storage path | temp dir |
 | `VDOT_KEYS_ROTATION_MINUTES` | Ephemeral key rotation interval | `1440` (24h) |
 
 ---
 
-## Revocation processing
+## Deletion semantics
 
-When a `__REVOKE__` tombstone is received from the Kafka topic, the consumer automatically:
+`KafkaBroker` intercepts `put(key, new byte[0])` (zero-length payload) as a physical deletion signal:
 
-- **Single-session revocation** (`target=<sequenceId>`): deletes `2:<groupId>:<sequenceId>` from RocksDB.
-- **Group-wide revocation** (`target=__ALL__`): deletes all normal sequences for `groupId` from RocksDB (preserves `__REVOKE__` and `__CONFIG__` entries).
+1. The local RocksDB entry is deleted immediately.
+2. A Kafka tombstone (null-value record) is produced to the topic.
+3. All consuming instances receive the tombstone and delete their local copy.
 
-Revocation propagates to all consumers within the next Kafka poll interval (~500ms by default, ~1s p99 under normal load).
-
-### Tombstone authenticity (v3.0.2)
-
-Since v3.0.2, tombstones carry `tombstoneSig` — a long-term RSA signature. The consumer verifies this signature via the `TrustAnchor` before applying the revocation. A node with Kafka write-access cannot forge a valid tombstone.
+This is how `GenericSignerVerifier` implements session revocation — no special revocation protocol is needed at the broker level.
 
 ---
 
@@ -155,13 +161,13 @@ kafka-acls.sh --add --allow-principal User:veridot-verifier \
   --bootstrap-server kafka:9092
 ```
 
-**Tip**: use a dedicated topic (`token-verifier`) with aggressive retention. A 7-day retention is sufficient — ephemeral keys rotate every 24h and are compacted from RocksDB on expiry.
+**Tip**: use a dedicated topic (`token-verifier`) with retention long enough to cover the maximum key TTL. A 7-day retention is sufficient for default settings.
 
 ---
 
 ## Cluster considerations
 
-- All service instances connected to the **same Kafka cluster and topic** automatically share metadata.
+- All service instances connected to the **same Kafka cluster and topic** automatically share protocol state.
 - RocksDB is a **local per-instance store**. Each pod has its own RocksDB directory.
 - In Kubernetes: mount RocksDB on an `emptyDir` or ephemeral volume — persistence across pod restarts is not required (the Kafka consumer rehydrates from the topic on startup).
 - The consumer uses an **auto-assigned `groupId`** so every instance receives all messages (broadcast semantics).

@@ -1,7 +1,8 @@
 package io.github.cyfko.veridot.core.impl;
 
 import io.github.cyfko.veridot.core.DistributionMode;
-import io.github.cyfko.veridot.core.InMemoryMetadataBroker;
+import io.github.cyfko.veridot.core.InMemoryBroker;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -9,12 +10,12 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class SigningTest {
 
-    private InMemoryMetadataBroker broker;
+    private InMemoryBroker broker;
     private GenericSignerVerifier signer;
 
     @BeforeEach
     void setUp() {
-        broker = new InMemoryMetadataBroker();
+        broker = new InMemoryBroker();
         signer = TestTrustSetup.create().newSignerVerifier(broker);
     }
 
@@ -37,45 +38,62 @@ class SigningTest {
     }
 
     @Test
-    void sign_stores_v3_message_in_broker() {
+    void sign_stores_v4_envelope_in_broker() {
         var cfg = BasicConfigurer.builder().groupId("user1").validity(60).build();
         signer.sign("data", cfg);
 
-        var keys = broker.getKeysByPrefix("3:user1:");
-        assertEquals(1, keys.size(), "Exactly one broker entry must be created");
+        Scope scope = Scope.group("user1");
+        var entries = broker.snapshot(scope);
+        // Two entries: KEY_EPOCH and LIVENESS(ACTIVE)
+        assertEquals(2, entries.size(), "Two broker entries (KEY_EPOCH and LIVENESS) must be created");
 
-        String stored = broker.getRaw(keys.get(0));
-        assertNotNull(stored);
-        assertTrue(stored.contains("|"), "Stored message must contain V3 metadata separator '|'");
-        assertTrue(stored.contains("alg:"), "Stored message must contain 'alg' property");
-        assertTrue(stored.contains("pk:"), "Stored message must contain 'pk' property");
-        assertTrue(stored.contains("ts:"), "Stored message must contain 'ts' property");
-        assertTrue(stored.contains("ttl:"), "Stored message must contain 'ttl' property");
-        // v3.0 — trust-anchor fields must be present
-        assertTrue(stored.contains("sid:"), "Stored message must contain 'sid' property (F1)");
-        assertTrue(stored.contains("sig:"), "Stored message must contain 'sig' property (F1)");
+        var keyEpochEntry = entries.stream()
+                .filter(e -> Envelope.parse(e.envelopeBytes()).entryType == EntryType.KEY_EPOCH)
+                .findFirst().orElseThrow();
+
+        Envelope parsed = Envelope.parse(keyEpochEntry.envelopeBytes());
+        assertEquals(Envelope.PROTO_VERSION, parsed.protoVersion);
+        assertEquals(EntryType.KEY_EPOCH, parsed.entryType);
+        assertEquals(scope, parsed.scope);
+        assertEquals("test-signer", parsed.issuer);
+
+        KeyEpochPayload payload = KeyEpochPayload.decode(parsed.payload);
+        assertNotNull(payload.pk());
+        assertTrue(payload.validUntil() > payload.validFrom());
     }
 
     @Test
-    void sign_indirect_stores_token_in_metadata() {
+    void sign_indirect_stores_token_in_payload() {
         var cfg = BasicConfigurer.builder().groupId("user1").validity(60)
                 .distribution(DistributionMode.INDIRECT).build();
         signer.sign("data", cfg);
 
-        var keys = broker.getKeysByPrefix("3:user1:");
-        String stored = broker.getRaw(keys.get(0));
-        assertTrue(stored.contains("token:"), "INDIRECT mode must store 'token' property in metadata");
+        Scope scope = Scope.group("user1");
+        var entries = broker.snapshot(scope);
+        var keyEpochEntry = entries.stream()
+                .filter(e -> Envelope.parse(e.envelopeBytes()).entryType == EntryType.KEY_EPOCH)
+                .findFirst().orElseThrow();
+
+        Envelope parsed = Envelope.parse(keyEpochEntry.envelopeBytes());
+        KeyEpochPayload payload = KeyEpochPayload.decode(parsed.payload);
+        assertNotNull(payload.token(), "INDIRECT mode must store token in KeyEpochPayload");
     }
 
     @Test
-    void sign_direct_does_not_store_token_in_metadata() {
+    void sign_direct_does_not_store_token_in_payload() {
         var cfg = BasicConfigurer.builder().groupId("user1").validity(60)
                 .distribution(DistributionMode.DIRECT).build();
         signer.sign("data", cfg);
 
-        var keys = broker.getKeysByPrefix("3:user1:");
-        String stored = broker.getRaw(keys.get(0));
-        assertFalse(stored.contains("token:"), "DIRECT mode must NOT store 'token' property in metadata");
+        Scope scope = Scope.group("user1");
+        var entries = broker.snapshot(scope);
+        var keyEpochEntry = entries.stream()
+                .filter(e -> Envelope.parse(e.envelopeBytes()).entryType == EntryType.KEY_EPOCH)
+                .findFirst().orElseThrow();
+
+        Envelope parsed = Envelope.parse(keyEpochEntry.envelopeBytes());
+        KeyEpochPayload payload = KeyEpochPayload.decode(parsed.payload);
+        assertNull(payload.token(), "DIRECT mode must NOT store token in KeyEpochPayload");
     }
 
     @Test
@@ -94,8 +112,9 @@ class SigningTest {
     void sign_custom_sequenceId_used_as_broker_key() {
         var cfg = BasicConfigurer.builder().groupId("user1").sequenceId("my-session").validity(60).build();
         signer.sign("data", cfg);
-        assertTrue(broker.containsKey("3:user1:my-session"),
-                "Broker must contain key with custom sequenceId");
+
+        EntryId expectedId = new EntryId(Scope.group("user1"), EntryType.KEY_EPOCH, "my-session");
+        assertTrue(broker.containsKey(expectedId.storageKey()), "Broker must contain key with custom sequenceId");
     }
 
     @Test
@@ -105,8 +124,11 @@ class SigningTest {
         signer.sign("data1", cfg1);
         signer.sign("data2", cfg2);
 
-        var keys = broker.getKeysByPrefix("3:user1:");
-        assertEquals(2, keys.size(), "Two signs with auto-sequenceId must create 2 distinct broker entries");
-        assertNotEquals(keys.get(0), keys.get(1), "Auto-generated sequenceIds must be unique");
+        Scope scope = Scope.group("user1");
+        var entries = broker.snapshot(scope);
+        long keyEpochCount = entries.stream()
+                .filter(e -> Envelope.parse(e.envelopeBytes()).entryType == EntryType.KEY_EPOCH)
+                .count();
+        assertEquals(2, keyEpochCount, "Two signs with auto-sequenceId must create 2 distinct KEY_EPOCH entries");
     }
 }

@@ -1,45 +1,29 @@
 package io.github.cyfko.veridot.core.impl;
 
-import io.github.cyfko.veridot.core.InMemoryMetadataBroker;
-import io.github.cyfko.veridot.core.TrustAnchor;
-import io.github.cyfko.veridot.core.EvictionPolicy;
-import io.github.cyfko.veridot.core.exceptions.TrustResolutionException;
-
+import io.github.cyfko.veridot.core.InMemoryBroker;
+import io.github.cyfko.veridot.core.PublicKeyTrustRoot;
+import io.github.cyfko.veridot.core.TrustRoot;
+import io.github.cyfko.veridot.core.exceptions.VeridotException;
 import java.security.*;
 import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Test utility: wires up a self-contained long-term key pair and a matching
- * {@link TrustAnchor.PublicKeyResolver} for unit testing.
- *
- * <p>Usage:</p>
- * <pre>{@code
- * TestTrustSetup setup = TestTrustSetup.create();
- * GenericSignerVerifier sv = setup.newSignerVerifier(broker);
- * }</pre>
+ * V4 Test utility: wires up a self-contained long-term key pair and a matching
+ * {@link TrustRoot} for unit testing.
  */
 public class TestTrustSetup {
 
-    /** The long-term key pair used to sign key announcements. */
     public final KeyPair longTermKeyPair;
-
-    /** The signerId associated with the long-term key pair. */
     public final String signerId;
+    public final TrustRoot trustRoot;
 
-    /** A TrustAnchor that resolves signerId → the long-term public key. */
-    public final TrustAnchor trustAnchor;
-
-    private TestTrustSetup(KeyPair longTermKeyPair, String signerId, TrustAnchor trustAnchor) {
+    private TestTrustSetup(KeyPair longTermKeyPair, String signerId, TrustRoot trustRoot) {
         this.longTermKeyPair = longTermKeyPair;
         this.signerId = signerId;
-        this.trustAnchor = trustAnchor;
+        this.trustRoot = trustRoot;
     }
 
-    /**
-     * Creates a new {@code TestTrustSetup} with a fresh RSA-2048 long-term key pair
-     * (2048 is sufficient for tests) and a simple in-memory resolver.
-     */
     public static TestTrustSetup create() {
         try {
             KeyPairGenerator gen = KeyPairGenerator.getInstance("RSA");
@@ -47,39 +31,39 @@ public class TestTrustSetup {
             KeyPair kp = gen.generateKeyPair();
             String signerId = "test-signer";
 
-            // Simple in-memory resolver: signerId → public key
             Map<String, PublicKey> keyStore = new HashMap<>();
             keyStore.put(signerId, kp.getPublic());
 
-            TrustAnchor anchor = (TrustAnchor.PublicKeyResolver) id -> {
-                PublicKey pk = keyStore.get(id);
-                if (pk == null) {
-                    throw new TrustResolutionException.SignatureRejected("Unknown signerId: " + id);
+            TrustRoot root = new PublicKeyTrustRoot() {
+                @Override
+                public PublicKey resolve(String issuer) {
+                    PublicKey pk = keyStore.get(issuer);
+                    if (pk == null) {
+                        throw new VeridotException(ErrorCode.TRUST_RESOLUTION_FAILED, null, "Unknown signerId: " + issuer);
+                    }
+                    return pk;
                 }
-                return pk;
+
+                @Override
+                public boolean isRootIdentity(String issuer) {
+                    return keyStore.containsKey(issuer);
+                }
             };
 
-            return new TestTrustSetup(kp, signerId, anchor);
+            return new TestTrustSetup(kp, signerId, root);
         } catch (NoSuchAlgorithmException e) {
             throw new RuntimeException("Failed to create test trust setup", e);
         }
     }
 
-    /**
-     * Creates a {@link GenericSignerVerifier} connected to the given broker,
-     * using this setup's trust anchor and long-term key pair.
-     */
-    public GenericSignerVerifier newSignerVerifier(InMemoryMetadataBroker broker) {
-        return new GenericSignerVerifier(broker, trustAnchor, signerId, longTermKeyPair.getPrivate());
+    public GenericSignerVerifier newSignerVerifier(InMemoryBroker broker) {
+        return new GenericSignerVerifier(broker, trustRoot, signerId, longTermKeyPair.getPrivate(), (byte) 0x01);
     }
 
-    /**
-     * Creates a {@link GenericSignerVerifier} with session limits.
-     */
-    public GenericSignerVerifier newSignerVerifier(InMemoryMetadataBroker broker,
+    public GenericSignerVerifier newSignerVerifier(InMemoryBroker broker,
                                                     int maxSessions,
-                                                    EvictionPolicy policy) {
-        return new GenericSignerVerifier(broker, trustAnchor, signerId, longTermKeyPair.getPrivate(),
+                                                    io.github.cyfko.veridot.core.EvictionPolicy policy) {
+        return new GenericSignerVerifier(broker, trustRoot, signerId, longTermKeyPair.getPrivate(), (byte) 0x01,
                 maxSessions, policy);
     }
 }

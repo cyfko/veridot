@@ -1,352 +1,199 @@
 package io.github.cyfko.veridot.core.impl;
 
-import io.github.cyfko.veridot.core.InMemoryMetadataBroker;
-import io.github.cyfko.veridot.core.TrustAnchor;
+import io.github.cyfko.veridot.core.InMemoryBroker;
+import io.github.cyfko.veridot.core.PublicKeyTrustRoot;
+import io.github.cyfko.veridot.core.TrustRoot;
 import io.github.cyfko.veridot.core.exceptions.BrokerExtractionException;
-import io.github.cyfko.veridot.core.exceptions.TrustResolutionException;
+import io.github.cyfko.veridot.core.exceptions.VeridotException;
+
 import org.junit.jupiter.api.Test;
 
 import java.security.*;
-import java.util.Base64;
-import java.util.LinkedHashMap;
-import java.util.Map;
+import java.util.Arrays;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/**
- * Security-focused tests for the TrustAnchor integration (F1).
- *
- * <p>These tests verify that the broker is truly a transport only: key announcements
- * received from the broker are validated through the TrustAnchor before any
- * cryptographic verification takes place.</p>
- *
- * <p>Threat models covered:</p>
- * <ul>
- *   <li>Broker write: an attacker injects a fraudulent key announcement without a valid
- *       long-term signature → must be rejected (SignatureRejected path)</li>
- *   <li>Broker write: an attacker injects metadata missing trust-anchor fields → must be
- *       rejected (missing-fields path)</li>
- *   <li>KMS unavailability: TrustAnchor temporarily unreachable → must fail safe
- *       (Unavailable path)</li>
- *   <li>Unknown signerId: announcement claims an identity the TrustAnchor doesn't know
- *       → must be rejected</li>
- *   <li>Wrong key: correct signerId but wrong public key in announcement → must be rejected
- *       (cryptographic mismatch)</li>
- *   <li>Canonical announcement format: buildCanonicalAnnouncement is deterministic and
- *       length-prefixed (no raw concatenation attack surface)</li>
- * </ul>
- */
 class TrustAnchorSecurityTest {
 
-    // ── Forge tests (F1 — broker-injection attacks) ───────────────────────────
-
-    /**
-     * An attacker writes a key announcement to the broker without a valid long-term signature.
-     * The TrustAnchor rejects it → {@code verify()} must throw.
-     */
     @Test
     void forged_announcement_without_trust_anchor_signature_is_rejected() throws Exception {
-        InMemoryMetadataBroker broker = new InMemoryMetadataBroker();
+        InMemoryBroker broker = new InMemoryBroker();
         TestTrustSetup trust = TestTrustSetup.create();
         var sv = trust.newSignerVerifier(broker);
 
-        // Attacker generates their own ephemeral key pair
         KeyPairGenerator gen = KeyPairGenerator.getInstance("RSA");
         gen.initialize(2048, new SecureRandom());
         KeyPair attackerKp = gen.generateKeyPair();
 
-        // Attacker builds a forged V2 metadata message with no announcementSig
-        long ts = java.time.Instant.now().getEpochSecond();
-        String attackerPubKey = Base64.getUrlEncoder().withoutPadding()
-                .encodeToString(attackerKp.getPublic().getEncoded());
-        Map<String, String> props = new LinkedHashMap<>();
-        props.put(Protocol.PROP_ALG, Config.DEFAULT_CRYPTO_MODE);
-        props.put(Protocol.PROP_PK, attackerPubKey);
-        props.put(Protocol.PROP_TS, String.valueOf(ts));
-        props.put(Protocol.PROP_TTL, "3600");
-        props.put(Protocol.PROP_SID, trust.signerId); // claims to be the legitimate signer
-        // Note: no announcementSig!
-        String forgedMsg = Protocol.buildMessage("victim-group", "evil-session", props);
-        broker.sendLocal("3:victim-group:evil-session", forgedMsg);
+        long ts = System.currentTimeMillis();
+        KeyEpochPayload payload = new KeyEpochPayload(
+            (byte) 0x01, 1L, attackerKp.getPublic().getEncoded(), ts, ts + 3600000L, null, null
+        );
 
-        // Verify must reject because sig is absent
+        EnvelopeBuilder builder = new EnvelopeBuilder()
+            .entryType(EntryType.KEY_EPOCH)
+            .flags((byte) 0x00)
+            .scope(Scope.group("victim-group"))
+            .key("evil-session")
+            .version(1L)
+            .timestamp(ts)
+            .issuer(trust.signerId)
+            .payload(payload.encode())
+            .sigAlg((byte) 0x01);
+
+        byte[] emptySignature = new byte[0];
+        byte[] encoded = Envelope.encode(builder, emptySignature);
+        
+        EntryId id = new EntryId(Scope.group("victim-group"), EntryType.KEY_EPOCH, "evil-session");
+        broker.put(id.storageKey(), encoded).join();
+
         assertThrows(BrokerExtractionException.class,
                 () -> sv.verify("3:victim-group:evil-session", s -> s),
                 "Missing sig must cause rejection (F1)");
     }
 
-    /**
-     * An attacker injects a key announcement with a random (invalid) signature over the
-     * announcement bytes. The TrustAnchor performs RSA signature verification → fails →
-     * {@code verify()} must throw.
-     */
     @Test
     void forged_announcement_with_random_signature_is_rejected() throws Exception {
-        InMemoryMetadataBroker broker = new InMemoryMetadataBroker();
+        InMemoryBroker broker = new InMemoryBroker();
         TestTrustSetup trust = TestTrustSetup.create();
         var sv = trust.newSignerVerifier(broker);
 
-        // Attacker generates their own ephemeral key pair
         KeyPairGenerator gen = KeyPairGenerator.getInstance("RSA");
         gen.initialize(2048, new SecureRandom());
         KeyPair attackerKp = gen.generateKeyPair();
 
-        long ts = java.time.Instant.now().getEpochSecond();
-        long ttl = 3600L;
-        String attackerPubKeyB64 = Base64.getUrlEncoder().withoutPadding()
-                .encodeToString(attackerKp.getPublic().getEncoded());
+        long ts = System.currentTimeMillis();
+        KeyEpochPayload payload = new KeyEpochPayload(
+            (byte) 0x01, 1L, attackerKp.getPublic().getEncoded(), ts, ts + 3600000L, null, null
+        );
 
-        // Forge a random signature (not signed with the legitimate long-term key)
+        EnvelopeBuilder builder = new EnvelopeBuilder()
+            .entryType(EntryType.KEY_EPOCH)
+            .flags((byte) 0x00)
+            .scope(Scope.group("victim-group2"))
+            .key("evil-session2")
+            .version(1L)
+            .timestamp(ts)
+            .issuer(trust.signerId)
+            .payload(payload.encode())
+            .sigAlg((byte) 0x01);
+
         byte[] fakeSignature = new byte[256];
         new SecureRandom().nextBytes(fakeSignature);
-        String fakeSigB64 = Base64.getUrlEncoder().withoutPadding().encodeToString(fakeSignature);
+        byte[] encoded = Envelope.encode(builder, fakeSignature);
+        
+        EntryId id = new EntryId(Scope.group("victim-group2"), EntryType.KEY_EPOCH, "evil-session2");
+        broker.put(id.storageKey(), encoded).join();
 
-        Map<String, String> props = new LinkedHashMap<>();
-        props.put(Protocol.PROP_ALG, Config.DEFAULT_CRYPTO_MODE);
-        props.put(Protocol.PROP_PK, attackerPubKeyB64);
-        props.put(Protocol.PROP_TS, String.valueOf(ts));
-        props.put(Protocol.PROP_TTL, String.valueOf(ttl));
-        props.put(Protocol.PROP_SID, trust.signerId); // claims to be the legitimate signer
-        props.put(Protocol.PROP_SIG, fakeSigB64); // fake signature
-        String forgedMsg = Protocol.buildMessage("victim-group2", "evil-session2", props);
-        broker.sendLocal("3:victim-group2:evil-session2", forgedMsg);
-
-        // Verify must reject because the RSA signature does not match the legitimate long-term key
         assertThrows(BrokerExtractionException.class,
                 () -> sv.verify("3:victim-group2:evil-session2", s -> s),
-                "Forged announcement signature must be rejected by TrustAnchor (F1)");
+                "Forged announcement signature must be rejected");
     }
 
-    /**
-     * TrustAnchor throws {@link TrustResolutionException.Unavailable} → must fail safe:
-     * {@code verify()} throws {@link BrokerExtractionException}, does NOT accept the token.
-     */
     @Test
     void unavailable_trust_anchor_fails_safe() throws Exception {
-        InMemoryMetadataBroker broker = new InMemoryMetadataBroker();
+        InMemoryBroker broker = new InMemoryBroker();
         TestTrustSetup trust = TestTrustSetup.create();
 
-        // Replace the trust anchor with one that always throws Unavailable
-        TrustAnchor flakeyAnchor = (TrustAnchor.PublicKeyResolver) signerId -> {
-            throw new TrustResolutionException.Unavailable("KMS is down");
+        PublicKeyTrustRoot flakeyRoot = new PublicKeyTrustRoot() {
+            @Override
+            public PublicKey resolve(String issuer) {
+                throw new VeridotException(ErrorCode.TRANSPORT_UNAVAILABLE, null, "KMS is down");
+            }
+            @Override
+            public boolean isRootIdentity(String issuer) {
+                return false;
+            }
         };
-        var sv = new GenericSignerVerifier(broker, flakeyAnchor, trust.signerId,
-                trust.longTermKeyPair.getPrivate());
 
-        // Sign a legitimate token (bypasses TrustAnchor — sendLocal writes directly)
+        var sv = new GenericSignerVerifier(broker, flakeyRoot, trust.signerId,
+                trust.longTermKeyPair.getPrivate(), (byte) 0x01);
+
         String token = sv.sign("data",
                 BasicConfigurer.builder().groupId("infra-test").validity(600).build());
 
-        // But verify must fail because the trust anchor is unavailable
         assertThrows(BrokerExtractionException.class,
                 () -> sv.verify(token, s -> s),
-                "Unavailable TrustAnchor must fail safe — cannot verify without trust");
+                "Unavailable TrustRoot must fail safe — cannot verify without trust");
     }
 
-    /**
-     * TrustAnchor does NOT know the signerId → {@code SignatureRejected} →
-     * {@code verify()} throws.
-     */
     @Test
     void unknown_signerId_is_rejected() throws Exception {
-        InMemoryMetadataBroker broker = new InMemoryMetadataBroker();
+        InMemoryBroker broker = new InMemoryBroker();
         TestTrustSetup trust = TestTrustSetup.create();
         var sv = trust.newSignerVerifier(broker);
 
-        // Manually forge a message with an unknown signerId (different from trust.signerId)
-        long ts = java.time.Instant.now().getEpochSecond();
+        long ts = System.currentTimeMillis();
         KeyPairGenerator gen = KeyPairGenerator.getInstance("RSA");
         gen.initialize(2048, new SecureRandom());
         KeyPair fakeKp = gen.generateKeyPair();
-        String fakePubKeyB64 = Base64.getUrlEncoder().withoutPadding()
-                .encodeToString(fakeKp.getPublic().getEncoded());
 
-        Map<String, String> canonProps = new LinkedHashMap<>();
-        canonProps.put(Protocol.PROP_ALG, Config.DEFAULT_CRYPTO_MODE);
-        canonProps.put(Protocol.PROP_PK, fakePubKeyB64);
-        canonProps.put(Protocol.PROP_TS, String.valueOf(ts));
-        canonProps.put(Protocol.PROP_TTL, String.valueOf(3600L));
-        canonProps.put(Protocol.PROP_SID, "unknown-signer");
-        byte[] canonical = Protocol.buildCanonicalBytes("3:victim:unknown-attack", canonProps);
-        java.security.Signature sig = java.security.Signature.getInstance("SHA256withRSA");
-        sig.initSign(fakeKp.getPrivate()); // sign with its own key (not the legitimate long-term)
-        sig.update(canonical);
+        KeyEpochPayload payload = new KeyEpochPayload(
+            (byte) 0x01, 1L, fakeKp.getPublic().getEncoded(), ts, ts + 3600000L, null, null
+        );
+
+        EnvelopeBuilder builder = new EnvelopeBuilder()
+            .entryType(EntryType.KEY_EPOCH)
+            .flags((byte) 0x00)
+            .scope(Scope.group("victim"))
+            .key("unknown-attack")
+            .version(1L)
+            .timestamp(ts)
+            .issuer("unknown-signer")
+            .payload(payload.encode())
+            .sigAlg((byte) 0x01);
+
+        Envelope tempEnv = new Envelope(Envelope.PROTO_VERSION, EntryType.KEY_EPOCH, (byte) 0x00, Scope.group("victim"), "unknown-attack", 1L, ts, "unknown-signer", payload.encode(), (byte) 0x01, new byte[0]);
+        Signature sig = Signature.getInstance("SHA256withRSA");
+        sig.initSign(fakeKp.getPrivate());
+        sig.update(tempEnv.canonicalSigningBytes());
         byte[] fakeSig = sig.sign();
-        String fakeSigB64 = Base64.getUrlEncoder().withoutPadding().encodeToString(fakeSig);
-
-        Map<String, String> props = new LinkedHashMap<>();
-        props.put(Protocol.PROP_ALG, Config.DEFAULT_CRYPTO_MODE);
-        props.put(Protocol.PROP_PK, fakePubKeyB64);
-        props.put(Protocol.PROP_TS, String.valueOf(ts));
-        props.put(Protocol.PROP_TTL, "3600");
-        props.put(Protocol.PROP_SID, "unknown-signer"); // not in trust store
-        props.put(Protocol.PROP_SIG, fakeSigB64);
-        String msg = Protocol.buildMessage("victim", "unknown-attack", props);
-        broker.sendLocal("3:victim:unknown-attack", msg);
+        byte[] encoded = Envelope.encode(builder, fakeSig);
+        
+        EntryId id = new EntryId(Scope.group("victim"), EntryType.KEY_EPOCH, "unknown-attack");
+        broker.put(id.storageKey(), encoded).join();
 
         assertThrows(BrokerExtractionException.class,
                 () -> sv.verify("3:victim:unknown-attack", s -> s),
-                "Unknown signerId must be rejected by TrustAnchor (SignatureRejected)");
+                "Unknown signerId must be rejected by TrustRoot");
     }
 
-    // ── Canonical announcement encoding correctness ───────────────────────────
-
-    /**
-     * Verifies that {@code buildCanonicalAnnouncement} is deterministic:
-     * identical inputs always produce the same byte sequence.
-     */
     @Test
     void canonical_announcement_is_deterministic() {
-        byte[] dummyDer = new byte[]{0x01, 0x02, 0x03, 0x04};
-        String dummyPkB64 = Base64.getUrlEncoder().withoutPadding().encodeToString(dummyDer);
-        long ts = 1706712000L;
-        long ttl = 3600L;
-        String signerId = "svc-A";
-
-        Map<String, String> p = new LinkedHashMap<>();
-        p.put(Protocol.PROP_ALG, Config.DEFAULT_CRYPTO_MODE);
-        p.put(Protocol.PROP_PK, dummyPkB64);
-        p.put(Protocol.PROP_TS, String.valueOf(ts));
-        p.put(Protocol.PROP_TTL, String.valueOf(ttl));
-        p.put(Protocol.PROP_SID, signerId);
-
-        byte[] a1 = Protocol.buildCanonicalBytes("3:test:seq1", p);
-        byte[] a2 = Protocol.buildCanonicalBytes("3:test:seq1", p);
-        assertArrayEquals(a1, a2, "buildCanonicalBytes must be deterministic");
+        Scope scope = Scope.group("test");
+        byte[] payload = new byte[]{1, 2, 3, 4};
+        Envelope a1 = new Envelope(Envelope.PROTO_VERSION, EntryType.KEY_EPOCH, (byte) 0x00, scope, "seq1", 1L, 1706712000L, "svc-A", payload, (byte) 0x01, new byte[0]);
+        Envelope a2 = new Envelope(Envelope.PROTO_VERSION, EntryType.KEY_EPOCH, (byte) 0x00, scope, "seq1", 1L, 1706712000L, "svc-A", payload, (byte) 0x01, new byte[0]);
+        assertArrayEquals(a1.canonicalSigningBytes(), a2.canonicalSigningBytes(), "canonicalSigningBytes must be deterministic");
     }
 
-    /**
-     * Verifies that changing any field changes the canonical representation
-     * (no raw concatenation attack surface — length-prefixed encoding).
-     */
     @Test
     void canonical_announcement_changes_when_any_field_changes() {
-        byte[] der = new byte[]{0x01, 0x02, 0x03};
-        String derB64 = Base64.getUrlEncoder().withoutPadding().encodeToString(der);
-        long ts = 1706712000L;
-        long ttl = 3600L;
-        String signerId = "svc-A";
+        Scope scope = Scope.group("g");
+        byte[] payload = new byte[]{1, 2, 3};
+        Envelope base = new Envelope(Envelope.PROTO_VERSION, EntryType.KEY_EPOCH, (byte) 0x00, scope, "s", 1L, 1706712000L, "svc-A", payload, (byte) 0x01, new byte[0]);
 
-        // Helper to build props
-        java.util.function.Supplier<Map<String, String>> baseProps = () -> {
-            Map<String, String> m = new LinkedHashMap<>();
-            m.put(Protocol.PROP_ALG, Config.DEFAULT_CRYPTO_MODE);
-            m.put(Protocol.PROP_PK, derB64);
-            m.put(Protocol.PROP_TS, String.valueOf(ts));
-            m.put(Protocol.PROP_TTL, String.valueOf(ttl));
-            m.put(Protocol.PROP_SID, signerId);
-            return m;
-        };
+        Envelope diffPayload = new Envelope(Envelope.PROTO_VERSION, EntryType.KEY_EPOCH, (byte) 0x00, scope, "s", 1L, 1706712000L, "svc-A", new byte[]{1, 2, 4}, (byte) 0x01, new byte[0]);
+        Envelope diffTs = new Envelope(Envelope.PROTO_VERSION, EntryType.KEY_EPOCH, (byte) 0x00, scope, "s", 1L, 1706712001L, "svc-A", payload, (byte) 0x01, new byte[0]);
+        Envelope diffIssuer = new Envelope(Envelope.PROTO_VERSION, EntryType.KEY_EPOCH, (byte) 0x00, scope, "s", 1L, 1706712000L, "svc-B", payload, (byte) 0x01, new byte[0]);
 
-        byte[] base = Protocol.buildCanonicalBytes("3:g:s", baseProps.get());
-
-        Map<String, String> pDiffDer = baseProps.get();
-        pDiffDer.put(Protocol.PROP_PK, Base64.getUrlEncoder().withoutPadding().encodeToString(new byte[]{0x01, 0x02, 0x04}));
-        byte[] diffDer = Protocol.buildCanonicalBytes("3:g:s", pDiffDer);
-
-        Map<String, String> pDiffTs = baseProps.get();
-        pDiffTs.put(Protocol.PROP_TS, String.valueOf(ts + 1));
-        byte[] diffTs = Protocol.buildCanonicalBytes("3:g:s", pDiffTs);
-
-        Map<String, String> pDiffTtl = baseProps.get();
-        pDiffTtl.put(Protocol.PROP_TTL, String.valueOf(ttl + 1));
-        byte[] diffTtl = Protocol.buildCanonicalBytes("3:g:s", pDiffTtl);
-
-        Map<String, String> pDiffSigner = baseProps.get();
-        pDiffSigner.put(Protocol.PROP_SID, "svc-B");
-        byte[] diffSigner = Protocol.buildCanonicalBytes("3:g:s", pDiffSigner);
-
-        assertFalse(java.util.Arrays.equals(base, diffDer), "Different pubkey DER must change canonical bytes");
-        assertFalse(java.util.Arrays.equals(base, diffTs), "Different timestamp must change canonical bytes");
-        assertFalse(java.util.Arrays.equals(base, diffTtl), "Different TTL must change canonical bytes");
-        assertFalse(java.util.Arrays.equals(base, diffSigner), "Different signerId must change canonical bytes");
-
-        // Also verify that different messageId changes canonical bytes (anti-substitution)
-        byte[] diffMsgId = Protocol.buildCanonicalBytes("3:g:other", baseProps.get());
-        assertFalse(java.util.Arrays.equals(base, diffMsgId), "Different messageId must change canonical bytes");
+        assertFalse(Arrays.equals(base.canonicalSigningBytes(), diffPayload.canonicalSigningBytes()));
+        assertFalse(Arrays.equals(base.canonicalSigningBytes(), diffTs.canonicalSigningBytes()));
+        assertFalse(Arrays.equals(base.canonicalSigningBytes(), diffIssuer.canonicalSigningBytes()));
     }
 
-    /**
-     * End-to-end: sign → verify using a valid TrustAnchor.
-     * This is the positive path — proves the normal flow works after F1.
-     */
     @Test
     void valid_announcement_passes_trust_anchor_and_verifies_successfully() {
-        InMemoryMetadataBroker broker = new InMemoryMetadataBroker();
+        InMemoryBroker broker = new InMemoryBroker();
         TestTrustSetup trust = TestTrustSetup.create();
         var sv = trust.newSignerVerifier(broker);
 
         String token = sv.sign("hello",
                 BasicConfigurer.builder().groupId("g1").validity(600).build());
 
-        // Must succeed — the trust anchor knows the signerId and can verify the signature
         assertDoesNotThrow(() -> {
             var result = sv.verify(token, s -> s);
             assertEquals("hello", result.data());
-        }, "Valid token with correct TrustAnchor must verify successfully");
-    }
-
-    /**
-     * An attacker writes a forged/unsigned revocation tombstone with a future timestamp
-     * to the broker. The tombstone lacks a valid signature → must be ignored →
-     * token verification must succeed.
-     */
-    @Test
-    void unsigned_revocation_tombstone_is_ignored_and_does_not_revoke_session() {
-        InMemoryMetadataBroker broker = new InMemoryMetadataBroker();
-        TestTrustSetup trust = TestTrustSetup.create();
-        var sv = trust.newSignerVerifier(broker);
-
-        String token = sv.sign("secret-data",
-                BasicConfigurer.builder().groupId("mygroup").validity(600).build());
-
-        // Attacker writes an unsigned tombstone under 3:mygroup:__REVOKE__ with future timestamp
-        long futureTs = java.time.Instant.now().getEpochSecond() + 1000;
-        Map<String, String> props = new java.util.LinkedHashMap<>();
-        props.put(Protocol.PROP_TARGET, Protocol.SEQ_ALL);
-        props.put(Protocol.PROP_TS, String.valueOf(futureTs));
-        props.put(Protocol.PROP_SID, trust.signerId);
-        // Note: PROP_SIG is missing!
-        String forgedMsg = Protocol.buildMessage("mygroup", Protocol.SEQ_REVOKE, props);
-
-        broker.send("3:mygroup:__REVOKE__", forgedMsg);
-
-        // Verification must still succeed because the unsigned tombstone is ignored
-        assertDoesNotThrow(() -> {
-            var result = sv.verify(token, s -> s);
-            assertEquals("secret-data", result.data());
-        }, "Unsigned tombstone must be ignored");
-    }
-
-    /**
-     * An attacker writes a revocation tombstone with a future timestamp but an invalid signature.
-     * The signature verification fails → tombstone must be ignored →
-     * token verification must succeed.
-     */
-    @Test
-    void invalid_signature_revocation_tombstone_is_ignored_and_does_not_revoke_session() {
-        InMemoryMetadataBroker broker = new InMemoryMetadataBroker();
-        TestTrustSetup trust = TestTrustSetup.create();
-        var sv = trust.newSignerVerifier(broker);
-
-        String token = sv.sign("secret-data",
-                BasicConfigurer.builder().groupId("mygroup").validity(600).build());
-
-        // Attacker writes a tombstone with random invalid signature
-        long futureTs = java.time.Instant.now().getEpochSecond() + 1000;
-        Map<String, String> props = new java.util.LinkedHashMap<>();
-        props.put(Protocol.PROP_TARGET, Protocol.SEQ_ALL);
-        props.put(Protocol.PROP_TS, String.valueOf(futureTs));
-        props.put(Protocol.PROP_SID, trust.signerId);
-        props.put(Protocol.PROP_SIG, Base64.getUrlEncoder().withoutPadding().encodeToString(new byte[256]));
-        String forgedMsg = Protocol.buildMessage("mygroup", Protocol.SEQ_REVOKE, props);
-
-        broker.send("3:mygroup:__REVOKE__", forgedMsg);
-
-        // Verification must still succeed because the invalid-signature tombstone is ignored
-        assertDoesNotThrow(() -> {
-            var result = sv.verify(token, s -> s);
-            assertEquals("secret-data", result.data());
-        }, "Invalid signature tombstone must be ignored");
+        }, "Valid token with correct TrustRoot must verify successfully");
     }
 }

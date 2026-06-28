@@ -2,25 +2,32 @@ package io.github.cyfko.veridot.core.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.cyfko.veridot.core.DistributionMode;
-import io.github.cyfko.veridot.core.InMemoryMetadataBroker;
+import io.github.cyfko.veridot.core.InMemoryBroker;
 import io.github.cyfko.veridot.core.VerifiedData;
 import io.github.cyfko.veridot.core.exceptions.BrokerExtractionException;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.SecureRandom;
+import java.security.Signature;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class VerificationTest {
 
-    private InMemoryMetadataBroker broker;
+    private InMemoryBroker broker;
     private GenericSignerVerifier sv;
+    private TestTrustSetup trust;
 
     @BeforeEach
     void setUp() {
-        broker = new InMemoryMetadataBroker();
-        sv = TestTrustSetup.create().newSignerVerifier(broker);
+        broker = new InMemoryBroker();
+        trust = TestTrustSetup.create();
+        sv = trust.newSignerVerifier(broker);
     }
 
     @Test
@@ -119,39 +126,87 @@ class VerificationTest {
     }
 
     @Test
-    void verify_futureTimestamp_beyond5min_throws() {
-        // Manually inject a broker entry with a timestamp 10 minutes in the future
-        long futureTs = java.time.Instant.now().getEpochSecond() + 600; // +10 min
-        var props = new java.util.LinkedHashMap<String, String>();
-        props.put("alg", Config.DEFAULT_CRYPTO_MODE);
-        props.put("pk", "dummykey");
-        props.put("ts", String.valueOf(futureTs));
-        props.put("ttl", "3600");
-        String msg = Protocol.buildMessage("drift-grp", "s1", props);
-        broker.send("3:drift-grp:s1", msg);
+    void verify_futureTimestamp_beyond5min_throws() throws Exception {
+        // Manually build an envelope with a timestamp 10 minutes in the future
+        long futureTs = System.currentTimeMillis() + 600000; // +10 min
+        Scope scope = Scope.group("drift-grp");
+        
+        KeyPairGenerator gen = KeyPairGenerator.getInstance("RSA");
+        gen.initialize(2048, new SecureRandom());
+        KeyPair ephemeral = gen.generateKeyPair();
 
-        // Verify must reject due to clock drift > 5 min (§9.1)
+        KeyEpochPayload payload = new KeyEpochPayload(
+            (byte) 0x01, 1L, ephemeral.getPublic().getEncoded(), futureTs, futureTs + 3600000, null, null
+        );
+
+        EnvelopeBuilder builder = new EnvelopeBuilder()
+            .entryType(EntryType.KEY_EPOCH)
+            .flags((byte) 0x00)
+            .scope(scope)
+            .key("s1")
+            .version(1L)
+            .timestamp(futureTs)
+            .issuer(trust.signerId)
+            .payload(payload.encode())
+            .sigAlg((byte) 0x01);
+
+        Signature sig = Signature.getInstance("SHA256withRSA");
+        sig.initSign(trust.longTermKeyPair.getPrivate());
+        sig.update(Envelope.encode(builder, new byte[0])); // We need to sign canonical bytes, but buildCanonicalBytes / canonicalSigningBytes uses all except sigAlg
+        // To make it simple, let's sign the canonical bytes
+        
+        // Wait, builder doesn't have a direct canonical bytes builder.
+        // Let's create a temporary Envelope to sign
+        Envelope tempEnv = new Envelope(Envelope.PROTO_VERSION, EntryType.KEY_EPOCH, (byte) 0x00, scope, "s1", 1L, futureTs, trust.signerId, payload.encode(), (byte) 0x01, new byte[0]);
+        sig.update(tempEnv.canonicalSigningBytes());
+        byte[] signature = sig.sign();
+
+        byte[] encoded = Envelope.encode(builder, signature);
+        
+        EntryId id = new EntryId(scope, EntryType.KEY_EPOCH, "s1");
+        broker.put(id.storageKey(), encoded).join();
+
+        // Verify must reject due to clock drift > 5 min (§5.3)
         assertThrows(BrokerExtractionException.class,
                 () -> sv.verify("3:drift-grp:s1", s -> s),
                 "Must reject messages with timestamp > 5min in the future");
     }
 
     @Test
-    void verify_tampered_metadata_without_trust_anchor_fields_throws() {
-        // Manually inject broker entry with no sid/sig (simulates broker injection attack)
-        long ts = java.time.Instant.now().getEpochSecond();
-        var props = new java.util.LinkedHashMap<String, String>();
-        props.put("alg", Config.DEFAULT_CRYPTO_MODE);
-        props.put("pk", "ZHVtbXlrZXk"); // base64url of "dummykey"
-        props.put("ts", String.valueOf(ts));
-        props.put("ttl", "3600");
-        // Note: deliberately omit sid and sig
-        String msg = Protocol.buildMessage("attack-grp", "evil-session", props);
-        broker.send("3:attack-grp:evil-session", msg);
+    void verify_tampered_metadata_without_valid_signature_throws() throws Exception {
+        // Manually build an envelope with a tampered/invalid signature
+        long ts = System.currentTimeMillis();
+        Scope scope = Scope.group("attack-grp");
+        
+        KeyPairGenerator gen = KeyPairGenerator.getInstance("RSA");
+        gen.initialize(2048, new SecureRandom());
+        KeyPair ephemeral = gen.generateKeyPair();
 
-        // Verify must reject because trust-anchor fields are missing (F1 guard)
+        KeyEpochPayload payload = new KeyEpochPayload(
+            (byte) 0x01, 1L, ephemeral.getPublic().getEncoded(), ts, ts + 3600000, null, null
+        );
+
+        EnvelopeBuilder builder = new EnvelopeBuilder()
+            .entryType(EntryType.KEY_EPOCH)
+            .flags((byte) 0x00)
+            .scope(scope)
+            .key("evil-session")
+            .version(1L)
+            .timestamp(ts)
+            .issuer(trust.signerId)
+            .payload(payload.encode())
+            .sigAlg((byte) 0x01);
+
+        byte[] badSignature = new byte[256]; // Dummy signature of all zeros
+
+        byte[] encoded = Envelope.encode(builder, badSignature);
+        
+        EntryId id = new EntryId(scope, EntryType.KEY_EPOCH, "evil-session");
+        broker.put(id.storageKey(), encoded).join();
+
+        // Verify must reject because signature verification fails
         assertThrows(BrokerExtractionException.class,
                 () -> sv.verify("3:attack-grp:evil-session", s -> s),
-                "Must reject metadata missing trust-anchor fields");
+                "Must reject metadata with invalid signature");
     }
 }

@@ -1,43 +1,47 @@
 package io.github.cyfko.veridot.core.exceptions;
 
+import io.github.cyfko.veridot.core.impl.ErrorCode;
+
 /**
- * Root exception for all Veridot-specific errors.
- *
- * <p>Callers may catch this single type to handle any Veridot error uniformly,
- * or catch specific subclasses for fine-grained error handling:</p>
- * <ul>
- *   <li>{@link BrokerExtractionException} — token unavailable, revoked, or expired</li>
- *   <li>{@link BrokerTransportException} — network or I/O error when publishing metadata</li>
- *   <li>{@link DataSerializationException} — payload could not be serialized at sign time</li>
- *   <li>{@link DataDeserializationException} — payload could not be deserialized at verify time</li>
- *   <li>{@link SessionCapacityExceededException} — max sessions reached with REJECT policy</li>
- * </ul>
- *
- * <p>All Veridot exceptions are unchecked (extend {@link RuntimeException}) so that they
- * propagate naturally without forcing callers to declare {@code throws} clauses.</p>
- *
- * @author Frank KOSSI
- * @since 1.0.0
+ * Exception thrown for any Veridot Protocol V4 violation or error.
  */
 public class VeridotException extends RuntimeException {
-
-    /**
-     * Constructs a new {@code VeridotException} with the specified detail message.
-     *
-     * @param message a human-readable description of the error condition
-     */
+    private final ErrorCode errorCode;
+    private final String entryId;
     public VeridotException(String message) {
         super(message);
+        this.errorCode = null;
+        this.entryId = null;
     }
 
-    /**
-     * Constructs a new {@code VeridotException} with the specified detail message
-     * and root cause.
-     *
-     * @param message a human-readable description of the error condition
-     * @param cause   the underlying exception that triggered this error; may be {@code null}
-     */
     public VeridotException(String message, Throwable cause) {
         super(message, cause);
+        this.errorCode = null;
+        this.entryId = null;
+    }
+    public VeridotException(ErrorCode errorCode, String entryId) {
+        super("Veridot V4 error: " + errorCode.name() + " (" + errorCode.code + ")" + (entryId != null ? " for entry " + entryId : ""));
+        this.errorCode = errorCode;
+        this.entryId = entryId;
+    }
+
+    public VeridotException(ErrorCode errorCode, String entryId, String message) {
+        super("Veridot V4 error: " + errorCode.name() + " (" + errorCode.code + ")" + (entryId != null ? " for entry " + entryId : "") + " - " + message);
+        this.errorCode = errorCode;
+        this.entryId = entryId;
+    }
+
+    public VeridotException(ErrorCode errorCode, String entryId, String message, Throwable cause) {
+        super("Veridot V4 error: " + errorCode.name() + " (" + errorCode.code + ")" + (entryId != null ? " for entry " + entryId : "") + " - " + message, cause);
+        this.errorCode = errorCode;
+        this.entryId = entryId;
+    }
+
+    public ErrorCode getErrorCode() {
+        return errorCode;
+    }
+
+    public String getEntryId() {
+        return entryId;
     }
 }

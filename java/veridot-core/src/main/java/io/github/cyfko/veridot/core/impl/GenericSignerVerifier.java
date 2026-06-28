@@ -7,8 +7,9 @@ import io.github.cyfko.veridot.core.exceptions.BrokerExtractionException;
 import io.github.cyfko.veridot.core.exceptions.DataDeserializationException;
 import io.github.cyfko.veridot.core.exceptions.DataSerializationException;
 
-import java.security.*;
-import java.security.spec.X509EncodedKeySpec;
+
+import java.nio.charset.StandardCharsets;
+import java.security.PrivateKey;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
@@ -16,76 +17,71 @@ import java.util.function.Function;
 import java.util.logging.Logger;
 
 /**
- * Orchestrator implementing {@link DataSigner}, {@link TokenVerifier}, {@link TokenRevoker},
- * and {@link TokenTracker}, conforming to the Veridot Protocol V3 security model.
- *
- * <p>Delegates specialized tasks to {@link KeyRotationService}, {@link MetadataPublisher},
- * {@link ConfigurationResolver}, {@link SessionManager}, {@link MetadataVerifier},
- * and {@link RevocationManager}.</p>
+ * Main orchestrator implementing DataSigner, TokenVerifier, TokenRevoker, and TokenTracker for V4 (§12.1).
  */
-public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRevoker, TokenTracker {
+public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRevoker, TokenTracker, AutoCloseable {
 
     private static final Logger logger = Logger.getLogger(GenericSignerVerifier.class.getName());
-    private static final KeyFactory keyFactory;
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
-    static {
-        try {
-            keyFactory = KeyFactory.getInstance(Config.ASYMMETRIC_KEYPAIR_ALGORITHM);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to initialize KeyFactory: " + e.getMessage(), e);
-        }
-    }
-
-
-    private final MetadataBroker metadataBroker;
-    private final TrustAnchor trustAnchor;
+    private final Broker broker;
+    private final TrustRoot trustRoot;
     private final String signerId;
     private final PrivateKey longTermPrivateKey;
-    private final EffectiveConfig defaultConfig;
+    private final byte envelopeSigAlg;
+
+    private final ConfigPayload defaultConfig;
 
     // Delegates
     private final KeyRotationService keyRotationService;
-    private final MetadataPublisher metadataPublisher;
-    private final ConfigurationResolver configResolver;
-    private final SessionManager sessionManager;
-    private final MetadataVerifier metadataVerifier;
-    private final RevocationManager revocationManager;
+    private final EntryPublisher entryPublisher = new EntryPublisher();
+    private final ConfigResolver configResolver = new ConfigResolver();
+    private final LivenessChecker livenessChecker = new LivenessChecker();
+    private final LivenessManager livenessManager;
+    private final CapacityManager capacityManager = new CapacityManager();
+    private final EntryVerifier entryVerifier = new EntryVerifier();
+    private final VersionWatermark watermark = new VersionWatermark();
+    private final SessionCounter sessionCounter = new SessionCounter();
 
+    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
     private final ConcurrentHashMap<String, Object> groupLocks = new ConcurrentHashMap<>();
 
-    public GenericSignerVerifier(MetadataBroker metadataBroker, TrustAnchor trustAnchor,
-                                 String signerId, PrivateKey longTermPrivateKey) {
-        this(metadataBroker, trustAnchor, signerId, longTermPrivateKey, -1, EvictionPolicy.FIFO);
+    // ═══ Constructeur V4 (recommandé) ═══
+    public GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String issuerId, 
+                                 PrivateKey longTermKey, byte envelopeSigAlg) {
+        this(broker, trustRoot, issuerId, longTermKey, envelopeSigAlg, -1, EvictionPolicy.FIFO);
     }
 
-    public GenericSignerVerifier(MetadataBroker metadataBroker, TrustAnchor trustAnchor,
-                                 String signerId, PrivateKey longTermPrivateKey,
+    public GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String issuerId, 
+                                 PrivateKey longTermKey, byte envelopeSigAlg,
                                  int maxSessions, EvictionPolicy policy) {
-        if (metadataBroker == null) throw new IllegalArgumentException("MetadataBroker cannot be null");
-        if (trustAnchor == null) throw new IllegalArgumentException("TrustAnchor cannot be null");
-        if (signerId == null || signerId.isBlank()) throw new IllegalArgumentException("signerId cannot be null or blank");
-        if (longTermPrivateKey == null) throw new IllegalArgumentException("longTermPrivateKey cannot be null");
+        if (broker == null) throw new IllegalArgumentException("Broker cannot be null");
+        if (trustRoot == null) throw new IllegalArgumentException("TrustRoot cannot be null");
+        if (issuerId == null || issuerId.isBlank()) throw new IllegalArgumentException("issuerId cannot be null or blank");
+        if (longTermKey == null) throw new IllegalArgumentException("longTermKey cannot be null");
         if (policy == null) throw new IllegalArgumentException("EvictionPolicy cannot be null");
 
-        this.metadataBroker = metadataBroker;
-        this.trustAnchor = trustAnchor;
-        this.signerId = signerId;
-        this.longTermPrivateKey = longTermPrivateKey;
-        this.defaultConfig = new EffectiveConfig(maxSessions, policy, -1);
+        this.broker = broker;
+        this.trustRoot = trustRoot;
+        this.signerId = issuerId;
+        this.longTermPrivateKey = longTermKey;
+        this.envelopeSigAlg = envelopeSigAlg;
 
-        this.metadataBroker.setTrustAnchor(trustAnchor);
+        this.defaultConfig = new ConfigPayload(
+            maxSessions == -1 ? OptionalInt.empty() : OptionalInt.of(maxSessions),
+            ConfigPayload.fromEvictionPolicy(policy),
+            OptionalLong.empty(),
+            Optional.empty(),
+            Optional.empty(),
+            OptionalLong.empty()
+        );
 
-        // Instantiate delegates
-        this.keyRotationService = new KeyRotationService();
-        this.metadataPublisher = new MetadataPublisher(metadataBroker, signerId, longTermPrivateKey);
-        this.configResolver = new ConfigurationResolver(metadataBroker, trustAnchor, this.defaultConfig);
-        this.sessionManager = new SessionManager(metadataBroker, configResolver, metadataPublisher);
-        this.metadataVerifier = new MetadataVerifier(metadataBroker, trustAnchor);
-        this.revocationManager = new RevocationManager(metadataBroker, trustAnchor);
-
-        Runtime.getRuntime().addShutdownHook(new Thread(this::close));
+        byte ephemeralAlg = (byte) (longTermKey.getAlgorithm().equalsIgnoreCase("RSA") ? 0x01 : 0x02);
+        this.keyRotationService = new KeyRotationService(ephemeralAlg);
+        this.livenessManager = new LivenessManager(entryPublisher, broker, longTermKey, envelopeSigAlg, issuerId);
     }
+
+
 
     @Override
     public String sign(Object data, Configurer configurer) throws DataSerializationException {
@@ -106,46 +102,94 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             sequenceId = UUID.randomUUID().toString();
         }
 
-        String messageId = Protocol.buildMessageId(groupId, sequenceId);
-        Instant now = Instant.now();
-        long expiryEpochSecond = now.getEpochSecond() + configurer.getDuration();
-
-        String serializedData;
-        try {
-            serializedData = configurer.getSerializer().apply(data);
-        } catch (DataSerializationException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new DataSerializationException("Failed to serialize payload", e);
-        }
-
-        String jwt;
-        try {
-            jwt = JwtMaker.builder()
-                    .subject(messageId)
-                    .claim("data", serializedData)
-                    .issuedAt(now)
-                    .expiration(Instant.ofEpochSecond(expiryEpochSecond))
-                    .signWith(keyRotationService.getPrivateKey())
-                    .compact();
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to build signed JWT: " + e.getMessage(), e);
-        }
+        Scope scope = Scope.group(groupId);
+        long now = System.currentTimeMillis();
+        long durationMs = configurer.getDuration() * 1000L;
 
         Object groupLock = groupLocks.computeIfAbsent(groupId, k -> new Object());
         synchronized (groupLock) {
-            sessionManager.enforceSessionLimit(groupId);
+            // Resolve siteId from active sessions if any
+            String siteId = null;
             try {
-                metadataPublisher.publishKeyAnnouncement(groupId, sequenceId,
-                        configurer.getDistribution() == DistributionMode.INDIRECT ? jwt : null,
-                        keyRotationService.getPublicKey(), configurer.getDuration());
-            } catch (Exception e) {
-                logger.severe("Failed to send metadata for messageId " + messageId + " to broker: " + e.getMessage());
-                throw new RuntimeException("Broker publication failed", e);
-            }
-        }
+                List<SessionCounter.SessionInfo> activeSessions = sessionCounter.listActive(scope, broker, trustRoot, watermark, livenessChecker, now);
+                if (!activeSessions.isEmpty()) {
+                    EntryId keyEpochId = new EntryId(scope, EntryType.KEY_EPOCH, activeSessions.get(0).sessionKey());
+                    byte[] epochBytes = broker.get(keyEpochId.storageKey());
+                    if (epochBytes != null) {
+                        Envelope epochEnv = Envelope.parse(epochBytes);
+                        KeyEpochPayload epochPayload = KeyEpochPayload.decode(epochEnv.payload);
+                        siteId = epochPayload.site();
+                    }
+                }
+            } catch (Exception ignored) {}
 
-        return configurer.getDistribution() == DistributionMode.DIRECT ? jwt : messageId;
+            // 1. Resolve Config
+            CapabilityVerifier capVerifier = new CapabilityVerifier();
+            ConfigPayload config = configResolver.resolve(scope, siteId, broker, trustRoot, capVerifier, watermark);
+            if (config == null) {
+                config = defaultConfig;
+            }
+
+            // 2. Ephemeral Key Rotation Snapshot (F-04)
+            KeyRotationService.KeySnapshot keySnapshot = keyRotationService.snapshot();
+
+            // 3. Enforce capacity limits
+            capacityManager.enforceCapacity(scope, config, signerId, broker, trustRoot, entryPublisher, watermark, livenessChecker, longTermPrivateKey, envelopeSigAlg, signerId);
+
+            // 4. Serialize data
+            String serializedData;
+            try {
+                serializedData = configurer.getSerializer().apply(data);
+            } catch (DataSerializationException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new DataSerializationException("Failed to serialize payload", e);
+            }
+
+            // 5. Build signed JWT
+            String messageId = Protocol.buildMessageId(groupId, sequenceId);
+            String jwt;
+            try {
+                jwt = JwtMaker.builder()
+                        .subject(messageId)
+                        .claim("data", serializedData)
+                        .issuedAt(Instant.ofEpochMilli(now))
+                        .expiration(Instant.ofEpochMilli(now + durationMs))
+                        .signWith(keySnapshot.privateKey())
+                        .compact();
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to build signed JWT", e);
+            }
+
+            // 6. Publish KEY_EPOCH
+            EntryId epochId = new EntryId(scope, EntryType.KEY_EPOCH, sequenceId);
+            long epochVersion = Math.max(watermark.current(epochId) + 1, 1);
+            KeyEpochPayload epochPayload = new KeyEpochPayload(
+                keySnapshot.alg(),
+                epochVersion,
+                keySnapshot.publicKey().getEncoded(),
+                now,
+                now + durationMs,
+                null,
+                configurer.getDistribution() == DistributionMode.INDIRECT ? jwt : null // Store token in KeyEpoch if indirect
+            );
+            try {
+                entryPublisher.publish(EntryType.KEY_EPOCH, scope, sequenceId, epochVersion, epochPayload.encode(), longTermPrivateKey, envelopeSigAlg, signerId, broker)
+                              .join();
+                watermark.accept(epochId, epochVersion);
+            } catch (Exception e) {
+                throw new RuntimeException("Broker publication failed for KEY_EPOCH", e);
+            }
+
+            // 7. Publish LIVENESS(ACTIVE)
+            EntryId liveEntryId = new EntryId(scope, EntryType.LIVENESS, sequenceId);
+            livenessManager.publishActive(liveEntryId, durationMs, watermark);
+
+            // 8. Start Renewal Loop
+            livenessManager.startRenewalLoop(liveEntryId, durationMs, watermark, scheduler);
+
+            return configurer.getDistribution() == DistributionMode.DIRECT ? jwt : messageId;
+        }
     }
 
     @Override
@@ -168,30 +212,45 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             String groupId = parts[1];
             String sequenceId = parts[2];
 
-            Map<String, String> meta = metadataVerifier.verifyKeyAnnouncement(messageId);
-            revocationManager.validateNotRevoked(groupId, sequenceId, meta);
+            Scope scope = Scope.group(groupId);
+            EntryId keyEpochId = new EntryId(scope, EntryType.KEY_EPOCH, sequenceId);
+
+            // Run verification pipeline (Steps 1-7)
+            CapabilityVerifier capVerifier = new CapabilityVerifier();
+            KeyEpochPayload epochPayload = entryVerifier.verifyKeyEpoch(
+                keyEpochId, broker, trustRoot, watermark, capVerifier, livenessChecker, System.currentTimeMillis()
+            );
 
             String resolvedJwt = jwtToken;
             if (resolvedJwt == null) {
-                resolvedJwt = meta.get(Protocol.PROP_TOKEN);
+                resolvedJwt = epochPayload.token();
                 if (resolvedJwt == null) {
                     throw new BrokerExtractionException("No token found in broker metadata for: " + messageId);
                 }
             }
 
-            String pubkeyEncoded = meta.get(Protocol.PROP_PK);
-            byte[] pubKeyBytes = Base64.getUrlDecoder().decode(pubkeyEncoded);
-            PublicKey publicKey = keyFactory.generatePublic(new X509EncodedKeySpec(pubKeyBytes));
+            // Step 8: Verify JWT Cryptographic Signature using Ephemeral Key
+            String[] jwtParts = resolvedJwt.split("\\.");
+            if (jwtParts.length < 3) {
+                throw new BrokerExtractionException("Malformed JWT: expected 3 parts");
+            }
+            byte[] signedBytes = (jwtParts[0] + "." + jwtParts[1]).getBytes(StandardCharsets.UTF_8);
+            byte[] signatureBytes = Base64.getUrlDecoder().decode(jwtParts[2]);
 
-            Map<String, Object> claims = JwtVerifier.verifyWith(publicKey).parseSignedClaims(resolvedJwt);
-            String data = (String) claims.get("data");
+            entryVerifier.verifyCryptographic(signedBytes, signatureBytes, epochPayload);
+
+            // Decode Payload & deserialize
+            String payloadJson = new String(Base64.getUrlDecoder().decode(jwtParts[1]), StandardCharsets.UTF_8);
+            JsonNode node = objectMapper.readTree(payloadJson);
+            String data = node.get("data").asText();
             T deserialized = deserializer.apply(data);
+
             return new VerifiedData<>(groupId, sequenceId, deserialized);
 
         } catch (BrokerExtractionException | DataDeserializationException e) {
             throw e;
         } catch (Exception e) {
-            throw new BrokerExtractionException("Failed to verify token: " + e.getMessage());
+            throw new BrokerExtractionException("Failed to verify token: " + e.getMessage(), e);
         }
     }
 
@@ -204,24 +263,32 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         if (sequenceId != null) {
             Protocol.validateIdentifier(sequenceId, "sequenceId");
         }
+
+        Scope scope = Scope.group(groupId);
+        long now = System.currentTimeMillis();
+
         try {
             if (sequenceId == null) {
-                metadataPublisher.publishRevocationTombstone(groupId, Protocol.SEQ_ALL);
+                // Revoke all active sessions in V4
+                CapabilityVerifier capVerifier = new CapabilityVerifier();
+                List<SessionCounter.SessionInfo> active = sessionCounter.listActive(scope, broker, trustRoot, watermark, livenessChecker, now);
+                for (SessionCounter.SessionInfo session : active) {
+                    EntryId liveEntryId = new EntryId(scope, EntryType.LIVENESS, session.sessionKey());
+                    livenessManager.publishRevoked(liveEntryId, watermark);
+                    livenessManager.stopRenewalLoop(liveEntryId);
 
-                String prefix = Protocol.groupPrefix(groupId);
-                List<String> keys = metadataBroker.getKeysByPrefix(prefix);
-                for (String key : keys) {
-                    if (Protocol.isReservedSequence(key)) continue;
-                    try {
-                        metadataBroker.send(key, "").get(30, TimeUnit.SECONDS);
-                    } catch (Exception e) {
-                        logger.severe("Failed to revoke key " + key + " during group revocation: " + e.getMessage());
-                    }
+                    // Physically delete KEY_EPOCH from broker
+                    EntryId keyEpochId = new EntryId(scope, EntryType.KEY_EPOCH, session.sessionKey());
+                    broker.put(keyEpochId.storageKey(), new byte[0]).join();
                 }
             } else {
-                metadataPublisher.publishRevocationTombstone(groupId, sequenceId);
-                String messageId = Protocol.buildMessageId(groupId, sequenceId);
-                metadataBroker.send(messageId, "").get(30, TimeUnit.SECONDS);
+                EntryId liveEntryId = new EntryId(scope, EntryType.LIVENESS, sequenceId);
+                livenessManager.publishRevoked(liveEntryId, watermark);
+                livenessManager.stopRenewalLoop(liveEntryId);
+
+                // Physically delete KEY_EPOCH from broker
+                EntryId keyEpochId = new EntryId(scope, EntryType.KEY_EPOCH, sequenceId);
+                broker.put(keyEpochId.storageKey(), new byte[0]).join();
             }
         } catch (Exception e) {
             logger.severe("Failed to revoke target/group: " + e.getMessage());
@@ -245,24 +312,40 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             throw new IllegalArgumentException("defaultTtlSeconds must be -1 or positive");
         }
 
-        String key = switch (scope) {
-            case LOCAL  -> Protocol.buildLocalConfigKey(scopeId);
-            case SITE   -> Protocol.buildSiteConfigKey(scopeId);
-            case GLOBAL -> Protocol.buildGlobalConfigKey();
+        Scope targetScope = switch (scope) {
+            case LOCAL  -> Scope.group(scopeId);
+            case SITE   -> Scope.site(scopeId);
+            case GLOBAL -> Scope.global();
         };
 
+        long now = System.currentTimeMillis();
+        long version = Math.max(watermark.current(new EntryId(targetScope, EntryType.CONFIG, "")) + 1, 1);
+
+        ConfigPayload payload = new ConfigPayload(
+            maxSessions == -1 ? OptionalInt.empty() : OptionalInt.of(maxSessions),
+            ConfigPayload.fromEvictionPolicy(policy),
+            defaultTtlSeconds == -1 ? OptionalLong.empty() : OptionalLong.of(defaultTtlSeconds * 1000L),
+            Optional.empty(),
+            Optional.empty(),
+            OptionalLong.of(validitySeconds * 1000L)
+        );
+
         try {
-            metadataPublisher.publishConfig(key, maxSessions, policy, defaultTtlSeconds, validitySeconds);
+            // Verify our own capability before publishing config (§7.4)
+            CapabilityVerifier capVerifier = new CapabilityVerifier();
+            if (!trustRoot.isRootIdentity(signerId)) {
+                capVerifier.assertAuthorized(signerId, targetScope, broker, trustRoot);
+            }
+
+            entryPublisher.publish(EntryType.CONFIG, targetScope, "", version, payload.encode(), longTermPrivateKey, envelopeSigAlg, signerId, broker)
+                          .join();
+            watermark.accept(new EntryId(targetScope, EntryType.CONFIG, ""), version);
         } catch (Exception e) {
-            logger.severe("Failed to publish config at " + key + ": " + e.getMessage());
+            logger.severe("Failed to publish config at " + targetScope.value() + ": " + e.getMessage());
             throw new RuntimeException("Config publication failed: " + e.getMessage(), e);
         }
 
-        if (scope == ConfigScope.LOCAL) {
-            configResolver.invalidateLocal(scopeId);
-        } else {
-            configResolver.invalidateAll();
-        }
+        configResolver.invalidateCache(targetScope);
     }
 
     @Override
@@ -272,37 +355,45 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
                     + (target == null ? "null" : target.getClass().getName()));
         }
 
+        long now = System.currentTimeMillis();
+        CapabilityVerifier capVerifier = new CapabilityVerifier();
+
         if (Protocol.isMessageId(s)) {
-            return sessionManager.isMessageIdActive(s);
+            String[] parts = Protocol.parseMessageId(s);
+            EntryId liveEntryId = new EntryId(Scope.group(parts[1]), EntryType.LIVENESS, parts[2]);
+            try {
+                livenessChecker.assertLive(liveEntryId, broker, trustRoot, watermark, capVerifier, now);
+                return true;
+            } catch (Exception e) {
+                return false;
+            }
         } else if (Protocol.isJwt(s)) {
             try {
                 String messageId = extractSubFromJwt(s);
-                return sessionManager.isMessageIdActive(messageId);
+                return hasActiveToken(messageId);
             } catch (Exception e) {
                 return false;
             }
         } else {
+            // Treat as groupId
             try {
-                String prefix = Protocol.groupPrefix(s);
-                List<String> keys = metadataBroker.getKeysByPrefix(prefix);
-                for (String key : keys) {
-                    if (Protocol.isReservedSequence(key)) continue;
-                    if (sessionManager.isMessageIdActive(key)) {
-                        return true;
-                    }
-                }
-                return false;
+                Scope groupScope = Scope.group(s);
+                return sessionCounter.countActive(groupScope, broker, trustRoot, watermark, livenessChecker, now) > 0;
             } catch (Exception e) {
-                logger.severe("Error checking active token for group [" + s + "]: " + e.getMessage());
                 return false;
             }
         }
     }
 
+    @Override
     public void close() {
         if (keyRotationService != null) {
             keyRotationService.close();
         }
+        if (livenessManager != null) {
+            livenessManager.stopAll();
+        }
+        scheduler.shutdownNow();
     }
 
     private static String extractSubFromJwt(String jwt) throws Exception {
@@ -310,8 +401,8 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         if (parts.length < 2) {
             throw new IllegalArgumentException("Malformed JWT: less than 2 parts");
         }
-        String payloadJson = new String(Base64.getUrlDecoder().decode(parts[1]));
-        JsonNode node = objectMapper.readValue(payloadJson, JsonNode.class);
+        String payloadJson = new String(Base64.getUrlDecoder().decode(parts[1]), StandardCharsets.UTF_8);
+        JsonNode node = objectMapper.readTree(payloadJson);
         JsonNode subNode = node.get("sub");
         if (subNode == null) {
             throw new IllegalArgumentException("JWT has no 'sub' claim");

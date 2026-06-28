@@ -6,11 +6,11 @@
 
     <groupId>io.github.cyfko</groupId>
     <artifactId>veridot-tests</artifactId>
-    <version>3.1.0</version>
+    <version>4.0.0</version>
 
     <properties>
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
+        <maven.compiler.source>25</maven.compiler.source>
+        <maven.compiler.target>25</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.deploy.skip>true</maven.deploy.skip>
     </properties>
@@ -37,17 +37,17 @@
         <dependency>
             <groupId>io.github.cyfko</groupId>
             <artifactId>veridot-core</artifactId>
-            <version>3.1.0</version>
+            <version>4.0.0</version>
         </dependency>
         <dependency>
             <groupId>io.github.cyfko</groupId>
             <artifactId>veridot-kafka</artifactId>
-            <version>3.1.0</version>
+            <version>4.0.0</version>
         </dependency>
         <dependency>
             <groupId>io.github.cyfko</groupId>
             <artifactId>veridot-databases</artifactId>
-            <version>3.1.0</version>
+            <version>4.0.0</version>
         </dependency>
 
         <dependency>
