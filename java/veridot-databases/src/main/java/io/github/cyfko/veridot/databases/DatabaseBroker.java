@@ -1,6 +1,7 @@
 package io.github.cyfko.veridot.databases;
 
 import io.github.cyfko.veridot.core.Broker;
+import io.github.cyfko.veridot.core.WatermarkStore;
 import io.github.cyfko.veridot.core.exceptions.VeridotException;
 import io.github.cyfko.veridot.core.impl.Envelope;
 import io.github.cyfko.veridot.core.impl.Scope;
@@ -19,7 +20,7 @@ import java.util.logging.Logger;
 /**
  * SQL Database implementation of the Broker interface for Protocol V4 (§12.2).
  */
-public class DatabaseBroker implements Broker {
+public class DatabaseBroker implements Broker, WatermarkStore {
 
     private static final Logger logger = Logger.getLogger(DatabaseBroker.class.getName());
 
@@ -281,5 +282,40 @@ public class DatabaseBroker implements Broker {
 
     private static String toHexKey(byte[] bytes) {
         return HexFormat.of().formatHex(bytes);
+    }
+
+    @Override
+    public void save(byte[] snapshot) {
+        if (snapshot == null) return;
+        byte[] key = "__watermark_snapshot__".getBytes(StandardCharsets.UTF_8);
+        try (Connection conn = dataSource.getConnection()) {
+            String sql = buildUpsertSql();
+            try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+                stmt.setBytes(1, key);
+                stmt.setBytes(2, snapshot);
+                stmt.executeUpdate();
+            }
+        } catch (SQLException e) {
+            logger.severe("Database error on saving watermark: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public byte[] load() {
+        byte[] key = "__watermark_snapshot__".getBytes(StandardCharsets.UTF_8);
+        try (Connection conn = dataSource.getConnection()) {
+            String sql = String.format("SELECT entry_bytes FROM %s WHERE storage_key = ?", tableName);
+            try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+                stmt.setBytes(1, key);
+                try (ResultSet rs = stmt.executeQuery()) {
+                    if (rs.next()) {
+                        return rs.getBytes("entry_bytes");
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            logger.severe("Database error on loading watermark: " + e.getMessage());
+        }
+        return null;
     }
 }

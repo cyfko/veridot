@@ -21,11 +21,17 @@ final class ReconciliationManager implements AutoCloseable {
 
     private final SignatureVerifier signatureVerifier = new SignatureVerifier();
     private final java.util.Map<Scope, ScheduledFuture<?>> tasks = new ConcurrentHashMap<>();
+    private final java.util.Map<Scope, Long> lastReconciled = new ConcurrentHashMap<>();
+
+    public long getLastReconciled(Scope scope) {
+        if (scope == null) return 0L;
+        return lastReconciled.getOrDefault(scope, 0L);
+    }
 
     public void reconcile(Scope scope, Broker broker, VersionWatermark watermark,
                           SignatureVerifier sigVerifier, TrustRoot trustRoot,
                           EntryPublisher publisher, String issuerId,
-                          PrivateKey signingKey, byte sigAlg) {
+                          PrivateKey signingKey, byte sigAlg, Runnable saveCallback) {
         if (scope == null) {
             throw new IllegalArgumentException("Scope cannot be null");
         }
@@ -89,8 +95,18 @@ final class ReconciliationManager implements AutoCloseable {
             publisher.publish(EntryType.SNAPSHOT_MARKER, scope, "", version, payloadBytes, signingKey, sigAlg, issuerId, broker)
                      .join();
             watermark.accept(markerId, version);
+            lastReconciled.put(scope, now);
+            io.github.cyfko.veridot.core.VeridotMetrics.RECONCILIATIONS.increment();
         } catch (Exception e) {
             // Ignore snapshot marker publication errors to prevent interrupting the system
+        }
+
+        if (saveCallback != null) {
+            try {
+                saveCallback.run();
+            } catch (Exception e) {
+                // Ignore
+            }
         }
     }
 
@@ -98,7 +114,8 @@ final class ReconciliationManager implements AutoCloseable {
                                              ScheduledExecutorService scheduler,
                                              Broker broker, VersionWatermark watermark,
                                              TrustRoot trustRoot, EntryPublisher publisher,
-                                             String issuerId, PrivateKey signingKey, byte sigAlg) {
+                                             String issuerId, PrivateKey signingKey, byte sigAlg,
+                                             Runnable saveCallback) {
         stopPeriodicReconciliation(scope);
 
         long intervalMs = maxInterval.toMillis();
@@ -108,7 +125,7 @@ final class ReconciliationManager implements AutoCloseable {
 
         ScheduledFuture<?> future = scheduler.scheduleWithFixedDelay(() -> {
             try {
-                reconcile(scope, broker, watermark, signatureVerifier, trustRoot, publisher, issuerId, signingKey, sigAlg);
+                reconcile(scope, broker, watermark, signatureVerifier, trustRoot, publisher, issuerId, signingKey, sigAlg, saveCallback);
             } catch (Exception e) {
                 // Log and ignore to allow subsequent reconciliation runs
             }
@@ -134,5 +151,10 @@ final class ReconciliationManager implements AutoCloseable {
     // Visible for testing
     int tasksCountForTest() {
         return tasks.size();
+    }
+
+    // Visible for testing
+    void setLastReconciledForTest(Scope scope, long timestamp) {
+        lastReconciled.put(scope, timestamp);
     }
 }

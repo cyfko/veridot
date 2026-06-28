@@ -16,8 +16,13 @@ public class VeridotException extends RuntimeException {
 
     public VeridotException(String message, Throwable cause) {
         super(message, cause);
-        this.errorCode = null;
-        this.entryId = null;
+        if (cause instanceof VeridotException ve) {
+            this.errorCode = ve.getErrorCode();
+            this.entryId = ve.getEntryId();
+        } else {
+            this.errorCode = null;
+            this.entryId = null;
+        }
     }
     public VeridotException(ErrorCode errorCode, String entryId) {
         super("Veridot V4 error: " + errorCode.name() + " (" + errorCode.code + ")" + (entryId != null ? " for entry " + entryId : ""));

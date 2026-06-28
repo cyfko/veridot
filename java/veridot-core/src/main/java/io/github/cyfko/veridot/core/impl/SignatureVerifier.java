@@ -19,6 +19,11 @@ final class SignatureVerifier {
             throw new IllegalArgumentException("TrustRoot cannot be null");
         }
 
+        if (!Config.ALLOWED_SIG_ALGS.contains(envelope.sigAlg)) {
+            throw new VeridotException(ErrorCode.SIGALG_KEY_MISMATCH, envelope.entryId().loggable(),
+                "Signature algorithm " + envelope.sigAlg + " is not allowed by configuration");
+        }
+
         // 1. Check if trustRoot is delegated
         if (trustRoot instanceof DelegatedTrustRoot delegated) {
             boolean ok;
@@ -47,11 +52,18 @@ final class SignatureVerifier {
             throw new VeridotException(ErrorCode.TRUST_RESOLUTION_FAILED, envelope.entryId().loggable(), "Resolved public key is null");
         }
 
-        // 3. Verify key type consistency
+        // 3. Verify key type consistency and constraints
         String keyAlg = publicKey.getAlgorithm();
         if (envelope.sigAlg == 0x01) { // RSA-SHA256
             if (!"RSA".equalsIgnoreCase(keyAlg)) {
                 throw new VeridotException(ErrorCode.SIGALG_KEY_MISMATCH, envelope.entryId().loggable(), "RSA signature requires an RSA key, got: " + keyAlg);
+            }
+            if (publicKey instanceof java.security.interfaces.RSAPublicKey rsaKey) {
+                int keyLen = rsaKey.getModulus().bitLength();
+                if (keyLen < Config.MIN_RSA_KEY_LENGTH) {
+                    throw new VeridotException(ErrorCode.SIGALG_KEY_MISMATCH, envelope.entryId().loggable(),
+                        "RSA key size must be at least " + Config.MIN_RSA_KEY_LENGTH + " bits, got: " + keyLen);
+                }
             }
         } else if (envelope.sigAlg == 0x02) { // Ed25519
             if (!"Ed25519".equalsIgnoreCase(keyAlg) && !"EdDSA".equalsIgnoreCase(keyAlg)) {

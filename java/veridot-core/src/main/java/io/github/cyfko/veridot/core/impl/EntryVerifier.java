@@ -27,6 +27,26 @@ final class EntryVerifier {
             CapabilityVerifier capabilityVerifier,
             LivenessChecker livenessChecker,
             long nowMillis) {
+        try {
+            KeyEpochPayload payload = verifyKeyEpochInternal(
+                keyEpochId, broker, trustRoot, watermark, capabilityVerifier, livenessChecker, nowMillis
+            );
+            io.github.cyfko.veridot.core.VeridotMetrics.ENVELOPE_ACCEPTED.increment();
+            return payload;
+        } catch (RuntimeException e) {
+            io.github.cyfko.veridot.core.VeridotMetrics.ENVELOPE_REJECTED.increment();
+            throw e;
+        }
+    }
+
+    private KeyEpochPayload verifyKeyEpochInternal(
+            EntryId keyEpochId,
+            Broker broker,
+            TrustRoot trustRoot,
+            VersionWatermark watermark,
+            CapabilityVerifier capabilityVerifier,
+            LivenessChecker livenessChecker,
+            long nowMillis) {
 
         if (keyEpochId == null) {
             throw new IllegalArgumentException("keyEpochId cannot be null");
@@ -69,8 +89,8 @@ final class EntryVerifier {
         }
 
         // Step 6: Temporal validation (§5.3)
-        // 1. now >= validFrom - 300000 (5 min drift)
-        if (nowMillis < payload.validFrom() - 300000) {
+        // 1. now >= validFrom - Config.MAX_CLOCK_DRIFT_SECONDS * 1000L
+        if (nowMillis < payload.validFrom() - Config.MAX_CLOCK_DRIFT_SECONDS * 1000L) {
             throw new VeridotException(ErrorCode.KEY_EPOCH_EXPIRED, loggable, 
                 "KEY_EPOCH not valid yet (now=" + nowMillis + ", validFrom=" + payload.validFrom() + ")");
         }

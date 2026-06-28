@@ -6,6 +6,8 @@ import io.github.cyfko.veridot.core.*;
 import io.github.cyfko.veridot.core.exceptions.BrokerExtractionException;
 import io.github.cyfko.veridot.core.exceptions.DataDeserializationException;
 import io.github.cyfko.veridot.core.exceptions.DataSerializationException;
+import io.github.cyfko.veridot.core.exceptions.VeridotException;
+import io.github.cyfko.veridot.core.WatermarkStore;
 
 
 import java.nio.charset.StandardCharsets;
@@ -23,12 +25,17 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
 
     private static final Logger logger = Logger.getLogger(GenericSignerVerifier.class.getName());
     private static final ObjectMapper objectMapper = new ObjectMapper();
+    static {
+        // Enforce secure deserialization by disabling default typing (Finding R4 mitigation)
+        objectMapper.deactivateDefaultTyping();
+    }
 
     private final Broker broker;
     private final TrustRoot trustRoot;
     private final String signerId;
     private final PrivateKey longTermPrivateKey;
     private final byte envelopeSigAlg;
+    private final WatermarkStore watermarkStore;
 
     private final ConfigPayload defaultConfig;
 
@@ -57,20 +64,34 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
     // ═══ Constructeur V4 (recommandé) ═══
     public GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String issuerId, 
                                  PrivateKey longTermKey, byte envelopeSigAlg) {
-        this(broker, trustRoot, issuerId, longTermKey, envelopeSigAlg, -1, EvictionPolicy.FIFO, Config.RECONCILIATION_INTERVAL_MINUTES);
+        this(broker, trustRoot, issuerId, longTermKey, envelopeSigAlg, -1, EvictionPolicy.FIFO, Config.RECONCILIATION_INTERVAL_MINUTES, null);
+    }
+
+    public GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String issuerId, 
+                                 PrivateKey longTermKey, byte envelopeSigAlg,
+                                 io.github.cyfko.veridot.core.WatermarkStore watermarkStore) {
+        this(broker, trustRoot, issuerId, longTermKey, envelopeSigAlg, -1, EvictionPolicy.FIFO, Config.RECONCILIATION_INTERVAL_MINUTES, watermarkStore);
     }
 
     public GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String issuerId, 
                                  PrivateKey longTermKey, byte envelopeSigAlg,
                                  int maxSessions, EvictionPolicy policy) {
-        this(broker, trustRoot, issuerId, longTermKey, envelopeSigAlg, maxSessions, policy, Config.RECONCILIATION_INTERVAL_MINUTES);
+        this(broker, trustRoot, issuerId, longTermKey, envelopeSigAlg, maxSessions, policy, Config.RECONCILIATION_INTERVAL_MINUTES, null);
+    }
+
+    public GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String issuerId, 
+                                 PrivateKey longTermKey, byte envelopeSigAlg,
+                                 int maxSessions, EvictionPolicy policy,
+                                 io.github.cyfko.veridot.core.WatermarkStore watermarkStore) {
+        this(broker, trustRoot, issuerId, longTermKey, envelopeSigAlg, maxSessions, policy, Config.RECONCILIATION_INTERVAL_MINUTES, watermarkStore);
     }
 
     // Constructor package-private for test override
     GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String issuerId, 
                           PrivateKey longTermKey, byte envelopeSigAlg,
                           int maxSessions, EvictionPolicy policy,
-                          long reconciliationIntervalMinutesOverride) {
+                          long reconciliationIntervalMinutesOverride,
+                          io.github.cyfko.veridot.core.WatermarkStore watermarkStore) {
         if (broker == null) throw new IllegalArgumentException("Broker cannot be null");
         if (trustRoot == null) throw new IllegalArgumentException("TrustRoot cannot be null");
         if (issuerId == null || issuerId.isBlank()) throw new IllegalArgumentException("issuerId cannot be null or blank");
@@ -83,6 +104,32 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         this.longTermPrivateKey = longTermKey;
         this.envelopeSigAlg = envelopeSigAlg;
         this.reconciliationIntervalMinutes = reconciliationIntervalMinutesOverride;
+
+        // Resolve WatermarkStore
+        if (watermarkStore != null) {
+            this.watermarkStore = watermarkStore;
+        } else {
+            String path = Config.WATERMARK_PERSISTENCE_FILE;
+            if (path != null && !path.isBlank()) {
+                this.watermarkStore = new FileWatermarkStore(new java.io.File(path));
+            } else if (broker instanceof io.github.cyfko.veridot.core.WatermarkStore) {
+                this.watermarkStore = (io.github.cyfko.veridot.core.WatermarkStore) broker;
+            } else {
+                this.watermarkStore = null;
+            }
+        }
+
+        // Load watermark snapshot
+        if (this.watermarkStore != null) {
+            try {
+                byte[] snap = this.watermarkStore.load();
+                if (snap != null && snap.length > 0) {
+                    this.watermark.restore(snap);
+                }
+            } catch (Exception e) {
+                logger.warning("Failed to load watermark snapshot: " + e.getMessage());
+            }
+        }
 
         this.defaultConfig = new ConfigPayload(
             maxSessions == -1 ? OptionalInt.empty() : OptionalInt.of(maxSessions),
@@ -213,6 +260,7 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             // 8. Start Renewal Loop
             livenessManager.startRenewalLoop(liveEntryId, durationMs, watermark, scheduler);
 
+            saveWatermark();
             return configurer.getDistribution() == DistributionMode.DIRECT ? jwt : messageId;
         } finally {
             refLock.lock.unlock();
@@ -249,6 +297,9 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             String sequenceId = parts[2];
 
             Scope scope = Scope.group(groupId);
+            ensureReconciliationStarted(scope);
+            checkReconciliationStaleness(scope);
+
             EntryId keyEpochId = new EntryId(scope, EntryType.KEY_EPOCH, sequenceId);
 
             // Run verification pipeline (Steps 1-7)
@@ -317,6 +368,7 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
                 livenessManager.publishRevoked(liveEntryId, watermark);
                 livenessManager.stopRenewalLoop(liveEntryId);
             }
+            saveWatermark();
         } catch (Exception e) {
             logger.severe("Failed to revoke target/group: " + e.getMessage());
             throw new RuntimeException("Revocation failed: " + e.getMessage(), e);
@@ -367,6 +419,7 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             entryPublisher.publish(EntryType.CONFIG, targetScope, "", version, payload.encode(), longTermPrivateKey, envelopeSigAlg, signerId, broker)
                           .join();
             watermark.accept(new EntryId(targetScope, EntryType.CONFIG, ""), version);
+            saveWatermark();
         } catch (Exception e) {
             logger.severe("Failed to publish config at " + targetScope.value() + ": " + e.getMessage());
             throw new RuntimeException("Config publication failed: " + e.getMessage(), e);
@@ -387,6 +440,8 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             String[] parts = Protocol.parseMessageId(s);
             EntryId liveEntryId = new EntryId(Scope.group(parts[1]), EntryType.LIVENESS, parts[2]);
             try {
+                Scope scope = Scope.group(parts[1]);
+                checkReconciliationStaleness(scope);
                 livenessChecker.assertLive(liveEntryId, broker, trustRoot, watermark, capabilityVerifier, now);
                 return true;
             } catch (Exception e) {
@@ -424,7 +479,8 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
                 entryPublisher,
                 signerId,
                 longTermPrivateKey,
-                envelopeSigAlg
+                envelopeSigAlg,
+                this::saveWatermark
             );
         }
     }
@@ -442,6 +498,7 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         if (reconciliationManager != null) {
             reconciliationManager.close();
         }
+        saveWatermark();
         scheduler.shutdownNow();
     }
 
@@ -457,5 +514,32 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             throw new IllegalArgumentException("JWT has no 'sub' claim");
         }
         return subNode.asText();
+    }
+
+    // Visible for testing
+    VersionWatermark watermarkForTest() {
+        return watermark;
+    }
+
+    private void checkReconciliationStaleness(Scope scope) {
+        if (reconciledScopes.contains(scope)) {
+            long last = reconciliationManager.getLastReconciled(scope);
+            long now = System.currentTimeMillis();
+            long maxStalenessMs = Config.RECONCILIATION_MAX_STALENESS_MINUTES * 60 * 1000L;
+            if (last > 0 && (now - last) > maxStalenessMs) {
+                throw new VeridotException(ErrorCode.RECONCILIATION_STALE, scope.value(),
+                    "Reconciliation staleness limit exceeded. Last reconciled: " + last + ", now: " + now);
+            }
+        }
+    }
+
+    private void saveWatermark() {
+        if (watermarkStore != null) {
+            try {
+                watermarkStore.save(watermark.snapshot());
+            } catch (Exception e) {
+                logger.warning("Failed to save watermark snapshot: " + e.getMessage());
+            }
+        }
     }
 }
