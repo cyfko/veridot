@@ -2,6 +2,7 @@ package io.github.cyfko.veridot.core.impl;
 
 import io.github.cyfko.veridot.core.InMemoryBroker;
 import io.github.cyfko.veridot.core.PublicKeyTrustRoot;
+import io.github.cyfko.veridot.core.TrustIdentity;
 import io.github.cyfko.veridot.core.exceptions.BrokerExtractionException;
 import io.github.cyfko.veridot.core.exceptions.VeridotException;
 
@@ -96,12 +97,8 @@ class TrustAnchorSecurityTest {
 
         PublicKeyTrustRoot flakeyRoot = new PublicKeyTrustRoot() {
             @Override
-            public PublicKey resolve(String issuer) {
+            public TrustIdentity resolve(String issuer) {
                 throw new VeridotException(ErrorCode.TRANSPORT_UNAVAILABLE, null, "KMS is down");
-            }
-            @Override
-            public boolean isRootIdentity(String issuer) {
-                return false;
             }
         };
 

@@ -2,6 +2,7 @@ package io.github.cyfko.veridot.core.impl;
 
 import io.github.cyfko.veridot.core.PublicKeyTrustRoot;
 import io.github.cyfko.veridot.core.TrustRoot;
+import io.github.cyfko.veridot.core.TrustIdentity;
 import io.github.cyfko.veridot.core.EvictionPolicy;
 import io.github.cyfko.veridot.core.Algorithm;
 import io.github.cyfko.veridot.core.exceptions.VeridotException;
@@ -31,18 +32,13 @@ public class CoreUnitTest {
 
         trustRoot = new PublicKeyTrustRoot() {
             @Override
-            public PublicKey resolve(String issuer) {
+            public TrustIdentity resolve(String issuer) {
                 if ("root-rsa".equals(issuer)) {
-                    return rsaKeyPair.getPublic();
+                    return new TrustIdentity(rsaKeyPair.getPublic(), true);
                 } else if ("root-ec".equals(issuer)) {
-                    return ecKeyPair.getPublic();
+                    return new TrustIdentity(ecKeyPair.getPublic(), true);
                 }
                 throw new VeridotException(ErrorCode.TRUST_RESOLUTION_FAILED, null, "Unknown issuer: " + issuer);
-            }
-
-            @Override
-            public boolean isRootIdentity(String issuer) {
-                return "root-rsa".equals(issuer) || "root-ec".equals(issuer);
             }
         };
     }
@@ -193,12 +189,8 @@ public class CoreUnitTest {
         
         TrustRoot badTrust = new PublicKeyTrustRoot() {
             @Override
-            public PublicKey resolve(String issuer) {
-                return shortKey.getPublic();
-            }
-            @Override
-            public boolean isRootIdentity(String issuer) {
-                return true;
+            public TrustIdentity resolve(String issuer) {
+                return new TrustIdentity(shortKey.getPublic(), true);
             }
         };
 
@@ -309,15 +301,11 @@ public class CoreUnitTest {
 
         TrustRoot trustRoot = new PublicKeyTrustRoot() {
             @Override
-            public PublicKey resolve(String issuer) {
+            public TrustIdentity resolve(String issuer) {
                 if ("issuer-pss".equals(issuer)) {
-                    return kp.getPublic();
+                    return new TrustIdentity(kp.getPublic(), false);
                 }
                 return null;
-            }
-            @Override
-            public boolean isRootIdentity(String issuer) {
-                return false;
             }
         };
 
@@ -368,15 +356,11 @@ public class CoreUnitTest {
         io.github.cyfko.veridot.core.InMemoryBroker inMemoryBroker = new io.github.cyfko.veridot.core.InMemoryBroker();
         TrustRoot trustRoot = new PublicKeyTrustRoot() {
             @Override
-            public PublicKey resolve(String issuer) {
+            public TrustIdentity resolve(String issuer) {
                 if ("issuer-rsa".equals(issuer)) {
-                    return rsaKeyPair.getPublic();
+                    return new TrustIdentity(rsaKeyPair.getPublic(), true);
                 }
                 return null;
-            }
-            @Override
-            public boolean isRootIdentity(String issuer) {
-                return "issuer-rsa".equals(issuer);
             }
         };
 
@@ -450,15 +434,11 @@ public class CoreUnitTest {
         io.github.cyfko.veridot.core.InMemoryBroker inMemoryBroker = new io.github.cyfko.veridot.core.InMemoryBroker();
         TrustRoot trustRoot = new PublicKeyTrustRoot() {
             @Override
-            public PublicKey resolve(String issuer) {
+            public TrustIdentity resolve(String issuer) {
                 if ("issuer-rsa".equals(issuer)) {
-                    return rsaKeyPair.getPublic();
+                    return new TrustIdentity(rsaKeyPair.getPublic(), true);
                 }
                 return null;
-            }
-            @Override
-            public boolean isRootIdentity(String issuer) {
-                return "issuer-rsa".equals(issuer);
             }
         };
 
@@ -504,15 +484,11 @@ public class CoreUnitTest {
         io.github.cyfko.veridot.core.InMemoryBroker inMemoryBroker = new io.github.cyfko.veridot.core.InMemoryBroker();
         TrustRoot trustRoot = new PublicKeyTrustRoot() {
             @Override
-            public PublicKey resolve(String issuer) {
+            public TrustIdentity resolve(String issuer) {
                 if ("issuer-rsa".equals(issuer)) {
-                    return rsaKeyPair.getPublic();
+                    return new TrustIdentity(rsaKeyPair.getPublic(), true);
                 }
                 return null;
-            }
-            @Override
-            public boolean isRootIdentity(String issuer) {
-                return "issuer-rsa".equals(issuer);
             }
         };
 
@@ -562,13 +538,9 @@ public class CoreUnitTest {
             
             TrustRoot tr = new PublicKeyTrustRoot() {
                 @Override
-                public PublicKey resolve(String issuer) {
-                    if ("issuer-drift".equals(issuer)) return kp.getPublic();
+                public TrustIdentity resolve(String issuer) {
+                    if ("issuer-drift".equals(issuer)) return new TrustIdentity(kp.getPublic(), true);
                     return null;
-                }
-                @Override
-                public boolean isRootIdentity(String issuer) {
-                    return "issuer-drift".equals(issuer);
                 }
             };
             
@@ -891,7 +863,7 @@ public class CoreUnitTest {
         try (KeyRotationService krs = new KeyRotationService()) {
             assertEquals(Algorithm.ED25519, krs.snapshot().alg());
             PublicKey pub = krs.getPublicKey();
-            assertEquals("Ed25519", pub.getAlgorithm());
+            assertTrue("EdDSA".equalsIgnoreCase(pub.getAlgorithm()) || "Ed25519".equalsIgnoreCase(pub.getAlgorithm()));
         }
 
         // 2. Algorithm.fromCode mapping
@@ -899,5 +871,26 @@ public class CoreUnitTest {
         assertEquals(Algorithm.ECDSA_SHA256, Algorithm.fromCode((byte) 0x02));
         assertEquals(Algorithm.RSA_PSS, Algorithm.fromCode((byte) 0x03));
         assertEquals(Algorithm.ED25519, Algorithm.fromCode((byte) 0x04));
+    }
+
+    @Test
+    void testJwtVerifierAlgHeaderCoherence() throws Exception {
+        // Build a JWT token with JwtMaker using RSA-SHA256 (RS256)
+        String token = JwtMaker.builder()
+            .subject("test-sub")
+            .claim("data", "hello")
+            .signWith(rsaKeyPair.getPrivate())
+            .alg(Algorithm.RSA_SHA256)
+            .compact();
+
+        // 1. Verifying with correct algorithm (RSA_SHA256) should succeed
+        JwtVerifier verifier = JwtVerifier.verifyWith(rsaKeyPair.getPublic(), Algorithm.RSA_SHA256);
+        Map<String, Object> claims = verifier.parseSignedClaims(token);
+        assertEquals("test-sub", claims.get("sub"));
+        assertEquals("hello", claims.get("data"));
+
+        // 2. Verifying with incorrect expected algorithm (ECDSA_SHA256) should fail with SecurityException due to mismatch
+        JwtVerifier badVerifier = JwtVerifier.verifyWith(rsaKeyPair.getPublic(), Algorithm.ECDSA_SHA256);
+        assertThrows(SecurityException.class, () -> badVerifier.parseSignedClaims(token));
     }
 }
