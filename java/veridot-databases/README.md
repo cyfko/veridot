@@ -142,6 +142,9 @@ import io.github.cyfko.veridot.databases.DatabaseBroker;
 Broker broker = new DatabaseBroker(dataSource);
 
 // Build TrustRoot (see veridot-core README for full TrustRoot documentation)
+> [!WARNING]
+> **NOT FOR PRODUCTION**: Loading long-term keys directly from local files is not recommended for production environments. Use secure key vault integrations or HSMs.
+
 TrustRoot trust = new PublicKeyTrustRoot(signerId -> {
     byte[] pem = Files.readAllBytes(Paths.get("/etc/veridot/trust/" + signerId + ".pub.pem"));
     return parsePemPublicKey(pem);

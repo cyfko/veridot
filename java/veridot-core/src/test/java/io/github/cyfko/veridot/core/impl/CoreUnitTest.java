@@ -497,4 +497,184 @@ public class CoreUnitTest {
             executor.shutdown();
         }
     }
+
+    @Test
+    public void testReconciliationStalenessApi() throws Exception {
+        io.github.cyfko.veridot.core.InMemoryBroker inMemoryBroker = new io.github.cyfko.veridot.core.InMemoryBroker();
+        TrustRoot trustRoot = new PublicKeyTrustRoot() {
+            @Override
+            public PublicKey resolve(String issuer) {
+                if ("issuer-rsa".equals(issuer)) {
+                    return rsaKeyPair.getPublic();
+                }
+                return null;
+            }
+            @Override
+            public boolean isRootIdentity(String issuer) {
+                return "issuer-rsa".equals(issuer);
+            }
+        };
+
+        try (GenericSignerVerifier sv = new GenericSignerVerifier(
+                inMemoryBroker,
+                trustRoot,
+                "issuer-rsa",
+                rsaKeyPair.getPrivate(),
+                (byte) 0x01
+        )) {
+            // Before verification / reconciliation, staleness should be -1
+            assertEquals(-1L, sv.getReconciliationStalenessMs("group:group1"));
+
+            // Act: sign a valid token (should trigger/ensure reconciliation start, but it might not run snapshot immediately)
+            String token = sv.sign("data", BasicConfigurer.builder().groupId("group1").sequenceId("sessionA").validity(600).build());
+            
+            // Reconcile manually or test lastReconciled mapping
+            sv.reconciliationManager.setLastReconciledForTest(Scope.group("group1"), System.currentTimeMillis() - 5000);
+            
+            long staleness = sv.getReconciliationStalenessMs("group:group1");
+            assertTrue(staleness >= 5000 && staleness < 10000);
+        }
+    }
+
+    @Test
+    public void testClockDriftWarningLogging() throws Exception {
+        io.github.cyfko.veridot.core.InMemoryBroker inMemoryBroker = new io.github.cyfko.veridot.core.InMemoryBroker();
+        
+        java.util.logging.Logger verifierLogger = java.util.logging.Logger.getLogger(EntryVerifier.class.getName());
+        java.util.List<java.util.logging.LogRecord> logRecords = new java.util.ArrayList<>();
+        java.util.logging.Handler customHandler = new java.util.logging.Handler() {
+            @Override
+            public void publish(java.util.logging.LogRecord record) {
+                logRecords.add(record);
+            }
+            @Override
+            public void flush() {}
+            @Override
+            public void close() throws SecurityException {}
+        };
+        verifierLogger.addHandler(customHandler);
+
+        try {
+            KeyPairGenerator gen = KeyPairGenerator.getInstance("RSA");
+            gen.initialize(2048);
+            KeyPair kp = gen.generateKeyPair();
+            
+            TrustRoot tr = new PublicKeyTrustRoot() {
+                @Override
+                public PublicKey resolve(String issuer) {
+                    if ("issuer-drift".equals(issuer)) return kp.getPublic();
+                    return null;
+                }
+                @Override
+                public boolean isRootIdentity(String issuer) {
+                    return "issuer-drift".equals(issuer);
+                }
+            };
+            
+            byte[] payloadBytes = new KeyEpochPayload(
+                (byte) 0x01, // alg
+                1L, // epochId
+                kp.getPublic().getEncoded(), // pk
+                System.currentTimeMillis() - 100000L, // validFrom
+                System.currentTimeMillis() + 100000L, // validUntil
+                "site1", // site
+                "token1" // token
+            ).encode();
+            
+            long driftTime = System.currentTimeMillis() - (Config.MAX_CLOCK_DRIFT_SECONDS * 1000L / 2) - 10000L;
+            
+            EnvelopeBuilder envBuilder = new EnvelopeBuilder()
+                .entryType(EntryType.KEY_EPOCH)
+                .flags((byte) 0x00)
+                .scope(Scope.group("group1"))
+                .key("session-drift")
+                .version(1L)
+                .timestamp(driftTime)
+                .issuer("issuer-drift")
+                .payload(payloadBytes)
+                .sigAlg((byte) 0x01);
+
+            Envelope env = new Envelope(
+                Envelope.PROTO_VERSION,
+                EntryType.KEY_EPOCH,
+                (byte) 0x00,
+                Scope.group("group1"),
+                "session-drift",
+                1L,
+                driftTime,
+                "issuer-drift",
+                payloadBytes,
+                (byte) 0x01,
+                null
+            );
+            
+            Signature sig = Signature.getInstance("SHA256withRSA");
+            sig.initSign(kp.getPrivate());
+            sig.update(env.canonicalSigningBytes());
+            byte[] signature = sig.sign();
+            
+            byte[] encodedEnv = Envelope.encode(envBuilder, signature);
+            EntryId entryId = new EntryId(Scope.group("group1"), EntryType.KEY_EPOCH, "session-drift");
+            inMemoryBroker.put(entryId.storageKey(), encodedEnv).join();
+            
+            byte[] livePayloadBytes = new LivenessPayload(LivenessPayload.ACTIVE, System.currentTimeMillis(), System.currentTimeMillis() + 100000L).encode();
+            
+            EnvelopeBuilder liveBuilder = new EnvelopeBuilder()
+                .entryType(EntryType.LIVENESS)
+                .flags((byte) 0x00)
+                .scope(Scope.group("group1"))
+                .key("session-drift")
+                .version(1L)
+                .timestamp(System.currentTimeMillis())
+                .issuer("issuer-drift")
+                .payload(livePayloadBytes)
+                .sigAlg((byte) 0x01);
+
+            Envelope liveEnv = new Envelope(
+                Envelope.PROTO_VERSION,
+                EntryType.LIVENESS,
+                (byte) 0x00,
+                Scope.group("group1"),
+                "session-drift",
+                1L,
+                System.currentTimeMillis(),
+                "issuer-drift",
+                livePayloadBytes,
+                (byte) 0x01,
+                null
+            );
+            sig.initSign(kp.getPrivate());
+            sig.update(liveEnv.canonicalSigningBytes());
+            byte[] liveSig = sig.sign();
+            
+            byte[] encodedLiveEnv = Envelope.encode(liveBuilder, liveSig);
+            EntryId liveEntryId = new EntryId(Scope.group("group1"), EntryType.LIVENESS, "session-drift");
+            inMemoryBroker.put(liveEntryId.storageKey(), encodedLiveEnv).join();
+            
+            try (GenericSignerVerifier sv = new GenericSignerVerifier(
+                    inMemoryBroker,
+                    tr,
+                    "issuer-drift",
+                    kp.getPrivate(),
+                    (byte) 0x01
+            )) {
+                String header = Base64.getUrlEncoder().encodeToString("{\"alg\":\"RSASSA-PSS\"}".getBytes());
+                String jwtPayload = Base64.getUrlEncoder().encodeToString("{\"sub\":\"3:group1:session-drift\",\"data\":\"my-data\"}".getBytes());
+                sig.initSign(kp.getPrivate());
+                sig.update((header + "." + jwtPayload).getBytes());
+                String jwtSign = Base64.getUrlEncoder().encodeToString(sig.sign());
+                String jwtTokenStr = header + "." + jwtPayload + "." + jwtSign;
+                
+                sv.verify(jwtTokenStr, s -> s);
+            }
+            
+            boolean hasWarning = logRecords.stream().anyMatch(r -> 
+                r.getLevel() == java.util.logging.Level.WARNING && r.getMessage().contains("Clock drift detected")
+            );
+            assertTrue(hasWarning, "Warning message for clock drift should be logged");
+            
+        } finally {
+            verifierLogger.removeHandler(customHandler);
+        }
+    }
 }

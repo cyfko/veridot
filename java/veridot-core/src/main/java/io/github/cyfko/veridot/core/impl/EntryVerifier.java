@@ -12,6 +12,7 @@ import java.security.Signature;
  */
 final class EntryVerifier {
 
+    private static final java.util.logging.Logger logger = java.util.logging.Logger.getLogger(EntryVerifier.class.getName());
     private final SignatureVerifier signatureVerifier = new SignatureVerifier();
 
     /**
@@ -74,6 +75,13 @@ final class EntryVerifier {
 
         // Step 4: Trust validation
         signatureVerifier.verify(envelope, trustRoot);
+
+        // Log a warning if clock drift exceeds 50% of the configured tolerance
+        long driftMillis = Math.abs(nowMillis - envelope.timestamp);
+        long toleranceMillis = Config.MAX_CLOCK_DRIFT_SECONDS * 1000L;
+        if (driftMillis > toleranceMillis / 2) {
+            logger.warning("Clock drift detected for entry " + keyEpochId.loggable() + ": " + (driftMillis / 1000.0) + " seconds (exceeds 50% of tolerance: " + Config.MAX_CLOCK_DRIFT_SECONDS + "s)");
+        }
 
         // Step 5: Capability validation
         // First resolve if we have siteId in the KeyEpoch payload. We need to parse payload for siteId.

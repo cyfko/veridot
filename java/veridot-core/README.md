@@ -130,6 +130,9 @@ Every key announcement carries a long-term RSA signature. Verifiers check this s
 
 Best for: public keys stored in files, Vault KV, ConfigMaps, or any key-value store.
 
+> [!WARNING]
+> **NOT FOR PRODUCTION**: Loading long-term trust root public keys directly from local files is not recommended for production environments. Consider using a KMS or a secure configuration provider.
+
 ```java
 TrustRoot trust = new PublicKeyTrustRoot(signerId -> {
     // Load the long-term public key for this signerId from your trust store.
@@ -171,6 +174,9 @@ Properties kafkaProps = new Properties();
 kafkaProps.setProperty("bootstrap.servers", "kafka:9092");
 kafkaProps.setProperty("embedded.db.path", "/var/lib/veridot");
 Broker broker = KafkaBroker.of(kafkaProps);
+
+> [!WARNING]
+> **NOT FOR PRODUCTION**: The code below loads raw keys from `/etc/veridot/private.key` and `/etc/veridot/trust/`. In production, you should load private keys and trust roots from a Key Management Service (KMS) or Vault.
 
 // ── 2. Load long-term private key ─────────────────────────────────
 // In production: load from Vault, Kubernetes Secret, or KMS.
@@ -414,6 +420,9 @@ public class VeridotConfig {
         byte[] pkcs8 = Files.readAllBytes(Paths.get(privateKeyPath));
         return KeyFactory.getInstance("RSA").generatePrivate(new PKCS8EncodedKeySpec(pkcs8));
     }
+
+    > [!WARNING]
+    > **NOT FOR PRODUCTION**: Local PEM file resolution for Spring beans is not secure for production. Use vault integrations or HSM-backed trust roots instead.
 
     @Bean
     public TrustRoot veridotTrustRoot() {
