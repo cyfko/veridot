@@ -111,7 +111,15 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         } else {
             String path = Config.WATERMARK_PERSISTENCE_FILE;
             if (path != null && !path.isBlank()) {
-                this.watermarkStore = new FileWatermarkStore(new java.io.File(path));
+                byte[] hmacKey = null;
+                try {
+                    byte[] encoded = longTermKey.getEncoded();
+                    if (encoded != null) {
+                        java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+                        hmacKey = md.digest(encoded);
+                    }
+                } catch (Exception ignored) {}
+                this.watermarkStore = new FileWatermarkStore(new java.io.File(path), hmacKey);
             } else if (broker instanceof io.github.cyfko.veridot.core.WatermarkStore) {
                 this.watermarkStore = (io.github.cyfko.veridot.core.WatermarkStore) broker;
             } else {
@@ -140,7 +148,10 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             OptionalLong.empty()
         );
 
-        byte ephemeralAlg = (byte) (longTermKey.getAlgorithm().equalsIgnoreCase("RSA") ? 0x01 : 0x02);
+        byte ephemeralAlg = 0x02; // Default to EC/ECDSA (NIST SP 800-186)
+        if (!Config.ALLOWED_SIG_ALGS.contains((byte) 0x02)) {
+            ephemeralAlg = 0x01; // Fallback to RSA if EC is not allowed
+        }
         this.keyRotationService = new KeyRotationService(ephemeralAlg);
         this.livenessManager = new LivenessManager(entryPublisher, broker, longTermKey, envelopeSigAlg, issuerId);
     }
@@ -228,6 +239,7 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
                         .issuedAt(Instant.ofEpochMilli(now))
                         .expiration(Instant.ofEpochMilli(now + durationMs))
                         .signWith(keySnapshot.privateKey())
+                        .alg(keySnapshot.alg()) // V-03 / V-05: Pass alg for header coherence
                         .compact();
             } catch (Exception e) {
                 throw new RuntimeException("Failed to build signed JWT", e);
@@ -320,6 +332,28 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             if (jwtParts.length < 3) {
                 throw new BrokerExtractionException("Malformed JWT: expected 3 parts");
             }
+
+            // V-03 / V-05: Verify JWT header "alg" matches KEY_EPOCH alg to prevent algorithm confusion
+            String headerJson = new String(Base64.getUrlDecoder().decode(jwtParts[0]), StandardCharsets.UTF_8);
+            JsonNode headerNode = objectMapper.readTree(headerJson);
+            if (headerNode == null || !headerNode.has("alg")) {
+                throw new BrokerExtractionException("JWT header missing 'alg'");
+            }
+            String jwtAlg = headerNode.get("alg").asText();
+            String expectedAlg;
+            if (epochPayload.alg() == 0x01) {
+                expectedAlg = "RS256";
+            } else if (epochPayload.alg() == 0x02) {
+                expectedAlg = "ES256";
+            } else if (epochPayload.alg() == 0x03) {
+                expectedAlg = "PS256";
+            } else {
+                throw new BrokerExtractionException("Unsupported ephemeral key algorithm in KEY_EPOCH: " + epochPayload.alg());
+            }
+            if (!expectedAlg.equals(jwtAlg)) {
+                throw new BrokerExtractionException("JWT algorithm mismatch: header=" + jwtAlg + " expected=" + expectedAlg);
+            }
+
             byte[] signedBytes = (jwtParts[0] + "." + jwtParts[1]).getBytes(StandardCharsets.UTF_8);
             byte[] signatureBytes = Base64.getUrlDecoder().decode(jwtParts[2]);
 
@@ -480,6 +514,7 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
                 signerId,
                 longTermPrivateKey,
                 envelopeSigAlg,
+                capabilityVerifier,
                 this::saveWatermark
             );
         }

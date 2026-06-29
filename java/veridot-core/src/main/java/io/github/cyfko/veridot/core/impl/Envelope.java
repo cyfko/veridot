@@ -143,6 +143,9 @@ public final class Envelope {
             throw new VeridotException(ErrorCode.INVALID_ENVELOPE, entryIdLoggable, "Raw envelope truncated before issuer length");
         }
         int issuerLen = Short.toUnsignedInt(buffer.getShort());
+        if (issuerLen == 0) {
+            throw new VeridotException(ErrorCode.INVALID_IDENTIFIER_LENGTH, entryIdLoggable, "Issuer string must not be empty");
+        }
         if (buffer.remaining() < issuerLen) {
             throw new VeridotException(ErrorCode.INVALID_ENVELOPE, entryIdLoggable, "Raw envelope truncated: issuer string missing bytes");
         }

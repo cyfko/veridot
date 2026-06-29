@@ -285,7 +285,7 @@ public class CoreUnitTest {
             sv.reconciliationManager.reconcile(
                 Scope.group("group1"), inMemoryBroker, sv.watermarkForTest(),
                 new SignatureVerifier(), trustRoot, new EntryPublisher(), "root-rsa",
-                rsaKeyPair.getPrivate(), (byte) 0x01, null
+                rsaKeyPair.getPrivate(), (byte) 0x01, sv.capabilityVerifier, null
             );
             
             // Trigger reconciliation periodic start so it registers in reconciledScopes
@@ -658,7 +658,7 @@ public class CoreUnitTest {
                     kp.getPrivate(),
                     (byte) 0x01
             )) {
-                String header = Base64.getUrlEncoder().encodeToString("{\"alg\":\"RSASSA-PSS\"}".getBytes());
+                String header = Base64.getUrlEncoder().encodeToString("{\"alg\":\"RS256\"}".getBytes());
                 String jwtPayload = Base64.getUrlEncoder().encodeToString("{\"sub\":\"3:group1:session-drift\",\"data\":\"my-data\"}".getBytes());
                 sig.initSign(kp.getPrivate());
                 sig.update((header + "." + jwtPayload).getBytes());
@@ -675,6 +675,165 @@ public class CoreUnitTest {
             
         } finally {
             verifierLogger.removeHandler(customHandler);
+        }
+    }
+
+    @Test
+    public void testEmptyIssuerRejection() throws Exception {
+        byte[] payloadBytes = new KeyEpochPayload((byte) 0x01, 1L, rsaKeyPair.getPublic().getEncoded(), System.currentTimeMillis(), System.currentTimeMillis() + 100000L, "site1", null).encode();
+        EnvelopeBuilder envBuilder = new EnvelopeBuilder()
+            .entryType(EntryType.KEY_EPOCH)
+            .flags((byte) 0x00)
+            .scope(Scope.group("group1"))
+            .key("session1")
+            .version(1L)
+            .timestamp(System.currentTimeMillis())
+            .issuer("") // Empty issuer
+            .payload(payloadBytes)
+            .sigAlg((byte) 0x01);
+
+        Envelope env = new Envelope(
+            Envelope.PROTO_VERSION,
+            EntryType.KEY_EPOCH,
+            (byte) 0x00,
+            Scope.group("group1"),
+            "session1",
+            1L,
+            System.currentTimeMillis(),
+            "", // Empty issuer
+            payloadBytes,
+            (byte) 0x01,
+            null
+        );
+
+        Signature sig = Signature.getInstance("SHA256withRSA");
+        sig.initSign(rsaKeyPair.getPrivate());
+        sig.update(env.canonicalSigningBytes());
+        byte[] signature = sig.sign();
+
+        byte[] encodedEnv = Envelope.encode(envBuilder, signature);
+        
+        // Decoding should fail due to empty issuer string
+        VeridotException ex = assertThrows(VeridotException.class, () -> {
+            Envelope.parse(encodedEnv);
+        });
+        assertEquals(ErrorCode.INVALID_IDENTIFIER_LENGTH, ex.getErrorCode());
+    }
+
+    @Test
+    public void testWatermarkHmacIntegrity() throws Exception {
+        java.io.File tempFile = java.io.File.createTempFile("veridot-watermarks", ".json");
+        tempFile.deleteOnExit();
+
+        byte[] key = "test-hmac-key-1234567890123456789".getBytes();
+        FileWatermarkStore store = new FileWatermarkStore(tempFile, key);
+
+        byte[] snapshot = "{\"group1:KEY_EPOCH:session1\": 10}".getBytes();
+        store.save(snapshot);
+
+        // Load must succeed initially
+        byte[] loaded = store.load();
+        assertNotNull(loaded);
+        assertArrayEquals(snapshot, loaded);
+
+        // Modify the file content (tampering)
+        byte[] rawBytes = java.nio.file.Files.readAllBytes(tempFile.toPath());
+        if (rawBytes.length > 35) {
+            rawBytes[35] ^= 0x01; // flip a bit in payload or HMAC
+        }
+        java.nio.file.Files.write(tempFile.toPath(), rawBytes);
+
+        // Load must fail (return null)
+        byte[] loadedTampered = store.load();
+        assertNull(loadedTampered);
+    }
+
+    @Test
+    public void testJwtHeaderAlgCoherence() throws Exception {
+        io.github.cyfko.veridot.core.InMemoryBroker inMemoryBroker = new io.github.cyfko.veridot.core.InMemoryBroker();
+        byte[] payloadBytes = new KeyEpochPayload((byte) 0x01, 1L, rsaKeyPair.getPublic().getEncoded(), System.currentTimeMillis(), System.currentTimeMillis() + 100000L, "site1", null).encode();
+        EnvelopeBuilder envBuilder = new EnvelopeBuilder()
+            .entryType(EntryType.KEY_EPOCH)
+            .flags((byte) 0x00)
+            .scope(Scope.group("group1"))
+            .key("sessionA")
+            .version(1L)
+            .timestamp(System.currentTimeMillis())
+            .issuer("root-rsa")
+            .payload(payloadBytes)
+            .sigAlg((byte) 0x01);
+
+        Envelope env = new Envelope(
+            Envelope.PROTO_VERSION,
+            EntryType.KEY_EPOCH,
+            (byte) 0x00,
+            Scope.group("group1"),
+            "sessionA",
+            1L,
+            System.currentTimeMillis(),
+            "root-rsa",
+            payloadBytes,
+            (byte) 0x01,
+            null
+        );
+
+        Signature sig = Signature.getInstance("SHA256withRSA");
+        sig.initSign(rsaKeyPair.getPrivate());
+        sig.update(env.canonicalSigningBytes());
+        byte[] signature = sig.sign();
+
+        byte[] encodedEnv = Envelope.encode(envBuilder, signature);
+        inMemoryBroker.put(new EntryId(Scope.group("group1"), EntryType.KEY_EPOCH, "sessionA").storageKey(), encodedEnv).join();
+
+        byte[] livePayloadBytes = new LivenessPayload(LivenessPayload.ACTIVE, System.currentTimeMillis(), System.currentTimeMillis() + 100000L).encode();
+        EnvelopeBuilder liveBuilder = new EnvelopeBuilder()
+            .entryType(EntryType.LIVENESS)
+            .flags((byte) 0x00)
+            .scope(Scope.group("group1"))
+            .key("sessionA")
+            .version(1L)
+            .timestamp(System.currentTimeMillis())
+            .issuer("root-rsa")
+            .payload(livePayloadBytes)
+            .sigAlg((byte) 0x01);
+
+        Envelope liveEnv = new Envelope(
+            Envelope.PROTO_VERSION,
+            EntryType.LIVENESS,
+            (byte) 0x00,
+            Scope.group("group1"),
+            "sessionA",
+            1L,
+            System.currentTimeMillis(),
+            "root-rsa",
+            livePayloadBytes,
+            (byte) 0x01,
+            null
+        );
+        sig.initSign(rsaKeyPair.getPrivate());
+        sig.update(liveEnv.canonicalSigningBytes());
+        byte[] liveSig = sig.sign();
+        inMemoryBroker.put(new EntryId(Scope.group("group1"), EntryType.LIVENESS, "sessionA").storageKey(), Envelope.encode(liveBuilder, liveSig)).join();
+
+        try (GenericSignerVerifier sv = new GenericSignerVerifier(
+                inMemoryBroker,
+                trustRoot,
+                "root-rsa",
+                rsaKeyPair.getPrivate(),
+                (byte) 0x01
+        )) {
+            // Build JWT with wrong header alg: ES256 instead of expected RS256
+            String header = Base64.getUrlEncoder().encodeToString("{\"alg\":\"ES256\"}".getBytes());
+            String jwtPayload = Base64.getUrlEncoder().encodeToString("{\"sub\":\"3:group1:sessionA\",\"data\":\"my-data\"}".getBytes());
+            sig.initSign(rsaKeyPair.getPrivate());
+            sig.update((header + "." + jwtPayload).getBytes());
+            String jwtSign = Base64.getUrlEncoder().encodeToString(sig.sign());
+            String jwtTokenStr = header + "." + jwtPayload + "." + jwtSign;
+
+            // Verification should fail because of algorithm mismatch
+            assertThrows(Exception.class, () -> {
+                sv.verify(jwtTokenStr, s -> s);
+            });
         }
     }
 }
