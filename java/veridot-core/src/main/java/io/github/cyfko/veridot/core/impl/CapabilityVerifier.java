@@ -20,6 +20,8 @@ final class CapabilityVerifier {
 
     private record CacheEntry(boolean authorized, long expiresAt) {}
 
+    private record ChainResult(int depth, long minValidUntil) {}
+
     public void assertAuthorized(String issuer, Scope scope, Broker broker, TrustRoot trustRoot) {
         assertAuthorized(issuer, scope, null, broker, trustRoot);
     }
@@ -44,17 +46,19 @@ final class CapabilityVerifier {
         }
 
         try {
-            checkCapabilityChain(issuer, scope, siteId, 0, broker, trustRoot, now);
-            // Cache success for up to configured TTL
-            cache.put(cacheKey, new CacheEntry(true, now + Config.CAPABILITY_CACHE_TTL_SECONDS * 1000L));
+            ChainResult result = checkCapabilityChain(issuer, scope, siteId, 0, broker, trustRoot, now);
+            // Cache success for up to configured TTL, but not past the capability chain's expiration
+            long cacheTtlMs = Config.CAPABILITY_CACHE_TTL_SECONDS * 1000L;
+            long expiresAt = Math.min(now + cacheTtlMs, result.minValidUntil);
+            cache.put(cacheKey, new CacheEntry(true, expiresAt));
         } catch (VeridotException e) {
             cache.put(cacheKey, new CacheEntry(false, now + Config.CAPABILITY_NEGATIVE_CACHE_TTL_SECONDS * 1000L)); // Cache failure to prevent hammer
             throw e;
         }
     }
 
-    private int checkCapabilityChain(String subject, Scope targetScope, String siteId, int currentDepth, 
-                                     Broker broker, TrustRoot trustRoot, long now) {
+    private ChainResult checkCapabilityChain(String subject, Scope targetScope, String siteId, int currentDepth, 
+                                             Broker broker, TrustRoot trustRoot, long now) {
         if (currentDepth > 10) {
             throw new VeridotException(ErrorCode.DELEGATION_DEPTH_EXCEEDED, null, 
                 "Delegation chain depth limit exceeded during verification (max 10 hops)");
@@ -99,7 +103,7 @@ final class CapabilityVerifier {
             try {
                 TrustIdentity identity = trustRoot.resolve(subject);
                 if (identity != null && identity.isRoot()) {
-                    return 0; // Root terminates chain at depth 0
+                    return new ChainResult(0, Long.MAX_VALUE); // Root terminates chain at depth 0
                 }
             } catch (Exception ignored) {
                 // Not a root identity or resolution failed
@@ -126,15 +130,16 @@ final class CapabilityVerifier {
         }
 
         // Step 5: Recurse to authorize capability's issuer
-        int parentDepth = checkCapabilityChain(capEnvelope.issuer, targetScope, siteId, currentDepth + 1, broker, trustRoot, now);
-        int totalDepth = parentDepth + 1;
+        ChainResult parentResult = checkCapabilityChain(capEnvelope.issuer, targetScope, siteId, currentDepth + 1, broker, trustRoot, now);
+        int totalDepth = parentResult.depth + 1;
 
         if (totalDepth > Byte.toUnsignedInt(capPayload.maxDelegationDepth())) {
             throw new VeridotException(ErrorCode.DELEGATION_DEPTH_EXCEEDED, capEnvelope.entryId().loggable(), 
                 "Capability delegation depth exceeded: chain depth is " + totalDepth + ", max allowed is " + capPayload.maxDelegationDepth());
         }
 
-        return totalDepth;
+        long minValidUntil = Math.min(parentResult.minValidUntil, capPayload.validUntil());
+        return new ChainResult(totalDepth, minValidUntil);
     }
 
     public void invalidateAuthorization(String issuer, Scope scope) {
