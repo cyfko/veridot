@@ -45,12 +45,16 @@ final class LivenessChecker {
             throw new VeridotException(ErrorCode.LIVENESS_NOT_ESTABLISHED, loggable, "Liveness entry absent");
         }
 
-        // 2. Parse envelope
+        // 2. Parse envelope & TLV Payload (V-10 duplicate check before signature)
         Envelope envelope;
+        LivenessPayload payload;
         try {
             envelope = Envelope.parse(bytes);
+            payload = LivenessPayload.decode(envelope.payload);
+        } catch (VeridotException e) {
+            throw e;
         } catch (Exception e) {
-            throw new VeridotException(ErrorCode.LIVENESS_NOT_ESTABLISHED, loggable, "Malformed liveness envelope", e);
+            throw new VeridotException(ErrorCode.LIVENESS_NOT_ESTABLISHED, loggable, "Malformed liveness envelope or payload", e);
         }
 
         // 3. Verify signature
@@ -75,14 +79,6 @@ final class LivenessChecker {
         }
         if (envelope.version > currentWatermark) {
             watermark.accept(liveEntryId, envelope.version);
-        }
-
-        // 6. Decode payload
-        LivenessPayload payload;
-        try {
-            payload = LivenessPayload.decode(envelope.payload);
-        } catch (Exception e) {
-            throw new VeridotException(ErrorCode.LIVENESS_NOT_ESTABLISHED, loggable, "Malformed liveness payload", e);
         }
 
         // 7. Verify ACTIVE status
