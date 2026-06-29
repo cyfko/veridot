@@ -59,7 +59,7 @@ record KeyEpochPayload(
         try {
             X509EncodedKeySpec spec = new X509EncodedKeySpec(pk);
             KeyFactory kf;
-            if (alg == 0x01) {
+            if (alg == 0x01 || alg == 0x03) {
                 kf = KeyFactory.getInstance("RSA");
             } else if (alg == 0x02) {
                 kf = KeyFactory.getInstance("EC");

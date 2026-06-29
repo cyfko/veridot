@@ -38,6 +38,13 @@ class JwtMaker {
         return this;
     }
 
+    private byte alg = 0x01; // default to 0x01 (RSA)
+
+    public JwtMaker alg(byte alg) {
+        this.alg = alg;
+        return this;
+    }
+
     public JwtMaker expiration(Instant exp) {
         this.expiration = exp;
         return this;
@@ -52,7 +59,13 @@ class JwtMaker {
         if (privateKey == null) throw new IllegalStateException("Private key must be set");
 
         Map<String, Object> header = new HashMap<>();
-        header.put("alg", "RS256");
+        String algStr = "RS256";
+        if (alg == 0x02) {
+            algStr = "ES256";
+        } else if (alg == 0x03) {
+            algStr = "PS256";
+        }
+        header.put("alg", algStr);
         header.put("typ", "JWT");
 
         Map<String, Object> payload = new HashMap<>(claims);
@@ -67,7 +80,7 @@ class JwtMaker {
         String encodedPayload = base64UrlEncode(payloadJson.getBytes(StandardCharsets.UTF_8));
         String unsignedToken = encodedHeader + "." + encodedPayload;
 
-        String signature = signRS256(unsignedToken, privateKey);
+        String signature = signToken(unsignedToken, privateKey, alg);
         return unsignedToken + "." + signature;
     }
 
@@ -75,8 +88,21 @@ class JwtMaker {
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 
-    private static String signRS256(String data, PrivateKey privateKey) throws Exception {
-        Signature signature = Signature.getInstance("SHA256withRSA");
+    private static String signToken(String data, PrivateKey privateKey, byte alg) throws Exception {
+        String jcaAlg = "SHA256withRSA";
+        if (alg == 0x02) {
+            jcaAlg = "SHA256withECDSA";
+        } else if (alg == 0x03) {
+            jcaAlg = "RSASSA-PSS";
+        }
+        Signature signature = Signature.getInstance(jcaAlg);
+        if (alg == 0x03) {
+            try {
+                signature.setParameter(new java.security.spec.PSSParameterSpec(
+                    "SHA-256", "MGF1", java.security.spec.MGF1ParameterSpec.SHA256, 32, 1
+                ));
+            } catch (Exception ignored) {}
+        }
         signature.initSign(privateKey);
         signature.update(data.getBytes(StandardCharsets.UTF_8));
         byte[] signed = signature.sign();

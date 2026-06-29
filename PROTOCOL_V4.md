@@ -225,7 +225,7 @@ or alignment between fields.
 - `entryType` MUST be one of the values registered in §4. An
   unregistered value MUST result in rejection with `V4002`.
 - `scopeLen` MUST be in the range `1–4096`. `keyLen` MUST be in the range
-  `0–4096`. Values outside these ranges MUST result in rejection with `V4003`.
+  `0–4096`. `issuerLen` MUST be in the range `1–4096`. Values outside these ranges MUST result in rejection with `V4003`.
 - `payloadLen` MUST be in the range `0–65536`. Values outside this
   range MUST result in rejection with `V4004`.
 - `flags` bits 1–7, if set, MUST cause rejection with `V4005`
@@ -843,6 +843,11 @@ accept and store non-conforming bytes.
   across restarts; absence of persisted watermarks MUST be treated as
   "no entry previously accepted," which, combined with §8.3, defaults
   to rejection rather than to acceptance.
+- **Integrity**: the persisted watermark snapshot MUST be cryptographically
+  protected (e.g., signed or HMAC'ed using a key derived from the processor's
+  long-term private key) to prevent local tampering and rollback attacks. If
+  the integrity check fails, the snapshot MUST be discarded and the system
+  MUST trigger full reconciliation.
 
 #### 12.3.2 Distributed Consistency
 
@@ -889,6 +894,18 @@ A conforming implementation SHOULD expose:
 - Signatures MUST be validated according to `sigAlg`; a mismatch
   between `sigAlg` and the key type resolved for `issuer` MUST result
   in rejection.
+- All cryptographic signature verifications (both envelope signatures and
+  application JWT signatures) MUST be performed using timing-safe operations
+  (such as constant-time digest comparison or mathematically timing-safe
+  signature schemes like Ed25519) to prevent side-channel timing attacks.
+- Implementations SHOULD prefer Ed25519 (`sigAlg = 0x02`) for all long-term
+  and ephemeral keys, as recommended by NIST SP 800-186, because Ed25519
+  verification is mathematically constant-time and immune to timing attacks.
+- Verifiers MUST extract the header of the application JWT and verify that
+  the `alg` attribute matches the expected JWT algorithm derived from the
+  KEY_EPOCH's `alg` property (e.g., `RS256` for `0x01`, `ES256` for `0x02`,
+  `PS256` for `0x03`). Any mismatch MUST result in token rejection to prevent
+  algorithm confusion attacks.
 - Timestamps (`timestamp`, `asOf`, `validFrom`, `validUntil`) are
   advisory for human-readable auditing and freshness windows; they
   MUST NOT be used as the basis for ordering or conflict-resolution

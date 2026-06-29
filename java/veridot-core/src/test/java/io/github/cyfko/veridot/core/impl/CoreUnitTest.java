@@ -285,7 +285,7 @@ public class CoreUnitTest {
             sv.reconciliationManager.reconcile(
                 Scope.group("group1"), inMemoryBroker, sv.watermarkForTest(),
                 new SignatureVerifier(), trustRoot, new EntryPublisher(), "root-rsa",
-                rsaKeyPair.getPrivate(), (byte) 0x01, null
+                rsaKeyPair.getPrivate(), (byte) 0x01, sv.capabilityVerifier, null
             );
             
             // Trigger reconciliation periodic start so it registers in reconciledScopes
@@ -658,7 +658,7 @@ public class CoreUnitTest {
                     kp.getPrivate(),
                     (byte) 0x01
             )) {
-                String header = Base64.getUrlEncoder().encodeToString("{\"alg\":\"RSASSA-PSS\"}".getBytes());
+                String header = Base64.getUrlEncoder().encodeToString("{\"alg\":\"RS256\"}".getBytes());
                 String jwtPayload = Base64.getUrlEncoder().encodeToString("{\"sub\":\"3:group1:session-drift\",\"data\":\"my-data\"}".getBytes());
                 sig.initSign(kp.getPrivate());
                 sig.update((header + "." + jwtPayload).getBytes());

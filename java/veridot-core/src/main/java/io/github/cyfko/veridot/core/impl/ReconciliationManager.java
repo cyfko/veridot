@@ -31,7 +31,7 @@ final class ReconciliationManager implements AutoCloseable {
     public void reconcile(Scope scope, Broker broker, VersionWatermark watermark,
                           SignatureVerifier sigVerifier, TrustRoot trustRoot,
                           EntryPublisher publisher, String issuerId,
-                          PrivateKey signingKey, byte sigAlg, Runnable saveCallback) {
+                          PrivateKey signingKey, byte sigAlg, CapabilityVerifier capabilityVerifier, Runnable saveCallback) {
         if (scope == null) {
             throw new IllegalArgumentException("Scope cannot be null");
         }
@@ -73,6 +73,9 @@ final class ReconciliationManager implements AutoCloseable {
                 // Reconcile watermark: accept if version > local watermark
                 try {
                     watermark.accept(entryId, envelope.version);
+                    if (entryId.entryType() == EntryType.CAPABILITY && capabilityVerifier != null) {
+                        capabilityVerifier.invalidateAuthorization(envelope.issuer, envelope.scope);
+                    }
                 } catch (VeridotException e) {
                     if (e.getErrorCode() != ErrorCode.STALE_VERSION) {
                         throw e;
@@ -115,6 +118,7 @@ final class ReconciliationManager implements AutoCloseable {
                                              Broker broker, VersionWatermark watermark,
                                              TrustRoot trustRoot, EntryPublisher publisher,
                                              String issuerId, PrivateKey signingKey, byte sigAlg,
+                                             CapabilityVerifier capabilityVerifier,
                                              Runnable saveCallback) {
         stopPeriodicReconciliation(scope);
 
@@ -125,7 +129,7 @@ final class ReconciliationManager implements AutoCloseable {
 
         ScheduledFuture<?> future = scheduler.scheduleWithFixedDelay(() -> {
             try {
-                reconcile(scope, broker, watermark, signatureVerifier, trustRoot, publisher, issuerId, signingKey, sigAlg, saveCallback);
+                reconcile(scope, broker, watermark, signatureVerifier, trustRoot, publisher, issuerId, signingKey, sigAlg, capabilityVerifier, saveCallback);
             } catch (Exception e) {
                 // Log and ignore to allow subsequent reconciliation runs
             }
