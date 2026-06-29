@@ -79,7 +79,12 @@ final class SignatureVerifier {
             if (envelope.sigAlg == 0x01) {
                 sig = Signature.getInstance("SHA256withRSA");
             } else if (envelope.sigAlg == 0x03) {
-                sig = Signature.getInstance("SHA256withRSA/PSS");
+                sig = Signature.getInstance("RSASSA-PSS");
+                try {
+                    sig.setParameter(new java.security.spec.PSSParameterSpec(
+                        "SHA-256", "MGF1", java.security.spec.MGF1ParameterSpec.SHA256, 32, 1
+                    ));
+                } catch (Exception ignored) {}
             } else {
                 sig = Signature.getInstance("Ed25519");
             }

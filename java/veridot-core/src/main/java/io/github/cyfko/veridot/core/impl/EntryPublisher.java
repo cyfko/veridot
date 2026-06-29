@@ -64,7 +64,12 @@ final class EntryPublisher {
             } else if (sigAlg == 0x02) {
                 sig = Signature.getInstance("Ed25519");
             } else if (sigAlg == 0x03) {
-                sig = Signature.getInstance("SHA256withRSA/PSS");
+                sig = Signature.getInstance("RSASSA-PSS");
+                try {
+                    sig.setParameter(new java.security.spec.PSSParameterSpec(
+                        "SHA-256", "MGF1", java.security.spec.MGF1ParameterSpec.SHA256, 32, 1
+                    ));
+                } catch (Exception ignored) {}
             } else {
                 throw new VeridotException(ErrorCode.SIGALG_KEY_MISMATCH, loggable, "Unsupported signature algorithm: " + sigAlg);
             }
