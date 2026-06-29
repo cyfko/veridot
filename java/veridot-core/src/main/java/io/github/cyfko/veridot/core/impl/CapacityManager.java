@@ -7,6 +7,7 @@ import io.github.cyfko.veridot.core.exceptions.VeridotException;
 
 
 
+import io.github.cyfko.veridot.core.Algorithm;
 import java.security.PrivateKey;
 import java.util.List;
 
@@ -23,7 +24,7 @@ final class CapacityManager {
                                  String processorId, Broker broker, TrustRoot trustRoot,
                                  EntryPublisher publisher, VersionWatermark watermark,
                                  LivenessChecker livenessChecker, PrivateKey signingKey,
-                                 byte sigAlg, String issuerId) {
+                                 Algorithm sigAlg, String issuerId) {
         if (groupScope == null) {
             throw new IllegalArgumentException("groupScope cannot be null");
         }

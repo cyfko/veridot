@@ -3,6 +3,7 @@ package io.github.cyfko.veridot.core.impl;
 import io.github.cyfko.veridot.core.PublicKeyTrustRoot;
 import io.github.cyfko.veridot.core.TrustRoot;
 import io.github.cyfko.veridot.core.EvictionPolicy;
+import io.github.cyfko.veridot.core.Algorithm;
 import io.github.cyfko.veridot.core.exceptions.VeridotException;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -149,7 +150,7 @@ public class CoreUnitTest {
         assertEquals(10L, parsed.version);
         assertEquals("root-rsa", parsed.issuer);
         assertArrayEquals(payload, parsed.payload);
-        assertEquals((byte) 0x01, parsed.sigAlg);
+        assertEquals(Algorithm.RSA_SHA256, parsed.sigAlg);
         assertArrayEquals(signature, parsed.signature);
 
         // Verify with signature verifier
@@ -882,5 +883,21 @@ public class CoreUnitTest {
                 sv.verify(jwtTokenStr, s -> s);
             });
         }
+    }
+
+    @Test
+    void testEd25519DefaultAndUnification() throws Exception {
+        // 1. KeyRotationService should prefer Ed25519 by default
+        try (KeyRotationService krs = new KeyRotationService()) {
+            assertEquals(Algorithm.ED25519, krs.snapshot().alg());
+            PublicKey pub = krs.getPublicKey();
+            assertEquals("Ed25519", pub.getAlgorithm());
+        }
+
+        // 2. Algorithm.fromCode mapping
+        assertEquals(Algorithm.RSA_SHA256, Algorithm.fromCode((byte) 0x01));
+        assertEquals(Algorithm.ECDSA_SHA256, Algorithm.fromCode((byte) 0x02));
+        assertEquals(Algorithm.RSA_PSS, Algorithm.fromCode((byte) 0x03));
+        assertEquals(Algorithm.ED25519, Algorithm.fromCode((byte) 0x04));
     }
 }

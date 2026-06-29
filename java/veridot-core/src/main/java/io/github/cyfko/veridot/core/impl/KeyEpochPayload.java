@@ -1,6 +1,7 @@
 package io.github.cyfko.veridot.core.impl;
 
 import io.github.cyfko.veridot.core.exceptions.VeridotException;
+import io.github.cyfko.veridot.core.Algorithm;
 import java.security.KeyFactory;
 import java.security.PublicKey;
 import java.security.spec.X509EncodedKeySpec;
@@ -13,7 +14,7 @@ import java.util.Map;
  * Distributes public key material, algorithm, and temporal validity window.
  */
 record KeyEpochPayload(
-    byte alg,            // tag 0x01: 0x01=RSA-SHA256, 0x02=ECDSA-SHA256 (ephemeral key algorithm)
+    Algorithm alg,        // tag 0x01: Ephemeral key algorithm
     long epochId,        // tag 0x02
     byte[] pk,           // tag 0x03: DER-encoded public key
     long validFrom,      // tag 0x04: milliseconds since epoch
@@ -22,10 +23,15 @@ record KeyEpochPayload(
     String token         // tag 0x07: optional token for indirect mode
 ) {
 
+    @Deprecated
+    public KeyEpochPayload(byte algCode, long epochId, byte[] pk, long validFrom, long validUntil, String site, String token) {
+        this(Algorithm.fromCode(algCode), epochId, pk, validFrom, validUntil, site, token);
+    }
+
     public static KeyEpochPayload decode(byte[] tlvBytes) {
         Map<Byte, byte[]> fields = TlvCodec.parse(tlvBytes);
 
-        byte alg = TlvCodec.readU8(fields, (byte) 0x01, true);
+        Algorithm alg = Algorithm.fromCode(TlvCodec.readU8(fields, (byte) 0x01, true));
         long epochId = TlvCodec.readU64(fields, (byte) 0x02, true);
         byte[] pk = TlvCodec.readBytes(fields, (byte) 0x03, true);
         long validFrom = TlvCodec.readI64(fields, (byte) 0x04, true);
@@ -38,7 +44,7 @@ record KeyEpochPayload(
 
     public byte[] encode() {
         List<TlvCodec.TlvField> fields = new ArrayList<>();
-        fields.add(TlvCodec.u8((byte) 0x01, alg));
+        fields.add(TlvCodec.u8((byte) 0x01, alg.getCode()));
         fields.add(TlvCodec.u64((byte) 0x02, epochId));
         fields.add(TlvCodec.bytes((byte) 0x03, pk));
         fields.add(TlvCodec.i64((byte) 0x04, validFrom));
@@ -58,14 +64,7 @@ record KeyEpochPayload(
     public PublicKey publicKey() {
         try {
             X509EncodedKeySpec spec = new X509EncodedKeySpec(pk);
-            KeyFactory kf;
-            if (alg == 0x01 || alg == 0x03) {
-                kf = KeyFactory.getInstance("RSA");
-            } else if (alg == 0x02) {
-                kf = KeyFactory.getInstance("EC");
-            } else {
-                throw new VeridotException(ErrorCode.SIGALG_KEY_MISMATCH, null, "Unsupported ephemeral key algorithm: " + alg);
-            }
+            KeyFactory kf = KeyFactory.getInstance(alg.getJcaKeyAlg());
             return kf.generatePublic(spec);
         } catch (Exception e) {
             throw new VeridotException(ErrorCode.MALFORMED_PAYLOAD, null, "Failed to reconstruct public key from DER payload", e);

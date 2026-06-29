@@ -1,5 +1,6 @@
 package io.github.cyfko.veridot.core.impl;
 
+import io.github.cyfko.veridot.core.Algorithm;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.nio.charset.StandardCharsets;
@@ -38,9 +39,9 @@ class JwtMaker {
         return this;
     }
 
-    private byte alg = 0x01; // default to 0x01 (RSA)
+    private Algorithm alg = Algorithm.RSA_SHA256; // default to RSA
 
-    public JwtMaker alg(byte alg) {
+    public JwtMaker alg(Algorithm alg) {
         this.alg = alg;
         return this;
     }
@@ -60,10 +61,12 @@ class JwtMaker {
 
         Map<String, Object> header = new HashMap<>();
         String algStr = "RS256";
-        if (alg == 0x02) {
+        if (alg == Algorithm.ECDSA_SHA256) {
             algStr = "ES256";
-        } else if (alg == 0x03) {
+        } else if (alg == Algorithm.RSA_PSS) {
             algStr = "PS256";
+        } else if (alg == Algorithm.ED25519) {
+            algStr = "EdDSA";
         }
         header.put("alg", algStr);
         header.put("typ", "JWT");
@@ -88,15 +91,10 @@ class JwtMaker {
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 
-    private static String signToken(String data, PrivateKey privateKey, byte alg) throws Exception {
-        String jcaAlg = "SHA256withRSA";
-        if (alg == 0x02) {
-            jcaAlg = "SHA256withECDSA";
-        } else if (alg == 0x03) {
-            jcaAlg = "RSASSA-PSS";
-        }
+    private static String signToken(String data, PrivateKey privateKey, Algorithm alg) throws Exception {
+        String jcaAlg = alg.getJcaSignatureAlg();
         Signature signature = Signature.getInstance(jcaAlg);
-        if (alg == 0x03) {
+        if (alg == Algorithm.RSA_PSS) {
             try {
                 signature.setParameter(new java.security.spec.PSSParameterSpec(
                     "SHA-256", "MGF1", java.security.spec.MGF1ParameterSpec.SHA256, 32, 1

@@ -4,6 +4,7 @@ import io.github.cyfko.veridot.core.Broker;
 import io.github.cyfko.veridot.core.TrustRoot;
 import io.github.cyfko.veridot.core.exceptions.VeridotException;
 
+import io.github.cyfko.veridot.core.Algorithm;
 import java.security.PublicKey;
 import java.security.Signature;
 
@@ -136,46 +137,19 @@ final class EntryVerifier {
 
         try {
             PublicKey pk = epoch.publicKey();
-            if (epoch.alg() == 0x01) {
-                // V-01: timing-safe RSA PKCS#1 v1.5 verification using Cipher decryption and MessageDigest.isEqual
-                javax.crypto.Cipher cipher = javax.crypto.Cipher.getInstance("RSA/ECB/PKCS1Padding");
-                cipher.init(javax.crypto.Cipher.DECRYPT_MODE, pk);
-                byte[] decrypted = cipher.doFinal(signatureBytes);
+            Signature sig = Signature.getInstance(epoch.alg().getJcaSignatureAlg());
+            if (epoch.alg() == Algorithm.RSA_PSS) {
+                try {
+                    sig.setParameter(new java.security.spec.PSSParameterSpec(
+                        "SHA-256", "MGF1", java.security.spec.MGF1ParameterSpec.SHA256, 32, 1
+                    ));
+                } catch (Exception ignored) {}
+            }
 
-                // Compute the expected DigestInfo block for SHA-256
-                byte[] prefix = new byte[] {
-                    0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, (byte) 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01, 0x05, 0x00, 0x04, 0x20
-                };
-                java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
-                byte[] digest = md.digest(signedObjectBytes);
-                byte[] expected = new byte[prefix.length + digest.length];
-                System.arraycopy(prefix, 0, expected, 0, prefix.length);
-                System.arraycopy(digest, 0, expected, prefix.length, digest.length);
-
-                if (!java.security.MessageDigest.isEqual(decrypted, expected)) {
-                    throw new VeridotException(ErrorCode.TRUST_RESOLUTION_FAILED, null, "Cryptographic verification of signed object failed");
-                }
-            } else {
-                // Use standard Signature for other algorithms (where ECDSA/Ed25519 are timing-resistant by math/design)
-                Signature sig;
-                if (epoch.alg() == 0x02) {
-                    sig = Signature.getInstance("SHA256withECDSA");
-                } else if (epoch.alg() == 0x03) {
-                    sig = Signature.getInstance("RSASSA-PSS");
-                    try {
-                        sig.setParameter(new java.security.spec.PSSParameterSpec(
-                            "SHA-256", "MGF1", java.security.spec.MGF1ParameterSpec.SHA256, 32, 1
-                        ));
-                    } catch (Exception ignored) {}
-                } else {
-                    throw new VeridotException(ErrorCode.SIGALG_KEY_MISMATCH, null, "Unsupported ephemeral signature algorithm: " + epoch.alg());
-                }
-
-                sig.initVerify(pk);
-                sig.update(signedObjectBytes);
-                if (!sig.verify(signatureBytes)) {
-                    throw new VeridotException(ErrorCode.TRUST_RESOLUTION_FAILED, null, "Cryptographic verification of signed object failed");
-                }
+            sig.initVerify(pk);
+            sig.update(signedObjectBytes);
+            if (!sig.verify(signatureBytes)) {
+                throw new VeridotException(ErrorCode.TRUST_RESOLUTION_FAILED, null, "Cryptographic verification of signed object failed");
             }
         } catch (VeridotException e) {
             throw e;

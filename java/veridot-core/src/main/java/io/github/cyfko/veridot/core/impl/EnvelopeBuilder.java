@@ -1,5 +1,7 @@
 package io.github.cyfko.veridot.core.impl;
 
+import io.github.cyfko.veridot.core.Algorithm;
+
 /**
  * Fluent builder for creating Envelope components before signature application.
  */
@@ -12,7 +14,7 @@ final class EnvelopeBuilder {
     public long timestamp;
     public String issuer;
     public byte[] payload;
-    public byte sigAlg;
+    public Algorithm sigAlg;
 
     public EnvelopeBuilder() {}
 
@@ -56,8 +58,14 @@ final class EnvelopeBuilder {
         return this;
     }
 
-    public EnvelopeBuilder sigAlg(byte sigAlg) {
+    public EnvelopeBuilder sigAlg(Algorithm sigAlg) {
         this.sigAlg = sigAlg;
+        return this;
+    }
+
+    @Deprecated
+    public EnvelopeBuilder sigAlg(byte sigAlgCode) {
+        this.sigAlg = Algorithm.fromCode(sigAlgCode);
         return this;
     }
 }
