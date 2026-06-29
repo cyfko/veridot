@@ -4,6 +4,7 @@ import io.github.cyfko.veridot.core.EvictionPolicy;
 import io.github.cyfko.veridot.core.ConfigScope;
 import io.github.cyfko.veridot.core.InMemoryBroker;
 import io.github.cyfko.veridot.core.PublicKeyTrustRoot;
+import io.github.cyfko.veridot.core.TrustIdentity;
 import io.github.cyfko.veridot.core.exceptions.VeridotException;
 
 
@@ -95,12 +96,8 @@ class ConfigTrustSecurityTest {
     void config_with_unavailable_trust_anchor_falls_back_without_blocking_sign() throws InterruptedException {
         PublicKeyTrustRoot badTrustRoot = new PublicKeyTrustRoot() {
             @Override
-            public PublicKey resolve(String issuer) {
+            public TrustIdentity resolve(String issuer) {
                 throw new VeridotException(ErrorCode.TRANSPORT_UNAVAILABLE, null, "KMS is down");
-            }
-            @Override
-            public boolean isRootIdentity(String issuer) {
-                return false;
             }
         };
 
@@ -190,13 +187,8 @@ class ConfigTrustSecurityTest {
         // Create custom TrustRoot that is not root identity
         PublicKeyTrustRoot authRoot = new PublicKeyTrustRoot() {
             @Override
-            public PublicKey resolve(String issuer) {
-                return trust.longTermKeyPair.getPublic();
-            }
-
-            @Override
-            public boolean isRootIdentity(String issuer) {
-                return false; // Not a root identity, so needs capability to publish config!
+            public TrustIdentity resolve(String issuer) {
+                return new TrustIdentity(trust.longTermKeyPair.getPublic(), false);
             }
         };
 

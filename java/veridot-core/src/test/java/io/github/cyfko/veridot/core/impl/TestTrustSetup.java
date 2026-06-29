@@ -3,6 +3,7 @@ package io.github.cyfko.veridot.core.impl;
 import io.github.cyfko.veridot.core.InMemoryBroker;
 import io.github.cyfko.veridot.core.PublicKeyTrustRoot;
 import io.github.cyfko.veridot.core.TrustRoot;
+import io.github.cyfko.veridot.core.TrustIdentity;
 import io.github.cyfko.veridot.core.exceptions.VeridotException;
 import java.security.*;
 import java.util.HashMap;
@@ -36,17 +37,12 @@ public class TestTrustSetup {
 
             TrustRoot root = new PublicKeyTrustRoot() {
                 @Override
-                public PublicKey resolve(String issuer) {
+                public TrustIdentity resolve(String issuer) {
                     PublicKey pk = keyStore.get(issuer);
                     if (pk == null) {
                         throw new VeridotException(ErrorCode.TRUST_RESOLUTION_FAILED, null, "Unknown signerId: " + issuer);
                     }
-                    return pk;
-                }
-
-                @Override
-                public boolean isRootIdentity(String issuer) {
-                    return keyStore.containsKey(issuer);
+                    return new TrustIdentity(pk, keyStore.containsKey(issuer));
                 }
             };
 

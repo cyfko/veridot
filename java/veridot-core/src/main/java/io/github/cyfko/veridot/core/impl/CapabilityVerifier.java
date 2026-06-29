@@ -2,6 +2,7 @@ package io.github.cyfko.veridot.core.impl;
 
 import io.github.cyfko.veridot.core.Broker;
 import io.github.cyfko.veridot.core.TrustRoot;
+import io.github.cyfko.veridot.core.TrustIdentity;
 import io.github.cyfko.veridot.core.exceptions.VeridotException;
 
 import java.util.Map;
@@ -54,11 +55,6 @@ final class CapabilityVerifier {
 
     private int checkCapabilityChain(String subject, Scope targetScope, String siteId, int currentDepth, 
                                      Broker broker, TrustRoot trustRoot, long now) {
-        // Step 1: Root Identity check (§6.5)
-        if (trustRoot.isRootIdentity(subject)) {
-            return 0; // Root terminates chain at depth 0
-        }
-
         if (currentDepth > 10) {
             throw new VeridotException(ErrorCode.DELEGATION_DEPTH_EXCEEDED, null, 
                 "Delegation chain depth limit exceeded during verification (max 10 hops)");
@@ -99,6 +95,15 @@ final class CapabilityVerifier {
         }
 
         if (capBytes == null) {
+            // Check if subject is a root identity resolvable via TrustRoot (§6.5)
+            try {
+                TrustIdentity identity = trustRoot.resolve(subject);
+                if (identity != null && identity.isRoot()) {
+                    return 0; // Root terminates chain at depth 0
+                }
+            } catch (Exception ignored) {
+                // Not a root identity or resolution failed
+            }
             throw new VeridotException(ErrorCode.CAPABILITY_NOT_FOUND, targetEntryId.loggable(), 
                 "No capability entry found for subject " + subject + " covering scope " + targetScope.value());
         }

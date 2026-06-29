@@ -2,6 +2,7 @@ package io.github.cyfko.veridot.core.impl;
 
 import io.github.cyfko.veridot.core.InMemoryBroker;
 import io.github.cyfko.veridot.core.exceptions.VeridotException;
+import io.github.cyfko.veridot.core.TrustIdentity;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -144,12 +145,9 @@ class CapabilityCacheTest {
         
         io.github.cyfko.veridot.core.TrustRoot trustRoot = new io.github.cyfko.veridot.core.PublicKeyTrustRoot() {
             @Override
-            public java.security.PublicKey resolve(String issuer) {
-                return keyStore.get(issuer);
-            }
-            @Override
-            public boolean isRootIdentity(String issuer) {
-                return false; // Neither is root, so we must follow the chain until depth limit!
+            public TrustIdentity resolve(String issuer) {
+                java.security.PublicKey pk = keyStore.get(issuer);
+                return pk != null ? new TrustIdentity(pk, false) : null;
             }
         };
 
@@ -209,12 +207,9 @@ class CapabilityCacheTest {
         
         io.github.cyfko.veridot.core.TrustRoot trustRoot = new io.github.cyfko.veridot.core.PublicKeyTrustRoot() {
             @Override
-            public java.security.PublicKey resolve(String issuer) {
-                return keyStore.get(issuer);
-            }
-            @Override
-            public boolean isRootIdentity(String issuer) {
-                return "root".equals(issuer);
+            public TrustIdentity resolve(String issuer) {
+                java.security.PublicKey pk = keyStore.get(issuer);
+                return pk != null ? new TrustIdentity(pk, "root".equals(issuer)) : null;
             }
         };
 

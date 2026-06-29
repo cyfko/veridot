@@ -2,6 +2,7 @@ package io.github.cyfko.veridot.core.impl;
 
 import io.github.cyfko.veridot.core.DelegatedTrustRoot;
 import io.github.cyfko.veridot.core.TrustRoot;
+import io.github.cyfko.veridot.core.TrustIdentity;
 import io.github.cyfko.veridot.core.Algorithm;
 import io.github.cyfko.veridot.core.exceptions.VeridotException;
 import java.security.PublicKey;
@@ -42,15 +43,15 @@ final class SignatureVerifier {
         // 2. Resolve PublicKey via PublicKeyTrustRoot
         PublicKey publicKey;
         try {
-            publicKey = trustRoot.resolve(envelope.issuer);
+            TrustIdentity identity = trustRoot.resolve(envelope.issuer);
+            if (identity == null) {
+                throw new VeridotException(ErrorCode.TRUST_RESOLUTION_FAILED, envelope.entryId().loggable(), "Resolved identity is null");
+            }
+            publicKey = identity.publicKey();
         } catch (VeridotException e) {
             throw e;
         } catch (Exception e) {
             throw new VeridotException(ErrorCode.TRUST_RESOLUTION_FAILED, envelope.entryId().loggable(), "TrustRoot resolution failed", e);
-        }
-
-        if (publicKey == null) {
-            throw new VeridotException(ErrorCode.TRUST_RESOLUTION_FAILED, envelope.entryId().loggable(), "Resolved public key is null");
         }
 
         // 3. Verify key type consistency and constraints

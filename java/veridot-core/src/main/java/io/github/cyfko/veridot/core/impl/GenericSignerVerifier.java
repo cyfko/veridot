@@ -490,9 +490,7 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
 
         try {
             // Verify our own capability before publishing config (§7.4)
-            if (!trustRoot.isRootIdentity(signerId)) {
-                capabilityVerifier.assertAuthorized(signerId, targetScope, broker, trustRoot);
-            }
+            capabilityVerifier.assertAuthorized(signerId, targetScope, broker, trustRoot);
 
             entryPublisher.publish(EntryType.CONFIG, targetScope, "", version, payload.encode(), longTermPrivateKey, envelopeSigAlg, signerId, broker)
                           .join();
