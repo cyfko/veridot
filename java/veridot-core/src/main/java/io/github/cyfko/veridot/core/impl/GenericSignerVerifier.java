@@ -542,4 +542,19 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             }
         }
     }
+
+    @Override
+    public long getReconciliationStalenessMs(String scope) {
+        if (scope == null) return -1L;
+        try {
+            Scope parsedScope = Scope.parse(scope);
+            long last = reconciliationManager.getLastReconciled(parsedScope);
+            if (last <= 0) {
+                return -1L;
+            }
+            return System.currentTimeMillis() - last;
+        } catch (Exception e) {
+            return -1L;
+        }
+    }
 }

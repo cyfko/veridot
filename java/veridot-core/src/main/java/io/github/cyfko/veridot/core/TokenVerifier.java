@@ -83,4 +83,16 @@ public interface TokenVerifier {
      */
     <T> VerifiedData<T> verify(String token, Function<String, T> deserializer)
             throws BrokerExtractionException, DataDeserializationException;
+
+    /**
+     * Evaluates the staleness of reconciliation for a given scope.
+     *
+     * @param scope the raw scope string (e.g. "group:g1", "site:s1", "global")
+     * @return the delay in milliseconds since the last successful reconciliation,
+     *         or -1 if the scope has never been reconciled or periodic reconciliation
+     *         is not active for it.
+     */
+    default long getReconciliationStalenessMs(String scope) {
+        return -1L;
+    }
 }
