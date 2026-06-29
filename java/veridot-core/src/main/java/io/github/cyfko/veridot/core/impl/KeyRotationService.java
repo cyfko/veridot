@@ -8,7 +8,7 @@ import java.util.logging.Logger;
 /**
  * Manages the generation, atomic thread-safe access, and background rotation of ephemeral signing key pairs (F-04).
  */
-public final class KeyRotationService {
+public final class KeyRotationService implements AutoCloseable {
     private static final Logger logger = Logger.getLogger(KeyRotationService.class.getName());
 
     private final ScheduledExecutorService scheduler;

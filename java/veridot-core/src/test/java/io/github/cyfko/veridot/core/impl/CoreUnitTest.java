@@ -900,4 +900,25 @@ public class CoreUnitTest {
         assertEquals(Algorithm.RSA_PSS, Algorithm.fromCode((byte) 0x03));
         assertEquals(Algorithm.ED25519, Algorithm.fromCode((byte) 0x04));
     }
+
+    @Test
+    void testJwtVerifierAlgHeaderCoherence() throws Exception {
+        // Build a JWT token with JwtMaker using RSA-SHA256 (RS256)
+        String token = JwtMaker.builder()
+            .subject("test-sub")
+            .claim("data", "hello")
+            .signWith(rsaKeyPair.getPrivate())
+            .alg(Algorithm.RSA_SHA256)
+            .compact();
+
+        // 1. Verifying with correct algorithm (RSA_SHA256) should succeed
+        JwtVerifier verifier = JwtVerifier.verifyWith(rsaKeyPair.getPublic(), Algorithm.RSA_SHA256);
+        Map<String, Object> claims = verifier.parseSignedClaims(token);
+        assertEquals("test-sub", claims.get("sub"));
+        assertEquals("hello", claims.get("data"));
+
+        // 2. Verifying with incorrect expected algorithm (ECDSA_SHA256) should fail with SecurityException due to mismatch
+        JwtVerifier badVerifier = JwtVerifier.verifyWith(rsaKeyPair.getPublic(), Algorithm.ECDSA_SHA256);
+        assertThrows(SecurityException.class, () -> badVerifier.parseSignedClaims(token));
+    }
 }
