@@ -721,6 +721,53 @@ public class CoreUnitTest {
     }
 
     @Test
+    public void testTooLongIssuerRejection() throws Exception {
+        byte[] payloadBytes = new KeyEpochPayload((byte) 0x01, 1L, rsaKeyPair.getPublic().getEncoded(), System.currentTimeMillis(), System.currentTimeMillis() + 100000L, "site1", null).encode();
+        
+        char[] arr = new char[4097];
+        Arrays.fill(arr, 'a');
+        String longIssuer = new String(arr);
+
+        EnvelopeBuilder envBuilder = new EnvelopeBuilder()
+            .entryType(EntryType.KEY_EPOCH)
+            .flags((byte) 0x00)
+            .scope(Scope.group("group1"))
+            .key("session1")
+            .version(1L)
+            .timestamp(System.currentTimeMillis())
+            .issuer(longIssuer) // Too long issuer
+            .payload(payloadBytes)
+            .sigAlg((byte) 0x01);
+
+        Envelope env = new Envelope(
+            Envelope.PROTO_VERSION,
+            EntryType.KEY_EPOCH,
+            (byte) 0x00,
+            Scope.group("group1"),
+            "session1",
+            1L,
+            System.currentTimeMillis(),
+            longIssuer, // Too long issuer
+            payloadBytes,
+            (byte) 0x01,
+            null
+        );
+
+        Signature sig = Signature.getInstance("SHA256withRSA");
+        sig.initSign(rsaKeyPair.getPrivate());
+        sig.update(env.canonicalSigningBytes());
+        byte[] signature = sig.sign();
+
+        byte[] encodedEnv = Envelope.encode(envBuilder, signature);
+        
+        // Decoding should fail due to too long issuer string
+        VeridotException ex = assertThrows(VeridotException.class, () -> {
+            Envelope.parse(encodedEnv);
+        });
+        assertEquals(ErrorCode.INVALID_IDENTIFIER_LENGTH, ex.getErrorCode());
+    }
+
+    @Test
     public void testWatermarkHmacIntegrity() throws Exception {
         java.io.File tempFile = java.io.File.createTempFile("veridot-watermarks", ".json");
         tempFile.deleteOnExit();
