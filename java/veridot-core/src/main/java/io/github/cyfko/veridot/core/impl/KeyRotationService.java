@@ -1,5 +1,6 @@
 package io.github.cyfko.veridot.core.impl;
 
+import io.github.cyfko.veridot.core.Algorithm;
 import java.security.*;
 import java.util.concurrent.*;
 import java.util.logging.Logger;
@@ -11,18 +12,23 @@ public final class KeyRotationService {
     private static final Logger logger = Logger.getLogger(KeyRotationService.class.getName());
 
     private final ScheduledExecutorService scheduler;
-    private final byte alg; // 0x01 = RSA-SHA256, 0x02 = ECDSA-SHA256 (ephemeral key type)
+    private final Algorithm alg; // Ephemeral key type
     private volatile KeySnapshot currentSnapshot;
 
-    public record KeySnapshot(PrivateKey privateKey, PublicKey publicKey, byte alg) {}
+    public record KeySnapshot(PrivateKey privateKey, PublicKey publicKey, Algorithm alg) {}
 
     public KeyRotationService() {
-        this((byte) 0x01); // Default to RSA
+        this(Algorithm.ED25519); // Default to Ed25519 as per §13.1
     }
 
-    public KeyRotationService(byte alg) {
-        if (alg != 0x01 && alg != 0x02 && alg != 0x03) {
-            throw new IllegalArgumentException("Unsupported ephemeral key algorithm: " + alg);
+    @Deprecated
+    public KeyRotationService(byte algCode) {
+        this(Algorithm.fromCode(algCode));
+    }
+
+    public KeyRotationService(Algorithm alg) {
+        if (alg == null) {
+            throw new IllegalArgumentException("Algorithm cannot be null");
         }
         this.alg = alg;
         generateKeyPair();
@@ -37,12 +43,10 @@ public final class KeyRotationService {
 
     private void generateKeyPair() {
         try {
-            KeyPairGenerator gen;
-            if (alg == 0x01 || alg == 0x03) {
-                gen = KeyPairGenerator.getInstance("RSA");
+            KeyPairGenerator gen = KeyPairGenerator.getInstance(alg.getJcaKeyAlg());
+            if (alg == Algorithm.RSA_SHA256 || alg == Algorithm.RSA_PSS) {
                 gen.initialize(Config.ASYMMETRIC_KEY_SIZE, new SecureRandom());
-            } else {
-                gen = KeyPairGenerator.getInstance("EC");
+            } else if (alg == Algorithm.ECDSA_SHA256) {
                 gen.initialize(256, new SecureRandom()); // Standard secp256r1 curve
             }
 
@@ -50,7 +54,7 @@ public final class KeyRotationService {
             // F-04: capture atomically as a single record
             this.currentSnapshot = new KeySnapshot(keyPair.getPrivate(), keyPair.getPublic(), alg);
 
-            logger.info("Ephemeral key pair rotated successfully. Algorithm: " + (alg == 0x02 ? "EC" : "RSA") 
+            logger.info("Ephemeral key pair rotated successfully. Algorithm: " + alg.name() 
                         + " on thread: " + Thread.currentThread().getName());
         } catch (NoSuchAlgorithmException e) {
             logger.severe("CRITICAL: Failed to generate ephemeral key pair: " + e.getMessage());

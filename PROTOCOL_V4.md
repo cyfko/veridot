@@ -198,7 +198,7 @@ Every Veridot V4 entry is encoded as a single binary envelope:
 | `magic` | 2 bytes | fixed | `0x56 0x44` (`"VD"`) — protocol marker |
 | `protoVersion` | 1 byte | u8 | MUST be `0x04` |
 | `entryType` | 1 byte | u8 | One of the registered entry types (§4) |
-| `flags` | 1 byte | bitfield | bit 0: `COMPACT_SIG` — MUST be `1` if and only if `sigAlg = 0x02` (Ed25519), and `0` if `sigAlg = 0x01` (RSA-SHA256) or `sigAlg = 0x03` (RSA-PSS); a mismatch between `flags` bit 0 and `sigAlg` MUST result in rejection with `V4005`; bits 1–7: reserved, MUST be zero |
+| `flags` | 1 byte | bitfield | bit 0: `COMPACT_SIG` — MUST be `1` if and only if `sigAlg = 0x04` (Ed25519), and `0` if `sigAlg = 0x01` (RSA-SHA256) or `sigAlg = 0x03` (RSA-PSS); a mismatch between `flags` bit 0 and `sigAlg` MUST result in rejection with `V4005`; bits 1–7: reserved, MUST be zero |
 | `scopeLen` | 2 bytes | u16 | Length in bytes of `scope` |
 | `scope` | variable | UTF-8 | Typed scope identifier (§3.5) |
 | `keyLen` | 2 bytes | u16 | Length in bytes of `key` |
@@ -209,7 +209,7 @@ Every Veridot V4 entry is encoded as a single binary envelope:
 | `issuer` | variable | UTF-8 | Long-term identifier resolved by the TrustRoot |
 | `payloadLen` | 4 bytes | u32, big-endian | Length in bytes of `payload` |
 | `payload` | variable | binary TLV | Entry-type-specific fields (§5–§9) |
-| `sigAlg` | 1 byte | u8 | `0x01` = RSA-SHA256, `0x02` = Ed25519, `0x03` = RSA-PSS |
+| `sigAlg` | 1 byte | u8 | `0x01` = RSA-SHA256, `0x02` = ECDSA-SHA256, `0x03` = RSA-PSS, `0x04` = Ed25519 |
 | `sigLen` | 2 bytes | u16 | Length in bytes of `signature` |
 | `signature` | variable | binary | Signature over the canonical bytes (§3.4) |
 
@@ -349,7 +349,7 @@ following fields (encoding per §4.1):
 
 | FieldTag | Field | Type | Required | Description |
 |---|---|---|:---:|---|
-| `0x01` | `alg` | enum(u8) | REQUIRED | `0x01` = RSA-SHA256, `0x02` = ECDSA-SHA256, `0x03` = RSA-PSS |
+| `0x01` | `alg` | enum(u8) | REQUIRED | `0x01` = RSA-SHA256, `0x02` = ECDSA-SHA256, `0x03` = RSA-PSS, `0x04` = Ed25519 |
 | `0x02` | `epochId` | u64 | REQUIRED | Monotonic identifier of this key epoch, scoped to `(scope, key)` |
 | `0x03` | `pk` | bytes | REQUIRED | Ephemeral public key, DER-encoded |
 | `0x04` | `validFrom` | i64 | REQUIRED | Epoch validity start, milliseconds since epoch |
@@ -898,7 +898,7 @@ A conforming implementation SHOULD expose:
   application JWT signatures) MUST be performed using timing-safe operations
   (such as constant-time digest comparison or mathematically timing-safe
   signature schemes like Ed25519) to prevent side-channel timing attacks.
-- Implementations SHOULD prefer Ed25519 (`sigAlg = 0x02`) for all long-term
+- Implementations SHOULD prefer Ed25519 (`sigAlg = 0x04`) for all long-term
   and ephemeral keys, as recommended by NIST SP 800-186, because Ed25519
   verification is mathematically constant-time and immune to timing attacks.
 - Verifiers MUST extract the header of the application JWT and verify that
@@ -1030,7 +1030,7 @@ IssuerLen       := 2*OCTET                  ; u16, big-endian
 Issuer          := *identifier-char          ; length = IssuerLen
 PayloadLen      := 4*OCTET                  ; u32, big-endian
 Payload         := *TLVField                ; entry-type-specific, see §5-§9
-SigAlg          := 0x01 / 0x02 / 0x03
+SigAlg          := 0x01 / 0x02 / 0x03 / 0x04
 SigLen          := 2*OCTET                  ; u16, big-endian
 Signature       := *OCTET                   ; length = SigLen
 

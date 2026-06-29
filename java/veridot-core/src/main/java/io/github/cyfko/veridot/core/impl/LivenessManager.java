@@ -3,6 +3,7 @@ package io.github.cyfko.veridot.core.impl;
 import io.github.cyfko.veridot.core.Broker;
 import io.github.cyfko.veridot.core.exceptions.VeridotException;
 
+import io.github.cyfko.veridot.core.Algorithm;
 import java.security.PrivateKey;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -18,12 +19,12 @@ final class LivenessManager {
     private final EntryPublisher publisher;
     private final Broker broker;
     private final PrivateKey signingKey;
-    private final byte sigAlg;
+    private final Algorithm sigAlg;
     private final String issuerId;
 
     private final Map<EntryId, ScheduledFuture<?>> renewalTasks = new ConcurrentHashMap<>();
 
-    public LivenessManager(EntryPublisher publisher, Broker broker, PrivateKey signingKey, byte sigAlg, String issuerId) {
+    public LivenessManager(EntryPublisher publisher, Broker broker, PrivateKey signingKey, Algorithm sigAlg, String issuerId) {
         this.publisher = publisher;
         this.broker = broker;
         this.signingKey = signingKey;

@@ -28,7 +28,7 @@ graph TD
 To rotate a long-term root identity key without downtime, follow this four-phase protocol:
 
 ### Phase 1: Key Generation & Dual Resolution
-1. **Generate new key pair**: Create a new root key pair (RSA-PSS `0x03` or Ed25519 `0x02`) in your KMS/Vault.
+1. **Generate new key pair**: Create a new root key pair (RSA-PSS `0x03` or Ed25519 `0x04`) in your KMS/Vault.
 2. **Configure TrustRoot dual-trust**: Update your `TrustRoot` implementation to resolve and trust **both** the old root public key and the new root public key.
 3. **Propagate configurations**: Deploy this trust update to all verifier microservices. Verifiers will now accept envelopes signed by either key.
 

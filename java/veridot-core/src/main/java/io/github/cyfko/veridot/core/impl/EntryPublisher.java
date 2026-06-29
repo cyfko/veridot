@@ -2,6 +2,7 @@ package io.github.cyfko.veridot.core.impl;
 
 import io.github.cyfko.veridot.core.Broker;
 import io.github.cyfko.veridot.core.exceptions.VeridotException;
+import io.github.cyfko.veridot.core.Algorithm;
 import java.security.PrivateKey;
 import java.security.Signature;
 import java.util.concurrent.CompletableFuture;
@@ -16,7 +17,7 @@ final class EntryPublisher {
      */
     public CompletableFuture<Void> publish(EntryType type, Scope scope, String key,
                                            long version, byte[] payload,
-                                           PrivateKey signingKey, byte sigAlg,
+                                           PrivateKey signingKey, Algorithm sigAlg,
                                            String issuer, Broker broker) {
         if (type == null) {
             throw new IllegalArgumentException("EntryType cannot be null");
@@ -37,7 +38,7 @@ final class EntryPublisher {
         EntryId entryId = new EntryId(scope, type, key);
         String loggable = entryId.loggable();
 
-        byte flags = (byte) (sigAlg == 0x02 ? 0x01 : 0x00);
+        byte flags = (byte) (sigAlg == Algorithm.ED25519 ? 0x01 : 0x00);
 
         EnvelopeBuilder builder = new EnvelopeBuilder()
                 .entryType(type)
@@ -58,20 +59,13 @@ final class EntryPublisher {
 
         byte[] signatureBytes;
         try {
-            Signature sig;
-            if (sigAlg == 0x01) {
-                sig = Signature.getInstance("SHA256withRSA");
-            } else if (sigAlg == 0x02) {
-                sig = Signature.getInstance("Ed25519");
-            } else if (sigAlg == 0x03) {
-                sig = Signature.getInstance("RSASSA-PSS");
+            Signature sig = Signature.getInstance(sigAlg.getJcaSignatureAlg());
+            if (sigAlg == Algorithm.RSA_PSS) {
                 try {
                     sig.setParameter(new java.security.spec.PSSParameterSpec(
                         "SHA-256", "MGF1", java.security.spec.MGF1ParameterSpec.SHA256, 32, 1
                     ));
                 } catch (Exception ignored) {}
-            } else {
-                throw new VeridotException(ErrorCode.SIGALG_KEY_MISMATCH, loggable, "Unsupported signature algorithm: " + sigAlg);
             }
             sig.initSign(signingKey);
             sig.update(tempEnvelope.canonicalSigningBytes());
@@ -94,5 +88,13 @@ final class EntryPublisher {
 
         // Put to broker asynchronously
         return broker.put(storageKey, envelopeBytes);
+    }
+
+    @Deprecated
+    public CompletableFuture<Void> publish(EntryType type, Scope scope, String key,
+                                           long version, byte[] payload,
+                                           PrivateKey signingKey, byte sigAlgCode,
+                                           String issuer, Broker broker) {
+        return publish(type, scope, key, version, payload, signingKey, Algorithm.fromCode(sigAlgCode), issuer, broker);
     }
 }

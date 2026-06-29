@@ -2,6 +2,7 @@ package io.github.cyfko.veridot.core.impl;
 
 import io.github.cyfko.veridot.core.Broker;
 import io.github.cyfko.veridot.core.TrustRoot;
+import io.github.cyfko.veridot.core.Algorithm;
 import io.github.cyfko.veridot.core.exceptions.VeridotException;
 
 import java.security.PrivateKey;
@@ -31,7 +32,7 @@ final class ReconciliationManager implements AutoCloseable {
     public void reconcile(Scope scope, Broker broker, VersionWatermark watermark,
                           SignatureVerifier sigVerifier, TrustRoot trustRoot,
                           EntryPublisher publisher, String issuerId,
-                          PrivateKey signingKey, byte sigAlg, CapabilityVerifier capabilityVerifier, Runnable saveCallback) {
+                          PrivateKey signingKey, Algorithm sigAlg, CapabilityVerifier capabilityVerifier, Runnable saveCallback) {
         if (scope == null) {
             throw new IllegalArgumentException("Scope cannot be null");
         }
@@ -117,7 +118,7 @@ final class ReconciliationManager implements AutoCloseable {
                                              ScheduledExecutorService scheduler,
                                              Broker broker, VersionWatermark watermark,
                                              TrustRoot trustRoot, EntryPublisher publisher,
-                                             String issuerId, PrivateKey signingKey, byte sigAlg,
+                                             String issuerId, PrivateKey signingKey, Algorithm sigAlg,
                                              CapabilityVerifier capabilityVerifier,
                                              Runnable saveCallback) {
         stopPeriodicReconciliation(scope);
@@ -160,5 +161,24 @@ final class ReconciliationManager implements AutoCloseable {
     // Visible for testing
     void setLastReconciledForTest(Scope scope, long timestamp) {
         lastReconciled.put(scope, timestamp);
+    }
+
+    @Deprecated
+    public void reconcile(Scope scope, Broker broker, VersionWatermark watermark,
+                          SignatureVerifier sigVerifier, TrustRoot trustRoot,
+                          EntryPublisher publisher, String issuerId,
+                          PrivateKey signingKey, byte sigAlgCode, CapabilityVerifier capabilityVerifier, Runnable saveCallback) {
+        reconcile(scope, broker, watermark, sigVerifier, trustRoot, publisher, issuerId, signingKey, Algorithm.fromCode(sigAlgCode), capabilityVerifier, saveCallback);
+    }
+
+    @Deprecated
+    public void startPeriodicReconciliation(Scope scope, Duration maxInterval,
+                                             ScheduledExecutorService scheduler,
+                                             Broker broker, VersionWatermark watermark,
+                                             TrustRoot trustRoot, EntryPublisher publisher,
+                                             String issuerId, PrivateKey signingKey, byte sigAlgCode,
+                                             CapabilityVerifier capabilityVerifier,
+                                             Runnable saveCallback) {
+        startPeriodicReconciliation(scope, maxInterval, scheduler, broker, watermark, trustRoot, publisher, issuerId, signingKey, Algorithm.fromCode(sigAlgCode), capabilityVerifier, saveCallback);
     }
 }

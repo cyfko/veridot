@@ -3,6 +3,7 @@ package io.github.cyfko.veridot.core.impl;
 import java.util.Set;
 import java.util.HashSet;
 import java.util.Collections;
+import io.github.cyfko.veridot.core.Algorithm;
 
 /// Provide defaults to some constants.
 abstract class ConstantDefault {
@@ -124,9 +125,8 @@ public abstract class Config {
 
     /**
      * Allowed signature algorithms for envelopes.
-     * Contains 0x01 (RSA-SHA256) and/or 0x02 (Ed25519).
      */
-    public static final Set<Byte> ALLOWED_SIG_ALGS;
+    public static final Set<Algorithm> ALLOWED_SIG_ALGS;
 
     /**
      * Minimum allowed RSA public key size in bits.
@@ -286,18 +286,20 @@ public abstract class Config {
         }
         MIN_RSA_KEY_LENGTH = parsedMinRsa;
 
-        Set<Byte> parsedAlgs = new HashSet<>();
+        Set<Algorithm> parsedAlgs = new HashSet<>();
         final var allowedAlgsVal = System.getenv(Env.ALLOWED_SIG_ALGS);
         if (allowedAlgsVal != null && !allowedAlgsVal.isBlank()) {
             String[] parts = allowedAlgsVal.split(",");
             for (String part : parts) {
                 String clean = part.trim().toUpperCase();
                 if (clean.equals("RSA") || clean.equals("1") || clean.equals("0X01")) {
-                    parsedAlgs.add((byte) 0x01);
-                } else if (clean.equals("ED25519") || clean.equals("EDDSA") || clean.equals("2") || clean.equals("0X02")) {
-                    parsedAlgs.add((byte) 0x02);
+                    parsedAlgs.add(Algorithm.RSA_SHA256);
+                } else if (clean.equals("ECDSA") || clean.equals("ECDSA-SHA256") || clean.equals("2") || clean.equals("0X02")) {
+                    parsedAlgs.add(Algorithm.ECDSA_SHA256);
                 } else if (clean.equals("RSA-PSS") || clean.equals("3") || clean.equals("0X03")) {
-                    parsedAlgs.add((byte) 0x03);
+                    parsedAlgs.add(Algorithm.RSA_PSS);
+                } else if (clean.equals("ED25519") || clean.equals("EDDSA") || clean.equals("4") || clean.equals("0X04")) {
+                    parsedAlgs.add(Algorithm.ED25519);
                 } else {
                     System.getLogger(Config.class.getName()).log(
                             System.Logger.Level.WARNING,
@@ -306,9 +308,10 @@ public abstract class Config {
             }
         }
         if (parsedAlgs.isEmpty()) {
-            parsedAlgs.add((byte) 0x01);
-            parsedAlgs.add((byte) 0x02);
-            parsedAlgs.add((byte) 0x03);
+            parsedAlgs.add(Algorithm.RSA_SHA256);
+            parsedAlgs.add(Algorithm.ECDSA_SHA256);
+            parsedAlgs.add(Algorithm.RSA_PSS);
+            parsedAlgs.add(Algorithm.ED25519);
         }
         ALLOWED_SIG_ALGS = Collections.unmodifiableSet(parsedAlgs);
 

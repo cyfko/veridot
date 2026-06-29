@@ -4,6 +4,7 @@ import io.github.cyfko.veridot.core.Broker;
 import io.github.cyfko.veridot.core.TrustRoot;
 import io.github.cyfko.veridot.core.exceptions.VeridotException;
 
+import io.github.cyfko.veridot.core.Algorithm;
 import java.security.PrivateKey;
 
 /**
@@ -21,7 +22,7 @@ final class FenceManager {
      */
     public FenceGrant acquire(Scope scope, String grantedTo, long validUntilMillis,
                               EntryPublisher publisher, Broker broker, TrustRoot trustRoot,
-                              VersionWatermark watermark, PrivateKey signingKey, byte sigAlg, String issuerId) {
+                              VersionWatermark watermark, PrivateKey signingKey, Algorithm sigAlg, String issuerId) {
         EntryId fenceEntryId = new EntryId(scope, EntryType.FENCE, "");
         String loggable = fenceEntryId.loggable();
 

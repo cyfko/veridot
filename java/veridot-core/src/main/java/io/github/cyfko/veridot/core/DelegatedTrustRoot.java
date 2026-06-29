@@ -11,8 +11,13 @@ public non-sealed interface DelegatedTrustRoot extends TrustRoot {
      * @param issuer the identity of the signer
      * @param data the canonical bytes that were signed
      * @param signature the raw signature bytes
-     * @param sigAlg the signature algorithm (0x01 = RSA-SHA256, 0x02 = Ed25519, 0x03 = RSA-PSS)
+     * @param sigAlg the signature algorithm
      * @return true if signature is valid, false otherwise
      */
-    boolean verifySignature(String issuer, byte[] data, byte[] signature, byte sigAlg);
+    boolean verifySignature(String issuer, byte[] data, byte[] signature, Algorithm sigAlg);
+
+    @Deprecated
+    default boolean verifySignature(String issuer, byte[] data, byte[] signature, byte sigAlgCode) {
+        return verifySignature(issuer, data, signature, Algorithm.fromCode(sigAlgCode));
+    }
 }

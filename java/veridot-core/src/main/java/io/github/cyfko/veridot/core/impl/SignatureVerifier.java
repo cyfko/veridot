@@ -2,6 +2,7 @@ package io.github.cyfko.veridot.core.impl;
 
 import io.github.cyfko.veridot.core.DelegatedTrustRoot;
 import io.github.cyfko.veridot.core.TrustRoot;
+import io.github.cyfko.veridot.core.Algorithm;
 import io.github.cyfko.veridot.core.exceptions.VeridotException;
 import java.security.PublicKey;
 import java.security.Signature;
@@ -54,7 +55,7 @@ final class SignatureVerifier {
 
         // 3. Verify key type consistency and constraints
         String keyAlg = publicKey.getAlgorithm();
-        if (envelope.sigAlg == 0x01 || envelope.sigAlg == 0x03) { // RSA-SHA256 or RSA-PSS
+        if (envelope.sigAlg.getJcaKeyAlg().equalsIgnoreCase("RSA")) {
             if (!"RSA".equalsIgnoreCase(keyAlg)) {
                 throw new VeridotException(ErrorCode.SIGALG_KEY_MISMATCH, envelope.entryId().loggable(), "RSA signature requires an RSA key, got: " + keyAlg);
             }
@@ -65,9 +66,13 @@ final class SignatureVerifier {
                         "RSA key size must be at least " + Config.MIN_RSA_KEY_LENGTH + " bits, got: " + keyLen);
                 }
             }
-        } else if (envelope.sigAlg == 0x02) { // Ed25519
+        } else if (envelope.sigAlg == Algorithm.ED25519) {
             if (!"Ed25519".equalsIgnoreCase(keyAlg) && !"EdDSA".equalsIgnoreCase(keyAlg)) {
                 throw new VeridotException(ErrorCode.SIGALG_KEY_MISMATCH, envelope.entryId().loggable(), "Ed25519 signature requires Ed25519 key, got: " + keyAlg);
+            }
+        } else if (envelope.sigAlg == Algorithm.ECDSA_SHA256) {
+            if (!"EC".equalsIgnoreCase(keyAlg)) {
+                throw new VeridotException(ErrorCode.SIGALG_KEY_MISMATCH, envelope.entryId().loggable(), "ECDSA signature requires an EC key, got: " + keyAlg);
             }
         } else {
             throw new VeridotException(ErrorCode.SIGALG_KEY_MISMATCH, envelope.entryId().loggable(), "Unknown signature algorithm: " + envelope.sigAlg);
@@ -75,18 +80,13 @@ final class SignatureVerifier {
 
         // 4. Verify cryptographic signature
         try {
-            Signature sig;
-            if (envelope.sigAlg == 0x01) {
-                sig = Signature.getInstance("SHA256withRSA");
-            } else if (envelope.sigAlg == 0x03) {
-                sig = Signature.getInstance("RSASSA-PSS");
+            Signature sig = Signature.getInstance(envelope.sigAlg.getJcaSignatureAlg());
+            if (envelope.sigAlg == Algorithm.RSA_PSS) {
                 try {
                     sig.setParameter(new java.security.spec.PSSParameterSpec(
                         "SHA-256", "MGF1", java.security.spec.MGF1ParameterSpec.SHA256, 32, 1
                     ));
                 } catch (Exception ignored) {}
-            } else {
-                sig = Signature.getInstance("Ed25519");
             }
             sig.initVerify(publicKey);
             sig.update(envelope.canonicalSigningBytes());

@@ -1,6 +1,7 @@
 package io.github.cyfko.veridot.core.impl;
 
 import io.github.cyfko.veridot.core.exceptions.VeridotException;
+import io.github.cyfko.veridot.core.Algorithm;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 
@@ -21,11 +22,11 @@ public final class Envelope {
     public final long timestamp;
     public final String issuer;
     public final byte[] payload;
-    public final byte sigAlg;
+    public final Algorithm sigAlg;
     public final byte[] signature;
 
     public Envelope(byte protoVersion, EntryType entryType, byte flags, Scope scope, String key,
-                    long version, long timestamp, String issuer, byte[] payload, byte sigAlg, byte[] signature) {
+                    long version, long timestamp, String issuer, byte[] payload, Algorithm sigAlg, byte[] signature) {
         this.protoVersion = protoVersion;
         this.entryType = entryType;
         this.flags = flags;
@@ -37,6 +38,12 @@ public final class Envelope {
         this.payload = payload != null ? payload : new byte[0];
         this.sigAlg = sigAlg;
         this.signature = signature != null ? signature : new byte[0];
+    }
+
+    @Deprecated
+    public Envelope(byte protoVersion, EntryType entryType, byte flags, Scope scope, String key,
+                    long version, long timestamp, String issuer, byte[] payload, byte sigAlgCode, byte[] signature) {
+        this(protoVersion, entryType, flags, scope, key, version, timestamp, issuer, payload, Algorithm.fromCode(sigAlgCode), signature);
     }
 
     /**
@@ -171,17 +178,19 @@ public final class Envelope {
         if (buffer.remaining() < 3) {
             throw new VeridotException(ErrorCode.INVALID_ENVELOPE, entryIdLoggable, "Raw envelope truncated before sigAlg/sigLen");
         }
-        byte sigAlg = buffer.get();
-        if (sigAlg != 0x01 && sigAlg != 0x02 && sigAlg != 0x03) {
-            throw new VeridotException(ErrorCode.SIGALG_KEY_MISMATCH, entryIdLoggable, "Unknown sigAlg value: " + sigAlg);
+        Algorithm sigAlg;
+        try {
+            sigAlg = Algorithm.fromCode(buffer.get());
+        } catch (IllegalArgumentException e) {
+            throw new VeridotException(ErrorCode.SIGALG_KEY_MISMATCH, entryIdLoggable, e.getMessage());
         }
 
         // Coherence check for COMPACT_SIG flag and sigAlg
         byte compactSigBit = (byte) (flags & 0x01);
-        if (compactSigBit == 1 && sigAlg != 0x02) {
+        if (compactSigBit == 1 && sigAlg != Algorithm.ED25519) {
             throw new VeridotException(ErrorCode.RESERVED_FLAG_SET, entryIdLoggable, "COMPACT_SIG flag set but sigAlg is not Ed25519");
         }
-        if (compactSigBit == 0 && sigAlg == 0x02) {
+        if (compactSigBit == 0 && sigAlg == Algorithm.ED25519) {
             throw new VeridotException(ErrorCode.RESERVED_FLAG_SET, entryIdLoggable, "COMPACT_SIG flag not set but sigAlg is Ed25519");
         }
 
@@ -226,7 +235,7 @@ public final class Envelope {
         buffer.put(issuerBytes);
         buffer.putInt(payload.length);
         buffer.put(payload);
-        buffer.put(builder.sigAlg);
+        buffer.put(builder.sigAlg.getCode());
         buffer.putShort((short) sig.length);
         buffer.put(sig);
 

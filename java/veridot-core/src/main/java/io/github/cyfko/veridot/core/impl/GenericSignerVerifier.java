@@ -34,7 +34,7 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
     private final TrustRoot trustRoot;
     private final String signerId;
     private final PrivateKey longTermPrivateKey;
-    private final byte envelopeSigAlg;
+    private final Algorithm envelopeSigAlg;
     private final WatermarkStore watermarkStore;
 
     private final ConfigPayload defaultConfig;
@@ -63,32 +63,70 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
 
     // ═══ Constructeur V4 (recommandé) ═══
     public GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String issuerId, 
-                                 PrivateKey longTermKey, byte envelopeSigAlg) {
+                                 PrivateKey longTermKey, Algorithm envelopeSigAlg) {
         this(broker, trustRoot, issuerId, longTermKey, envelopeSigAlg, -1, EvictionPolicy.FIFO, Config.RECONCILIATION_INTERVAL_MINUTES, null);
     }
 
     public GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String issuerId, 
-                                 PrivateKey longTermKey, byte envelopeSigAlg,
+                                 PrivateKey longTermKey, Algorithm envelopeSigAlg,
                                  io.github.cyfko.veridot.core.WatermarkStore watermarkStore) {
         this(broker, trustRoot, issuerId, longTermKey, envelopeSigAlg, -1, EvictionPolicy.FIFO, Config.RECONCILIATION_INTERVAL_MINUTES, watermarkStore);
     }
 
     public GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String issuerId, 
-                                 PrivateKey longTermKey, byte envelopeSigAlg,
+                                 PrivateKey longTermKey, Algorithm envelopeSigAlg,
                                  int maxSessions, EvictionPolicy policy) {
         this(broker, trustRoot, issuerId, longTermKey, envelopeSigAlg, maxSessions, policy, Config.RECONCILIATION_INTERVAL_MINUTES, null);
     }
 
     public GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String issuerId, 
-                                 PrivateKey longTermKey, byte envelopeSigAlg,
+                                 PrivateKey longTermKey, Algorithm envelopeSigAlg,
                                  int maxSessions, EvictionPolicy policy,
                                  io.github.cyfko.veridot.core.WatermarkStore watermarkStore) {
         this(broker, trustRoot, issuerId, longTermKey, envelopeSigAlg, maxSessions, policy, Config.RECONCILIATION_INTERVAL_MINUTES, watermarkStore);
     }
 
+    @Deprecated
+    public GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String issuerId, 
+                                 PrivateKey longTermKey, byte envelopeSigAlgCode) {
+        this(broker, trustRoot, issuerId, longTermKey, Algorithm.fromCode(envelopeSigAlgCode));
+    }
+
+    @Deprecated
+    public GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String issuerId, 
+                                 PrivateKey longTermKey, byte envelopeSigAlgCode,
+                                 io.github.cyfko.veridot.core.WatermarkStore watermarkStore) {
+        this(broker, trustRoot, issuerId, longTermKey, Algorithm.fromCode(envelopeSigAlgCode), watermarkStore);
+    }
+
+    @Deprecated
+    public GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String issuerId, 
+                                 PrivateKey longTermKey, byte envelopeSigAlgCode,
+                                 int maxSessions, EvictionPolicy policy) {
+        this(broker, trustRoot, issuerId, longTermKey, Algorithm.fromCode(envelopeSigAlgCode), maxSessions, policy);
+    }
+
+    @Deprecated
+    public GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String issuerId, 
+                                 PrivateKey longTermKey, byte envelopeSigAlgCode,
+                                 int maxSessions, EvictionPolicy policy,
+                                 io.github.cyfko.veridot.core.WatermarkStore watermarkStore) {
+        this(broker, trustRoot, issuerId, longTermKey, Algorithm.fromCode(envelopeSigAlgCode), maxSessions, policy, watermarkStore);
+    }
+
     // Constructor package-private for test override
     GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String issuerId, 
-                          PrivateKey longTermKey, byte envelopeSigAlg,
+                          PrivateKey longTermKey, byte envelopeSigAlgCode,
+                          int maxSessions, EvictionPolicy policy,
+                          long reconciliationIntervalMinutesOverride,
+                          io.github.cyfko.veridot.core.WatermarkStore watermarkStore) {
+        this(broker, trustRoot, issuerId, longTermKey, Algorithm.fromCode(envelopeSigAlgCode),
+             maxSessions, policy, reconciliationIntervalMinutesOverride, watermarkStore);
+    }
+
+    // Constructor package-private for test override
+    GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String issuerId, 
+                          PrivateKey longTermKey, Algorithm envelopeSigAlg,
                           int maxSessions, EvictionPolicy policy,
                           long reconciliationIntervalMinutesOverride,
                           io.github.cyfko.veridot.core.WatermarkStore watermarkStore) {
@@ -148,9 +186,13 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             OptionalLong.empty()
         );
 
-        byte ephemeralAlg = 0x02; // Default to EC/ECDSA (NIST SP 800-186)
-        if (!Config.ALLOWED_SIG_ALGS.contains((byte) 0x02)) {
-            ephemeralAlg = 0x01; // Fallback to RSA if EC is not allowed
+        Algorithm ephemeralAlg = Algorithm.ED25519; // Default to Ed25519 (NIST SP 800-186)
+        if (!Config.ALLOWED_SIG_ALGS.contains(Algorithm.ED25519)) {
+            if (Config.ALLOWED_SIG_ALGS.contains(Algorithm.ECDSA_SHA256)) {
+                ephemeralAlg = Algorithm.ECDSA_SHA256;
+            } else {
+                ephemeralAlg = Algorithm.RSA_SHA256;
+            }
         }
         this.keyRotationService = new KeyRotationService(ephemeralAlg);
         this.livenessManager = new LivenessManager(entryPublisher, broker, longTermKey, envelopeSigAlg, issuerId);
@@ -341,12 +383,14 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             }
             String jwtAlg = headerNode.get("alg").asText();
             String expectedAlg;
-            if (epochPayload.alg() == 0x01) {
+            if (epochPayload.alg() == Algorithm.RSA_SHA256) {
                 expectedAlg = "RS256";
-            } else if (epochPayload.alg() == 0x02) {
+            } else if (epochPayload.alg() == Algorithm.ECDSA_SHA256) {
                 expectedAlg = "ES256";
-            } else if (epochPayload.alg() == 0x03) {
+            } else if (epochPayload.alg() == Algorithm.RSA_PSS) {
                 expectedAlg = "PS256";
+            } else if (epochPayload.alg() == Algorithm.ED25519) {
+                expectedAlg = "EdDSA";
             } else {
                 throw new BrokerExtractionException("Unsupported ephemeral key algorithm in KEY_EPOCH: " + epochPayload.alg());
             }
