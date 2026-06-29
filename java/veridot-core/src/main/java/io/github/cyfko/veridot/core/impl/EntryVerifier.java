@@ -70,8 +70,9 @@ final class EntryVerifier {
             throw new VeridotException(ErrorCode.LIVENESS_NOT_ESTABLISHED, loggable, "KEY_EPOCH entry absent from broker");
         }
 
-        // Step 3: Structural validation
+        // Step 3: Structural validation & Payload TLV parsing (V-10 duplicate check before signature)
         Envelope envelope = Envelope.parse(bytes);
+        KeyEpochPayload payload = KeyEpochPayload.decode(envelope.payload);
 
         // Step 4: Trust validation
         signatureVerifier.verify(envelope, trustRoot);
@@ -85,8 +86,6 @@ final class EntryVerifier {
 
         // Step 5: Capability validation
         // First resolve if we have siteId in the KeyEpoch payload. We need to parse payload for siteId.
-        KeyEpochPayload payload = KeyEpochPayload.decode(envelope.payload);
-        
         capabilityVerifier.assertAuthorized(envelope.issuer, envelope.scope, payload.site(), broker, trustRoot);
 
         // Verify version watermark monotone (§11.1)
