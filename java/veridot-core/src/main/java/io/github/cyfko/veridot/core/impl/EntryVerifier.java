@@ -134,6 +134,13 @@ final class EntryVerifier {
                 sig = Signature.getInstance("SHA256withRSA");
             } else if (epoch.alg() == 0x02) {
                 sig = Signature.getInstance("SHA256withECDSA");
+            } else if (epoch.alg() == 0x03) {
+                sig = Signature.getInstance("RSASSA-PSS");
+                try {
+                    sig.setParameter(new java.security.spec.PSSParameterSpec(
+                        "SHA-256", "MGF1", java.security.spec.MGF1ParameterSpec.SHA256, 32, 1
+                    ));
+                } catch (Exception ignored) {}
             } else {
                 throw new VeridotException(ErrorCode.SIGALG_KEY_MISMATCH, null, "Unsupported ephemeral signature algorithm: " + epoch.alg());
             }

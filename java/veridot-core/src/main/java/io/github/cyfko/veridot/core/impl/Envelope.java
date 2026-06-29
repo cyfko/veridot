@@ -169,7 +169,7 @@ public final class Envelope {
             throw new VeridotException(ErrorCode.INVALID_ENVELOPE, entryIdLoggable, "Raw envelope truncated before sigAlg/sigLen");
         }
         byte sigAlg = buffer.get();
-        if (sigAlg != 0x01 && sigAlg != 0x02) {
+        if (sigAlg != 0x01 && sigAlg != 0x02 && sigAlg != 0x03) {
             throw new VeridotException(ErrorCode.SIGALG_KEY_MISMATCH, entryIdLoggable, "Unknown sigAlg value: " + sigAlg);
         }
 

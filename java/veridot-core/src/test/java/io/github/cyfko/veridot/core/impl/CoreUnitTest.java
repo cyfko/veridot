@@ -252,7 +252,11 @@ public class CoreUnitTest {
             assertTrue(io.github.cyfko.veridot.core.VeridotMetrics.ENVELOPE_ACCEPTED.sum() > 0);
 
             // Act: try verifying an invalid token (should increment rejected)
-            assertThrows(Exception.class, () -> sv.verify("invalid-token", s -> s));
+            // Corrupt the key epoch in broker to increment rejected during next verification
+            EntryId keyEpochId = new EntryId(Scope.group("group1"), EntryType.KEY_EPOCH, "sessionA");
+            inMemoryBroker.put(keyEpochId.storageKey(), new byte[] { 0x00, 0x00, 0x00 });
+            
+            assertThrows(Exception.class, () -> sv.verify(token, s -> s));
             assertTrue(io.github.cyfko.veridot.core.VeridotMetrics.ENVELOPE_REJECTED.sum() > 0);
         }
     }
@@ -293,6 +297,204 @@ public class CoreUnitTest {
             // Verifying should now throw RECONCILIATION_STALE
             VeridotException ex = assertThrows(VeridotException.class, () -> sv.verify(token, s -> s));
             assertEquals(ErrorCode.RECONCILIATION_STALE, ex.getErrorCode());
+        }
+    }
+
+    @Test
+    public void testRsaPssSignatureVerification() throws Exception {
+        KeyPairGenerator gen = KeyPairGenerator.getInstance("RSA");
+        gen.initialize(2048);
+        KeyPair kp = gen.generateKeyPair();
+
+        TrustRoot trustRoot = new PublicKeyTrustRoot() {
+            @Override
+            public PublicKey resolve(String issuer) {
+                if ("issuer-pss".equals(issuer)) {
+                    return kp.getPublic();
+                }
+                return null;
+            }
+            @Override
+            public boolean isRootIdentity(String issuer) {
+                return false;
+            }
+        };
+
+        Envelope env = new Envelope(
+                Envelope.PROTO_VERSION,
+                EntryType.KEY_EPOCH,
+                (byte) 0x00, // flags
+                Scope.group("g1"),
+                "k1",
+                1L,
+                System.currentTimeMillis(),
+                "issuer-pss",
+                new byte[] { 0x01, 0x02 },
+                (byte) 0x03, // RSA-PSS
+                null
+        );
+
+        // Sign the envelope
+        Signature sig = Signature.getInstance("RSASSA-PSS");
+        sig.setParameter(new java.security.spec.PSSParameterSpec(
+            "SHA-256", "MGF1", java.security.spec.MGF1ParameterSpec.SHA256, 32, 1
+        ));
+        sig.initSign(kp.getPrivate());
+        sig.update(env.canonicalSigningBytes());
+        byte[] signature = sig.sign();
+
+        Envelope signedEnv = new Envelope(
+                env.protoVersion,
+                env.entryType,
+                env.flags,
+                env.scope,
+                env.key,
+                env.version,
+                env.timestamp,
+                env.issuer,
+                env.payload,
+                env.sigAlg,
+                signature
+        );
+
+        SignatureVerifier verifier = new SignatureVerifier();
+        // Should verify without exception
+        verifier.verify(signedEnv, trustRoot);
+    }
+
+    @Test
+    public void testRsaPssEphemeralSignature() throws Exception {
+        io.github.cyfko.veridot.core.InMemoryBroker inMemoryBroker = new io.github.cyfko.veridot.core.InMemoryBroker();
+        TrustRoot trustRoot = new PublicKeyTrustRoot() {
+            @Override
+            public PublicKey resolve(String issuer) {
+                if ("issuer-rsa".equals(issuer)) {
+                    return rsaKeyPair.getPublic();
+                }
+                return null;
+            }
+            @Override
+            public boolean isRootIdentity(String issuer) {
+                return "issuer-rsa".equals(issuer);
+            }
+        };
+
+        // Create SignerVerifier with RSA-PSS (0x03) for ephemeral algorithm
+        try (GenericSignerVerifier sv = new GenericSignerVerifier(
+                inMemoryBroker,
+                trustRoot,
+                "issuer-rsa",
+                rsaKeyPair.getPrivate(),
+                (byte) 0x03, // Ephemeral alg = RSA-PSS
+                -1,
+                EvictionPolicy.FIFO,
+                60,
+                null
+        )) {
+            String token = sv.sign("data", BasicConfigurer.builder().groupId("group1").sequenceId("sessionA").validity(600).build());
+            
+            // Verify should succeed using PSS verification internally
+            io.github.cyfko.veridot.core.VerifiedData<String> verified = sv.verify(token, s -> s);
+            assertEquals("data", verified.data());
+        }
+    }
+
+    @Test
+    public void testEnvelopeParserFuzzing() throws Exception {
+        byte[] validBytes = new byte[] {
+            0x56, 0x44, // magic
+            0x04, // version
+            0x01, // entryType
+            0x00, // flags
+            0x00, 0x08, // scopeLen
+            'g', 'r', 'o', 'u', 'p', ':', 'g', '1',
+            0x00, 0x02, // keyLen
+            'k', '1',
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, // version
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, // timestamp
+            0x00, 0x03, // issuerLen
+            'i', 's', 's',
+            0x00, 0x00, 0x00, 0x02, // payloadLen
+            0x01, 0x02, // payload
+            0x01, // sigAlg
+            0x00, 0x04, // sigLen
+            0x01, 0x02, 0x03, 0x04 // signature
+        };
+
+        // Truncation fuzzing
+        for (int i = 0; i < validBytes.length; i++) {
+            final int len = i;
+            byte[] truncated = new byte[len];
+            System.arraycopy(validBytes, 0, truncated, 0, len);
+            assertThrows(Exception.class, () -> Envelope.parse(truncated));
+        }
+
+        // Random bit flipping fuzzing
+        java.util.Random rnd = new java.util.Random(42);
+        for (int i = 0; i < 100; i++) {
+            byte[] mutated = validBytes.clone();
+            int index = rnd.nextInt(mutated.length);
+            mutated[index] ^= (byte) (1 << rnd.nextInt(8));
+            try {
+                Envelope.parse(mutated);
+            } catch (Exception expected) {
+                // Should only throw controlled exceptions
+                assertTrue(expected instanceof VeridotException || expected instanceof IllegalArgumentException);
+            }
+        }
+    }
+
+    @Test
+    public void testFencedCapacityConcurrence() throws Exception {
+        io.github.cyfko.veridot.core.InMemoryBroker inMemoryBroker = new io.github.cyfko.veridot.core.InMemoryBroker();
+        TrustRoot trustRoot = new PublicKeyTrustRoot() {
+            @Override
+            public PublicKey resolve(String issuer) {
+                if ("issuer-rsa".equals(issuer)) {
+                    return rsaKeyPair.getPublic();
+                }
+                return null;
+            }
+            @Override
+            public boolean isRootIdentity(String issuer) {
+                return "issuer-rsa".equals(issuer);
+            }
+        };
+
+        // Create SignerVerifier with low capacity to trigger evictions
+        try (GenericSignerVerifier sv = new GenericSignerVerifier(
+                inMemoryBroker,
+                trustRoot,
+                "issuer-rsa",
+                rsaKeyPair.getPrivate(),
+                (byte) 0x01,
+                3, // max sessions = 3
+                EvictionPolicy.FIFO,
+                60,
+                null
+        )) {
+            // Concurrent session insertions
+            int numThreads = 5;
+            java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newFixedThreadPool(numThreads);
+            java.util.List<java.util.concurrent.Future<?>> futures = new java.util.ArrayList<>();
+            
+            for (int i = 0; i < numThreads; i++) {
+                final int idx = i;
+                futures.add(executor.submit(() -> {
+                    try {
+                        String token = sv.sign("data-" + idx, BasicConfigurer.builder().groupId("group1").sequenceId("session-" + idx).validity(600).build());
+                        assertNotNull(sv.verify(token, s -> s));
+                    } catch (Exception e) {
+                        // Concurrent eviction or fencing conflicts are expected to throw controlled VeridotException, but not unhandled errors
+                        assertTrue(e instanceof VeridotException);
+                    }
+                }));
+            }
+
+            for (java.util.concurrent.Future<?> f : futures) {
+                f.get();
+            }
+            executor.shutdown();
         }
     }
 }
