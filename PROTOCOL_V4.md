@@ -106,7 +106,7 @@ document are to be interpreted as described in [RFC 2119].
 
 **Broker**
 :   A transport and storage component providing entry persistence,
-    retrieval by key, and full-scope enumeration (§12.2). The broker
+    retrieval by key, and full-scope enumeration (§13.2). The broker
     is responsible for delivery and durability; it is NOT a trusted
     component and holds no authority over the validity of any entry
     it stores or transmits.
@@ -285,10 +285,11 @@ payload than the one it was produced for.
 | `0x04` | `LIVENESS` | Yes per session (`key` = session key) | §8 |
 | `0x05` | `FENCE` | Yes (`key` MUST be empty) | §9 |
 | `0x06` | `SNAPSHOT_MARKER` | Yes (`key` MUST be empty) | §11.4 |
+| `0x07` | `SECURE_PAYLOAD` | No (one per target `key`) | §12 |
 
 Any new entry type MUST be fully specified in this document (payload
 layout, validation rules, semantics) before assignment of a new code.
-Codes `0x07`–`0xFF` are unassigned and reserved for future
+Codes `0x08`–`0xFF` are unassigned and reserved for future
 specification; a processor receiving an unassigned code MUST reject
 the entry with `V4002` rather than ignore it. Unlike metadata fields
 within an existing payload (which support forward-compatible
@@ -754,7 +755,7 @@ NOT regress as a result of any subsequent read.
 
 ### 11.4 Reconciliation via Snapshot
 
-A processor SHOULD periodically retrieve a full `snapshot` (§12.2) of
+A processor SHOULD periodically retrieve a full `snapshot` (§13.2) of
 each scope it actively verifies against, and reconcile its locally
 recorded version watermarks against the highest `version` observed in
 the snapshot for each EntryId, applying §11.1–§11.3 identically to
@@ -796,9 +797,56 @@ fields to detect incomplete or superseded snapshots.
 
 ---
 
-## 12. Implementation Requirements
+## 12. Secure Payload Entries
 
-### 12.1 Processor Responsibilities
+### 12.1 Purpose
+
+A `SECURE_PAYLOAD` entry transports an application-level object (payload) directly through the broker. To maintain zero-trust security and prevent unauthorized access by the broker or other scopes, the payload data can be end-to-end encrypted (E2EE) using hybrid encryption for one or more specific recipients. If no recipients are specified, the payload data is transported in plaintext (public broadcast within the scope).
+
+### 12.2 Payload Fields
+
+The `payload` of a `SECURE_PAYLOAD` entry is a TLV sequence of the following fields (encoding per §4.1):
+
+| FieldTag | Field | Type | Required | Description |
+|---|---|---|:---:|---|
+| `0x01` | `encAlg` | enum(u8) | OPTIONAL | Encryption algorithm: `0x01` = AES-256-GCM, `0x02` = ChaCha20-Poly1305. REQUIRED if `recipients` is present. |
+| `0x02` | `nonce` | bytes | OPTIONAL | Initialization vector / nonce for symmetric encryption. REQUIRED if `recipients` is present. |
+| `0x03` | `recipients` | bytes | OPTIONAL | Concatenation of one or more `RecipientBlock`s (§12.3). If absent, the payload is in plaintext. |
+| `0x04` | `data` | bytes | REQUIRED | The payload data. Encrypted (ciphertext) if `recipients` is present; plaintext if `recipients` is absent. |
+| `0x05` | `payloadType` | string | OPTIONAL | MIME type or format identifier of the decrypted data (e.g., `"application/json"`). |
+
+Unknown `FieldTag` values within a `SECURE_PAYLOAD` payload MUST be ignored by a conforming processor (forward compatibility).
+
+### 12.3 Recipient Block Structure
+
+When `recipients` (Tag `0x03`) is present, it contains a contiguous concatenation of `RecipientBlock` structures. Each `RecipientBlock` is defined as:
+
+| Sub-field | Size | Type | Description |
+|---|---|---|---|
+| `recipientSidLen` | 2 bytes | u16, big-endian | Length in bytes of `recipientSid` |
+| `recipientSid` | variable | UTF-8 | Identity of the authorized recipient (`subjectSid`) |
+| `recipientKeyEpochId`| 8 bytes | u64, big-endian | `epochId` of the recipient's `KEY_EPOCH` used for encryption |
+| `encryptedKeyLen` | 2 bytes | u16, big-endian | Length in bytes of `encryptedKey` |
+| `encryptedKey` | variable | bytes | Symmetric session key encrypted with the recipient's public key |
+
+### 12.4 Processing Rules
+
+A processor receiving a `SECURE_PAYLOAD` entry MUST, in order:
+
+1. **Verify Envelope**: Perform envelope and trust validation per §3 and §5.4.
+2. **Authorization**: Verify that the `issuer` is authorized to publish entries in the target `scope` (§6.4).
+3. **Decryption** (if `recipients` is present):
+   - Locate the `RecipientBlock` where `recipientSid` matches the processor's own `subjectSid`. If no such block exists, reject or ignore the entry (access denied).
+   - Resolve the recipient's private key for the epoch specified by `recipientKeyEpochId`.
+   - Decrypt `encryptedKey` using the private key to recover the symmetric session key.
+   - Decrypt the `data` field using the symmetric key, `nonce`, and the algorithm specified in `encAlg`.
+4. **Delivery**: Pass the decrypted (or plaintext) `data` and `payloadType` to the application layer.
+
+---
+
+## 13. Implementation Requirements
+
+### 13.1 Processor Responsibilities
 
 A processor MUST:
 
@@ -818,7 +866,7 @@ A processor MUST:
 - Log every rejection with its corresponding error code (Appendix B)
   and the EntryId involved.
 
-### 12.2 Broker Requirements
+### 13.2 Broker Requirements
 
 The broker MUST provide:
 
@@ -832,9 +880,9 @@ A broker implementation that cannot guarantee envelope well-formedness
 at write time MUST reject the **Put** operation outright rather than
 accept and store non-conforming bytes.
 
-### 12.3 Consistency Properties
+### 13.3 Consistency Properties
 
-#### 12.3.1 Local Consistency
+#### 13.3.1 Local Consistency
 
 - **Atomicity**: acceptance of an entry and the corresponding update
   of the local version watermark (§11.1) MUST be atomic from the
@@ -849,16 +897,16 @@ accept and store non-conforming bytes.
   the integrity check fails, the snapshot MUST be discarded and the system
   MUST trigger full reconciliation.
 
-#### 12.3.2 Distributed Consistency
+#### 13.3.2 Distributed Consistency
 
-- **Eventual** for broker reads (§12.2 Get).
+- **Eventual** for broker reads (§13.2 Get).
 - **Strongly ordered** for capacity-affecting mutations, by
   construction of §9 and §10.3, independent of the broker's own
   consistency model.
 - **Reconciled** periodically via §11.4, bounding the duration for
   which a missed delivery can remain undetected.
 
-### 12.4 Error Handling
+### 13.4 Error Handling
 
 | Category | Examples |
 |---|---|
@@ -874,7 +922,7 @@ rejection in logs and metrics, but MUST NOT receive different
 treatment in the verification outcome: both result in rejection per
 §8.3.
 
-### 12.5 Observability
+### 13.5 Observability
 
 A conforming implementation SHOULD expose:
 
@@ -887,9 +935,9 @@ A conforming implementation SHOULD expose:
 
 ---
 
-## 13. Security Considerations
+## 14. Security Considerations
 
-### 13.1 Cryptographic Validation
+### 14.1 Cryptographic Validation
 
 - Signatures MUST be validated according to `sigAlg`; a mismatch
   between `sigAlg` and the key type resolved for `issuer` MUST result
@@ -913,7 +961,7 @@ A conforming implementation SHOULD expose:
 - Clock drift tolerance for temporal-window checks (§5.3, §8.3) is
   fixed at five minutes.
 
-### 13.2 Threat Mitigation
+### 14.2 Threat Mitigation
 
 | Threat | Mitigation |
 |---|---|
@@ -923,10 +971,10 @@ A conforming implementation SHOULD expose:
 | Silent treatment of revoked sessions as valid | Positive-proof liveness model; absence or invalidity defaults to rejection (§8.3) |
 | Race between concurrent processors on capacity mutation | Mandatory fence token with strict ordering (§9.4, §10.3) |
 | Replay of a stale entry | Monotonic version invariant (§11.1); `timestamp` plays no role in this defense |
-| Undetected loss of an individual entry in transit | Periodic full-scope snapshot reconciliation (§11.4, §12.2) |
+| Undetected loss of an individual entry in transit | Periodic full-scope snapshot reconciliation (§11.4, §13.2) |
 | Injection / malformed input | Strict envelope validation prior to any payload interpretation (§3.2) |
 
-### 13.3 Audit and Traceability
+### 14.3 Audit and Traceability
 
 - Every entry carries a deterministic EntryId and an `issuer`,
   providing non-repudiation for every state transition.
@@ -935,7 +983,7 @@ A conforming implementation SHOULD expose:
 - Log retention policy is a deployment concern, outside this
   specification's normative scope.
 
-### 13.4 Broker Trust Model
+### 14.4 Broker Trust Model
 
 The broker is transport and storage only. It is never granted
 authority over the meaning of the bytes it stores or relays. A
@@ -955,7 +1003,7 @@ Failure modes:
   to liveness determination (§8.3); it MUST NOT default to treating
   an unreachable session as active.
 
-### 13.5 Residual Risk Disclosure
+### 14.5 Residual Risk Disclosure
 
 This protocol protects the integrity and ordering of state as
 distributed through an untrusted broker. It does not, and cannot,
@@ -974,9 +1022,9 @@ protect against:
 
 ---
 
-## 14. Evolution and Compatibility
+## 15. Evolution and Compatibility
 
-### 14.1 Protocol Versioning
+### 15.1 Protocol Versioning
 
 - **Major version** (`protoVersion`): incompatible changes to the
   envelope structure or to the acceptance semantics of §8, §9, or §11.
@@ -987,7 +1035,7 @@ protect against:
   registration in §4; entry types are closed for silent extension
   (§4).
 
-### 14.2 Extensibility
+### 15.2 Extensibility
 
 - New optional payload fields MAY be added to an existing entry type's
   TLV payload without breaking conforming implementations.
@@ -996,7 +1044,7 @@ protect against:
 - New scope kinds (beyond `group:`, `site:`, `global`) require a
   specification update to §3.5 and §6.3.
 
-### 14.3 Coexistence
+### 15.3 Coexistence
 
 Multiple major protocol versions MAY coexist on the same transport,
 distinguished unambiguously by `magic` and `protoVersion` at the start
@@ -1018,7 +1066,7 @@ Envelope        := Magic ProtoVersion EntryType Flags
 
 Magic           := 0x56 0x44
 ProtoVersion    := 0x04
-EntryType       := 0x01..0x06               ; see §4 registry
+EntryType       := 0x01..0x07               ; see §4 registry
 Flags           := 1*OCTET                  ; bit 0 defined, bits 1-7 MUST be zero
 ScopeLen        := 2*OCTET                  ; u16, big-endian
 Scope           := ScopeGrammar              ; see below, length = ScopeLen
@@ -1067,9 +1115,10 @@ identifier-char := %x21-FF                   ; excludes NUL and C0 controls,
 | `V4202` | `LIVENESS_NOT_ESTABLISHED` | No fresh, valid `ACTIVE` `LIVENESS` entry available for the target session (§8.3) |
 | `V4203` | `KEY_EPOCH_EXPIRED` | `now` outside `[validFrom, validUntil)` for the referenced `KEY_EPOCH` |
 | `V4204` | `SIGALG_KEY_MISMATCH` | `sigAlg` value is unknown, or is inconsistent with the key type resolved for `issuer` via the TrustRoot |
+| `V4205` | `DECRYPTION_FAILED` | Cryptographic decryption of `encryptedKey` or `data` failed |
 | `V4301` | `FENCE_TOKEN_STALE` | `fenceCounter` not strictly greater than the recorded watermark for the scope |
 | `V4302` | `CAPACITY_EXCEEDED` | `max` reached under `pol = REJECT` |
-| `V4401` | `TRANSPORT_UNAVAILABLE` | Broker read or write failure; treated as rejection per §8.3/§13.4, logged separately per §12.4 |
+| `V4401` | `TRANSPORT_UNAVAILABLE` | Broker read or write failure; treated as rejection per §8.3/§14.4, logged separately per §13.4 |
 
 ## Appendix C. Normative References
 
@@ -1079,10 +1128,10 @@ identifier-char := %x21-FF                   ; excludes NUL and C0 controls,
   Syntax Specifications: ABNF", STD 68, RFC 5234, January 2008.
 - **[FIPS 186-5]** National Institute of Standards and Technology,
   "Digital Signature Standard (DSS)", FIPS PUB 186-5, February 2023.
-  (RSA and ECDSA signature schemes referenced in §5.2, §13.1.)
+  (RSA and ECDSA signature schemes referenced in §5.2, §14.1.)
 - **[RFC 8032]** Josefsson, S. and I. Liusvaara, "Edwards-Curve Digital
   Signature Algorithm (EdDSA)", RFC 8032, January 2017. (Ed25519
-  signature scheme referenced in §3.1 `flags`, §13.1.)
+  signature scheme referenced in §3.1 `flags`, §14.1.)
 
 ---
 
