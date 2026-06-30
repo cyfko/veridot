@@ -70,7 +70,7 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
 
     public GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String issuerId, 
                                  PrivateKey longTermKey, Algorithm envelopeSigAlg,
-                                 io.github.cyfko.veridot.core.WatermarkStore watermarkStore) {
+                                 WatermarkStore watermarkStore) {
         this(broker, trustRoot, issuerId, longTermKey, envelopeSigAlg, -1, EvictionPolicy.FIFO, Config.RECONCILIATION_INTERVAL_MINUTES, watermarkStore);
     }
 
@@ -83,47 +83,11 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
     public GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String issuerId, 
                                  PrivateKey longTermKey, Algorithm envelopeSigAlg,
                                  int maxSessions, EvictionPolicy policy,
-                                 io.github.cyfko.veridot.core.WatermarkStore watermarkStore) {
+                                 WatermarkStore watermarkStore) {
         this(broker, trustRoot, issuerId, longTermKey, envelopeSigAlg, maxSessions, policy, Config.RECONCILIATION_INTERVAL_MINUTES, watermarkStore);
     }
 
-    @Deprecated
-    public GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String issuerId, 
-                                 PrivateKey longTermKey, byte envelopeSigAlgCode) {
-        this(broker, trustRoot, issuerId, longTermKey, Algorithm.fromCode(envelopeSigAlgCode));
-    }
 
-    @Deprecated
-    public GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String issuerId, 
-                                 PrivateKey longTermKey, byte envelopeSigAlgCode,
-                                 io.github.cyfko.veridot.core.WatermarkStore watermarkStore) {
-        this(broker, trustRoot, issuerId, longTermKey, Algorithm.fromCode(envelopeSigAlgCode), watermarkStore);
-    }
-
-    @Deprecated
-    public GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String issuerId, 
-                                 PrivateKey longTermKey, byte envelopeSigAlgCode,
-                                 int maxSessions, EvictionPolicy policy) {
-        this(broker, trustRoot, issuerId, longTermKey, Algorithm.fromCode(envelopeSigAlgCode), maxSessions, policy);
-    }
-
-    @Deprecated
-    public GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String issuerId, 
-                                 PrivateKey longTermKey, byte envelopeSigAlgCode,
-                                 int maxSessions, EvictionPolicy policy,
-                                 io.github.cyfko.veridot.core.WatermarkStore watermarkStore) {
-        this(broker, trustRoot, issuerId, longTermKey, Algorithm.fromCode(envelopeSigAlgCode), maxSessions, policy, watermarkStore);
-    }
-
-    // Constructor package-private for test override
-    GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String issuerId, 
-                          PrivateKey longTermKey, byte envelopeSigAlgCode,
-                          int maxSessions, EvictionPolicy policy,
-                          long reconciliationIntervalMinutesOverride,
-                          io.github.cyfko.veridot.core.WatermarkStore watermarkStore) {
-        this(broker, trustRoot, issuerId, longTermKey, Algorithm.fromCode(envelopeSigAlgCode),
-             maxSessions, policy, reconciliationIntervalMinutesOverride, watermarkStore);
-    }
 
     // Constructor package-private for test override
     GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String issuerId, 

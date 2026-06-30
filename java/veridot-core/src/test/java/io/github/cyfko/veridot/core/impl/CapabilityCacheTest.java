@@ -1,5 +1,6 @@
 package io.github.cyfko.veridot.core.impl;
 
+import io.github.cyfko.veridot.core.Algorithm;
 import io.github.cyfko.veridot.core.InMemoryBroker;
 import io.github.cyfko.veridot.core.exceptions.VeridotException;
 import io.github.cyfko.veridot.core.TrustIdentity;
@@ -41,7 +42,7 @@ class CapabilityCacheTest {
                 1L,
                 payloadBytes,
                 trust.longTermKeyPair.getPrivate(),
-                (byte) 0x01,
+                Algorithm.RSA_SHA256,
                 trust.signerId,
                 broker
         ).join();
@@ -77,7 +78,7 @@ class CapabilityCacheTest {
                 1L,
                 payloadBytes,
                 trust.longTermKeyPair.getPrivate(),
-                (byte) 0x01,
+                Algorithm.RSA_SHA256,
                 trust.signerId,
                 broker
         ).join();
@@ -108,7 +109,7 @@ class CapabilityCacheTest {
                 1L,
                 payloadBytes,
                 trust.longTermKeyPair.getPrivate(),
-                (byte) 0x01,
+                Algorithm.RSA_SHA256,
                 trust.signerId,
                 broker
         ).join();
@@ -161,7 +162,7 @@ class CapabilityCacheTest {
                 1L,
                 capB.encode(),
                 kpA.getPrivate(),
-                (byte) 0x01,
+                Algorithm.RSA_SHA256,
                 "issuerA",
                 broker
         ).join();
@@ -175,7 +176,7 @@ class CapabilityCacheTest {
                 1L,
                 capA.encode(),
                 kpB.getPrivate(),
-                (byte) 0x01,
+                Algorithm.RSA_SHA256,
                 "issuerB",
                 broker
         ).join();
@@ -223,7 +224,7 @@ class CapabilityCacheTest {
                 1L,
                 capA.encode(),
                 kpRoot.getPrivate(),
-                (byte) 0x01,
+                Algorithm.RSA_SHA256,
                 "root",
                 broker
         ).join();
@@ -237,7 +238,7 @@ class CapabilityCacheTest {
                 1L,
                 capB.encode(),
                 kpA.getPrivate(),
-                (byte) 0x01,
+                Algorithm.RSA_SHA256,
                 "issuerA",
                 broker
         ).join();

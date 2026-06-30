@@ -89,12 +89,4 @@ final class EntryPublisher {
         // Put to broker asynchronously
         return broker.put(storageKey, envelopeBytes);
     }
-
-    @Deprecated
-    public CompletableFuture<Void> publish(EntryType type, Scope scope, String key,
-                                           long version, byte[] payload,
-                                           PrivateKey signingKey, byte sigAlgCode,
-                                           String issuer, Broker broker) {
-        return publish(type, scope, key, version, payload, signingKey, Algorithm.fromCode(sigAlgCode), issuer, broker);
-    }
 }

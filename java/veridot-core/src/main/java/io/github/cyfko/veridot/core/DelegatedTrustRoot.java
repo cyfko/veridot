@@ -15,9 +15,4 @@ public non-sealed interface DelegatedTrustRoot extends TrustRoot {
      * @return true if signature is valid, false otherwise
      */
     boolean verifySignature(String issuer, byte[] data, byte[] signature, Algorithm sigAlg);
-
-    @Deprecated
-    default boolean verifySignature(String issuer, byte[] data, byte[] signature, byte sigAlgCode) {
-        return verifySignature(issuer, data, signature, Algorithm.fromCode(sigAlgCode));
-    }
 }

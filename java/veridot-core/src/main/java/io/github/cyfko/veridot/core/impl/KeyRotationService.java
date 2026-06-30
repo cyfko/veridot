@@ -21,11 +21,6 @@ public final class KeyRotationService implements AutoCloseable {
         this(Algorithm.ED25519); // Default to Ed25519 as per §13.1
     }
 
-    @Deprecated
-    public KeyRotationService(byte algCode) {
-        this(Algorithm.fromCode(algCode));
-    }
-
     public KeyRotationService(Algorithm alg) {
         if (alg == null) {
             throw new IllegalArgumentException("Algorithm cannot be null");

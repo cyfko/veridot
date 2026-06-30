@@ -1,5 +1,6 @@
 package io.github.cyfko.veridot.tests;
 
+import io.github.cyfko.veridot.core.Algorithm;
 import io.github.cyfko.veridot.core.Broker;
 import io.github.cyfko.veridot.core.PublicKeyTrustRoot;
 import io.github.cyfko.veridot.core.TrustRoot;
@@ -55,6 +56,6 @@ public final class TestTrustSetup {
     }
 
     public GenericSignerVerifier newSignerVerifier(Broker broker) {
-        return new GenericSignerVerifier(broker, trustRoot, signerId, longTermKeyPair.getPrivate(), (byte) 0x01);
+        return new GenericSignerVerifier(broker, trustRoot, signerId, longTermKeyPair.getPrivate(), Algorithm.RSA_SHA256);
     }
 }

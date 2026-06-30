@@ -36,10 +36,6 @@ record KeyEpochPayload(
         Tag(byte code) { this.code = code; }
     }
 
-    @Deprecated
-    public KeyEpochPayload(byte algCode, long epochId, byte[] pk, long validFrom, long validUntil, String site, String token) {
-        this(Algorithm.fromCode(algCode), epochId, pk, validFrom, validUntil, site, token);
-    }
 
     public static KeyEpochPayload decode(byte[] tlvBytes) {
         Map<Byte, byte[]> fields = TlvCodec.parse(tlvBytes);

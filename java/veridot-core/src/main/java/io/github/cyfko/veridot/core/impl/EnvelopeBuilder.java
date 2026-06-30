@@ -62,10 +62,4 @@ final class EnvelopeBuilder {
         this.sigAlg = sigAlg;
         return this;
     }
-
-    @Deprecated
-    public EnvelopeBuilder sigAlg(byte sigAlgCode) {
-        this.sigAlg = Algorithm.fromCode(sigAlgCode);
-        return this;
-    }
 }

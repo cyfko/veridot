@@ -1,5 +1,6 @@
 package io.github.cyfko.veridot.core.impl;
 
+import io.github.cyfko.veridot.core.Algorithm;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.cyfko.veridot.core.DistributionMode;
 import io.github.cyfko.veridot.core.InMemoryBroker;
@@ -136,7 +137,7 @@ class VerificationTest {
         KeyPair ephemeral = gen.generateKeyPair();
 
         KeyEpochPayload payload = new KeyEpochPayload(
-            (byte) 0x01, 1L, ephemeral.getPublic().getEncoded(), futureTs, futureTs + 3600000, null, null
+            Algorithm.RSA_SHA256, 1L, ephemeral.getPublic().getEncoded(), futureTs, futureTs + 3600000, null, null
         );
 
         EnvelopeBuilder builder = new EnvelopeBuilder()
@@ -148,7 +149,7 @@ class VerificationTest {
             .timestamp(futureTs)
             .issuer(trust.signerId)
             .payload(payload.encode())
-            .sigAlg((byte) 0x01);
+            .sigAlg(Algorithm.RSA_SHA256);
 
         Signature sig = Signature.getInstance("SHA256withRSA");
         sig.initSign(trust.longTermKeyPair.getPrivate());
@@ -157,7 +158,7 @@ class VerificationTest {
         
         // Wait, builder doesn't have a direct canonical bytes builder.
         // Let's create a temporary Envelope to sign
-        Envelope tempEnv = new Envelope(Envelope.PROTO_VERSION, EntryType.KEY_EPOCH, (byte) 0x00, scope, "s1", 1L, futureTs, trust.signerId, payload.encode(), (byte) 0x01, new byte[0]);
+        Envelope tempEnv = new Envelope(Envelope.PROTO_VERSION, EntryType.KEY_EPOCH, (byte) 0x00, scope, "s1", 1L, futureTs, trust.signerId, payload.encode(), Algorithm.RSA_SHA256, new byte[0]);
         sig.update(tempEnv.canonicalSigningBytes());
         byte[] signature = sig.sign();
 
@@ -183,7 +184,7 @@ class VerificationTest {
         KeyPair ephemeral = gen.generateKeyPair();
 
         KeyEpochPayload payload = new KeyEpochPayload(
-            (byte) 0x01, 1L, ephemeral.getPublic().getEncoded(), ts, ts + 3600000, null, null
+            Algorithm.RSA_SHA256, 1L, ephemeral.getPublic().getEncoded(), ts, ts + 3600000, null, null
         );
 
         EnvelopeBuilder builder = new EnvelopeBuilder()
@@ -195,7 +196,7 @@ class VerificationTest {
             .timestamp(ts)
             .issuer(trust.signerId)
             .payload(payload.encode())
-            .sigAlg((byte) 0x01);
+            .sigAlg(Algorithm.RSA_SHA256);
 
         byte[] badSignature = new byte[256]; // Dummy signature of all zeros
 

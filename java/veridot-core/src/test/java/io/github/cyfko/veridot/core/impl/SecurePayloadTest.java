@@ -1,5 +1,6 @@
 package io.github.cyfko.veridot.core.impl;
 
+import io.github.cyfko.veridot.core.Algorithm;
 import io.github.cyfko.veridot.core.InMemoryBroker;
 import io.github.cyfko.veridot.core.PublicKeyTrustRoot;
 import io.github.cyfko.veridot.core.TrustRoot;
@@ -77,10 +78,10 @@ public class SecurePayloadTest {
             }
         };
 
-        GenericSignerVerifier signerNode = new GenericSignerVerifier(broker, trustRoot, signerId, kpSigner.getPrivate(), (byte) 0x01);
-        GenericSignerVerifier aliceNode = new GenericSignerVerifier(broker, trustRoot, aliceId, kpAlice.getPrivate(), (byte) 0x01);
-        GenericSignerVerifier bobNode = new GenericSignerVerifier(broker, trustRoot, bobId, kpBob.getPrivate(), (byte) 0x01);
-        GenericSignerVerifier charlieNode = new GenericSignerVerifier(broker, trustRoot, charlieId, kpCharlie.getPrivate(), (byte) 0x01);
+        GenericSignerVerifier signerNode = new GenericSignerVerifier(broker, trustRoot, signerId, kpSigner.getPrivate(), Algorithm.RSA_SHA256);
+        GenericSignerVerifier aliceNode = new GenericSignerVerifier(broker, trustRoot, aliceId, kpAlice.getPrivate(), Algorithm.RSA_SHA256);
+        GenericSignerVerifier bobNode = new GenericSignerVerifier(broker, trustRoot, bobId, kpBob.getPrivate(), Algorithm.RSA_SHA256);
+        GenericSignerVerifier charlieNode = new GenericSignerVerifier(broker, trustRoot, charlieId, kpCharlie.getPrivate(), Algorithm.RSA_SHA256);
 
         Scope scope = Scope.group("confidential-docs");
         byte[] payload = "Highly Sensitive Data".getBytes(StandardCharsets.UTF_8);

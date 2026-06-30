@@ -1,5 +1,6 @@
 package io.github.cyfko.veridot.core.impl;
 
+import io.github.cyfko.veridot.core.Algorithm;
 import io.github.cyfko.veridot.core.EvictionPolicy;
 import io.github.cyfko.veridot.core.ConfigScope;
 import io.github.cyfko.veridot.core.InMemoryBroker;
@@ -75,7 +76,7 @@ class ConfigTrustSecurityTest {
             .timestamp(System.currentTimeMillis())
             .issuer("attacker-sid")
             .payload(payload.encode())
-            .sigAlg((byte) 0x01);
+            .sigAlg(Algorithm.RSA_SHA256);
 
         byte[] badSignature = new byte[256]; // Fake signature
         byte[] encoded = Envelope.encode(builder, badSignature);
@@ -101,7 +102,7 @@ class ConfigTrustSecurityTest {
             }
         };
 
-        try (var sv = new GenericSignerVerifier(broker, badTrustRoot, trust.signerId, trust.longTermKeyPair.getPrivate(), (byte) 0x01)) {
+        try (var sv = new GenericSignerVerifier(broker, badTrustRoot, trust.signerId, trust.longTermKeyPair.getPrivate(), Algorithm.RSA_SHA256)) {
 
             // Publish a config signed with a valid signature format
             long now = System.currentTimeMillis();
@@ -117,13 +118,13 @@ class ConfigTrustSecurityTest {
                 .timestamp(now)
                 .issuer(trust.signerId)
                 .payload(payload.encode())
-                .sigAlg((byte) 0x01);
+                .sigAlg(Algorithm.RSA_SHA256);
 
             // Sign it with valid long term key
             try {
                 Signature sig = Signature.getInstance("SHA256withRSA");
                 sig.initSign(trust.longTermKeyPair.getPrivate());
-                Envelope tempEnv = new Envelope(Envelope.PROTO_VERSION, EntryType.CONFIG, (byte) 0x00, Scope.group("group1"), "", 1L, now, trust.signerId, payload.encode(), (byte) 0x01, new byte[0]);
+                Envelope tempEnv = new Envelope(Envelope.PROTO_VERSION, EntryType.CONFIG, (byte) 0x00, Scope.group("group1"), "", 1L, now, trust.signerId, payload.encode(), Algorithm.RSA_SHA256, new byte[0]);
                 sig.update(tempEnv.canonicalSigningBytes());
                 byte[] signature = sig.sign();
                 byte[] encoded = Envelope.encode(builder, signature);
@@ -192,7 +193,7 @@ class ConfigTrustSecurityTest {
             }
         };
 
-        try (var sv = new GenericSignerVerifier(broker, authRoot, trust.signerId, trust.longTermKeyPair.getPrivate(), (byte) 0x01)) {
+        try (var sv = new GenericSignerVerifier(broker, authRoot, trust.signerId, trust.longTermKeyPair.getPrivate(), Algorithm.RSA_SHA256)) {
 
             // Publish config for group-denied directly to broker
             try {
@@ -209,11 +210,11 @@ class ConfigTrustSecurityTest {
                     .timestamp(now)
                     .issuer(trust.signerId)
                     .payload(payload.encode())
-                    .sigAlg((byte) 0x01);
+                    .sigAlg(Algorithm.RSA_SHA256);
 
                 Signature sig = Signature.getInstance("SHA256withRSA");
                 sig.initSign(trust.longTermKeyPair.getPrivate());
-                Envelope tempEnv = new Envelope(Envelope.PROTO_VERSION, EntryType.CONFIG, (byte) 0x00, Scope.group("group-denied"), "", 1L, now, trust.signerId, payload.encode(), (byte) 0x01, new byte[0]);
+                Envelope tempEnv = new Envelope(Envelope.PROTO_VERSION, EntryType.CONFIG, (byte) 0x00, Scope.group("group-denied"), "", 1L, now, trust.signerId, payload.encode(), Algorithm.RSA_SHA256, new byte[0]);
                 sig.update(tempEnv.canonicalSigningBytes());
                 byte[] signature = sig.sign();
                 byte[] encoded = Envelope.encode(builder, signature);
@@ -252,7 +253,7 @@ class ConfigTrustSecurityTest {
         KeyPair groupKp = gen.generateKeyPair();
 
         KeyEpochPayload announcePayload = new KeyEpochPayload(
-            (byte) 0x01, 1L, groupKp.getPublic().getEncoded(), now, now + 3600000L, "site-A", null
+            Algorithm.RSA_SHA256, 1L, groupKp.getPublic().getEncoded(), now, now + 3600000L, "site-A", null
         );
 
         EnvelopeBuilder builder = new EnvelopeBuilder()
@@ -264,11 +265,11 @@ class ConfigTrustSecurityTest {
             .timestamp(now)
             .issuer(trust.signerId)
             .payload(announcePayload.encode())
-            .sigAlg((byte) 0x01);
+            .sigAlg(Algorithm.RSA_SHA256);
 
         Signature sig = Signature.getInstance("SHA256withRSA");
         sig.initSign(trust.longTermKeyPair.getPrivate());
-        Envelope tempEnv = new Envelope(Envelope.PROTO_VERSION, EntryType.KEY_EPOCH, (byte) 0x00, Scope.group("group-X"), "s1", 1L, now, trust.signerId, announcePayload.encode(), (byte) 0x01, new byte[0]);
+        Envelope tempEnv = new Envelope(Envelope.PROTO_VERSION, EntryType.KEY_EPOCH, (byte) 0x00, Scope.group("group-X"), "s1", 1L, now, trust.signerId, announcePayload.encode(), Algorithm.RSA_SHA256, new byte[0]);
         sig.update(tempEnv.canonicalSigningBytes());
         byte[] signature = sig.sign();
         byte[] encoded = Envelope.encode(builder, signature);
@@ -289,9 +290,9 @@ class ConfigTrustSecurityTest {
             .timestamp(now)
             .issuer(trust.signerId)
             .payload(livePayload.encode())
-            .sigAlg((byte) 0x01);
+            .sigAlg(Algorithm.RSA_SHA256);
             
-        Envelope tempLive = new Envelope(Envelope.PROTO_VERSION, EntryType.LIVENESS, (byte) 0x00, Scope.group("group-X"), "s1", 1L, now, trust.signerId, livePayload.encode(), (byte) 0x01, new byte[0]);
+        Envelope tempLive = new Envelope(Envelope.PROTO_VERSION, EntryType.LIVENESS, (byte) 0x00, Scope.group("group-X"), "s1", 1L, now, trust.signerId, livePayload.encode(), Algorithm.RSA_SHA256, new byte[0]);
         sig.initSign(trust.longTermKeyPair.getPrivate());
         sig.update(tempLive.canonicalSigningBytes());
         byte[] liveSig = sig.sign();
