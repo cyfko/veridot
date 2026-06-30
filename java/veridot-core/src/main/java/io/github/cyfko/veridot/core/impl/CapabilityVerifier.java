@@ -114,6 +114,10 @@ final class CapabilityVerifier {
 
         // Step 3: Validate capability entry envelope
         Envelope capEnvelope = Envelope.parse(capBytes);
+        if (capEnvelope.version == 0) {
+            throw new VeridotException(ErrorCode.STALE_VERSION, targetEntryId.loggable(),
+                "Entry version 0 is unconditionally rejected (§11.1 V4201)");
+        }
         signatureVerifier.verify(capEnvelope, trustRoot);
 
         // Step 4: Validate capability payload

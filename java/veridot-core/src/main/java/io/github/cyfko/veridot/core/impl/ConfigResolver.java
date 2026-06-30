@@ -94,6 +94,9 @@ final class ConfigResolver {
             }
 
             // (L-02): CONFIG must pass through watermark acceptance
+            if (envelope.version == 0) {
+                return null;
+            }
             long currentWatermark = watermark.current(entryId);
             if (envelope.version < currentWatermark) {
                 return null;

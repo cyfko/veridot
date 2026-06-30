@@ -90,6 +90,10 @@ final class EntryVerifier {
         capabilityVerifier.assertAuthorized(envelope.issuer, envelope.scope, payload.site(), broker, trustRoot);
 
         // Verify version watermark monotone (§11.1)
+        if (envelope.version == 0) {
+            throw new VeridotException(ErrorCode.STALE_VERSION, loggable,
+                "Entry version 0 is unconditionally rejected (§11.1 V4201)");
+        }
         long currentWatermark = watermark.current(keyEpochId);
         if (envelope.version < currentWatermark) {
             throw new VeridotException(ErrorCode.STALE_VERSION, loggable, 
