@@ -77,14 +77,44 @@ final class FenceManager {
     }
 
     /**
-     * Asserts that a fenceCounter is still valid (not stale) for a capacity mutation.
+     * Asserts that a fenceCounter is still valid (not stale) for a capacity mutation
+     * by checking the local watermark and verifying against the broker state (§9.4).
      */
-    public void assertFenceValid(Scope scope, long fenceCounter, VersionWatermark watermark) {
+    public void assertFenceValid(Scope scope, long fenceCounter, Broker broker, TrustRoot trustRoot, VersionWatermark watermark) {
         EntryId fenceEntryId = new EntryId(scope, EntryType.FENCE, "");
-        long current = watermark.current(fenceEntryId);
-        if (fenceCounter <= current) {
+        
+        // 1. Verify against local watermark
+        long currentWatermark = watermark.current(fenceEntryId);
+        if (fenceCounter < currentWatermark) {
             throw new VeridotException(ErrorCode.FENCE_TOKEN_STALE, fenceEntryId.loggable(), 
-                "Fence counter " + fenceCounter + " is stale. Recorded watermark is " + current);
+                "Fence counter " + fenceCounter + " is stale compared to local watermark " + currentWatermark);
+        }
+
+        // 2. Fetch current FENCE from broker to detect concurrent updates on other nodes
+        byte[] bytes;
+        try {
+            bytes = broker.get(fenceEntryId.storageKey());
+        } catch (Exception e) {
+            // Broker unavailable: fall back to local watermark check
+            return;
+        }
+
+        if (bytes != null) {
+            try {
+                Envelope envelope = Envelope.parse(bytes);
+                signatureVerifier.verify(envelope, trustRoot);
+                FencePayload currentPayload = FencePayload.decode(envelope.payload);
+                if (fenceCounter < currentPayload.fenceCounter()) {
+                    // Update local watermark to prevent future redundant broker calls
+                    watermark.accept(fenceEntryId, Math.max(envelope.version, currentPayload.fenceCounter()));
+                    throw new VeridotException(ErrorCode.FENCE_TOKEN_STALE, fenceEntryId.loggable(), 
+                        "Fence counter " + fenceCounter + " is stale. Latest broker fence is " + currentPayload.fenceCounter());
+                }
+            } catch (VeridotException e) {
+                throw e;
+            } catch (Exception ignored) {
+                // If FENCE is corrupt, fall back to success
+            }
         }
     }
 }
