@@ -26,3 +26,14 @@ build/
 
 ### Mac OS ###
 .DS_Store
+
+# Build artifacts
+target/
+**/target/
+node_modules/
+**/node_modules/
+.vitepress/dist/
+.vitepress/cache/
+docs/.vitepress/dist/
+docs/.vitepress/cache/
+docs/node_modules/
