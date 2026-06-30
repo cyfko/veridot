@@ -75,6 +75,7 @@ final class ReconciliationManager implements AutoCloseable {
                 try {
                     watermark.accept(entryId, envelope.version);
                     if (entryId.entryType() == EntryType.CAPABILITY && capabilityVerifier != null) {
+                        capabilityVerifier.invalidateAuthorization(envelope.key, envelope.scope);
                         capabilityVerifier.invalidateAuthorization(envelope.issuer, envelope.scope);
                     }
                 } catch (VeridotException e) {

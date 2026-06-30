@@ -40,7 +40,7 @@ Veridot lets any service in your cluster **sign** a payload into a verifiable to
 Service A (signer)                     Service B (verifier)
 ──────────────────                     ────────────────────
 sv.sign("alice@example.com", config)   sv.verify(token, s -> s)
-  → generates RSA-3072 ephemeral key     → reads from local RocksDB (<1ms)
+  → generates Ed25519 ephemeral key      → reads from local RocksDB (<1ms)
   → signs payload → JWT                  → validates TrustRoot signature
   → publishes key announcement           → verifies JWT signature
     to Kafka (async)                     → returns VerifiedData<String>
@@ -122,9 +122,9 @@ dependencies {
 
 ## TrustRoot — the security cornerstone
 
-Every key announcement carries a long-term RSA signature. Verifiers check this signature via a `TrustRoot` **independently** of the broker. Broker write-access alone cannot produce a valid announcement.
+Every key announcement carries a long-term signature (typically Ed25519 or RSA-PSS). Verifiers check this signature via a `TrustRoot` **independently** of the broker. Broker write-access alone cannot produce a valid announcement.
 
-`TrustRoot` is a functional interface that resolves a signer ID to a public key verification mechanism. There are two built-in implementations:
+`TrustRoot` resolves a signer ID to a `TrustIdentity` record which encapsulates both the signer's public key and its root status (`isRoot`). This unified resolution avoids custom bypasses and ensures security by default.
 
 ### Option A — `PublicKeyTrustRoot` (you load the public key, Veridot verifies)
 
@@ -134,12 +134,20 @@ Best for: public keys stored in files, Vault KV, ConfigMaps, or any key-value st
 > **NOT FOR PRODUCTION**: Loading long-term trust root public keys directly from local files is not recommended for production environments. Consider using a KMS or a secure configuration provider.
 
 ```java
-TrustRoot trust = new PublicKeyTrustRoot(signerId -> {
-    // Load the long-term public key for this signerId from your trust store.
-    // Called once per unique signerId, result may be cached by the implementation.
-    byte[] pem = Files.readAllBytes(Paths.get("/etc/veridot/trust/" + signerId + ".pub.pem"));
-    return parsePemPublicKey(pem);
-});
+TrustRoot trust = new PublicKeyTrustRoot() {
+    @Override
+    public TrustIdentity resolve(String signerId) {
+        try {
+            // Load the long-term public key for this signerId from your trust store.
+            byte[] pem = Files.readAllBytes(Paths.get("/etc/veridot/trust/" + signerId + ".pub.pem"));
+            PublicKey key = parsePemPublicKey(pem);
+            boolean isRoot = "root-signer-id".equals(signerId); // Define system trust anchors
+            return new TrustIdentity(key, isRoot);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+};
 ```
 
 ### Option B — `DelegatedTrustRoot` (you delegate verification to a KMS)
@@ -148,11 +156,28 @@ Best for: Vault Transit Engine, AWS KMS, Google Cloud KMS, Azure Key Vault, HSMs
 The long-term private key never leaves the KMS.
 
 ```java
-TrustRoot trust = new DelegatedTrustRoot((signerId, canonicalBytes, signature) -> {
-    // Your KMS verifies the RSA signature. Return true if valid, false otherwise.
-    return vaultTransit.verify(signerId, canonicalBytes, signature);
-});
+DelegatedTrustRoot trust = new DelegatedTrustRoot() {
+    @Override
+    public TrustIdentity resolve(String signerId) {
+        // If your KMS also manages key resolution, return the key and root status
+        return new TrustIdentity(mockPublicKey, "root-signer-id".equals(signerId));
+    }
+
+    @Override
+    public boolean verifySignature(String issuer, byte[] data, byte[] signature, Algorithm sigAlg) {
+        // Your KMS verifies the signature. Return true if valid, false otherwise.
+        return vaultTransit.verify(issuer, data, signature, sigAlg);
+    }
+};
 ```
+
+### KMS / TrustRoot High Availability (Not a SPoF)
+
+Veridot is designed so that the KMS or the central `TrustRoot` provider is **completely decoupled from the request-processing hot path**, eliminating it as a Single Point of Failure (SPoF):
+
+- **Hot path isolation**: When verifying tokens (JWTs), edge verifiers only use the **ephemeral public keys** cached locally in memory or RocksDB. The verifier does NOT query the KMS or TrustRoot on each request.
+- **Control plane only**: The TrustRoot/KMS is only queried when a new ephemeral key is rotated (e.g. once every 24 hours per signer) or when a new capability is presented.
+- **Resilience to downtime**: If the KMS/TrustRoot goes down, the verifiers continue to verify incoming tokens using the cached ephemeral keys without any interruption or latency increase. Only key rotation or capability changes will be delayed until the KMS recovers.
 
 ---
 
@@ -181,14 +206,23 @@ Broker broker = KafkaBroker.of(kafkaProps);
 // ── 2. Load long-term private key ─────────────────────────────────
 // In production: load from Vault, Kubernetes Secret, or KMS.
 byte[] pkcs8Bytes = Files.readAllBytes(Paths.get("/etc/veridot/private.key"));
-PrivateKey longTermKey = KeyFactory.getInstance("RSA")
+PrivateKey longTermKey = KeyFactory.getInstance("Ed25519")
     .generatePrivate(new PKCS8EncodedKeySpec(pkcs8Bytes));
 
 // ── 3. Configure TrustRoot ────────────────────────────────────────
-TrustRoot trust = new PublicKeyTrustRoot(signerId -> {
-    byte[] pem = Files.readAllBytes(Paths.get("/etc/veridot/trust/" + signerId + ".pub.pem"));
-    return parsePemPublicKey(pem); // your PEM parsing helper
-});
+TrustRoot trust = new PublicKeyTrustRoot() {
+    @Override
+    public TrustIdentity resolve(String signerId) {
+        try {
+            byte[] pem = Files.readAllBytes(Paths.get("/etc/veridot/trust/" + signerId + ".pub.pem"));
+            PublicKey key = parsePemPublicKey(pem); // your PEM parsing helper
+            boolean isRoot = "root-signer-id".equals(signerId);
+            return new TrustIdentity(key, isRoot);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+};
 
 // ── 4. Build signer/verifier ──────────────────────────────────────
 var sv = new GenericSignerVerifier(broker, trust, "auth-service", longTermKey);
@@ -418,7 +452,7 @@ public class VeridotConfig {
     @Bean
     public PrivateKey veridotLongTermKey() throws Exception {
         byte[] pkcs8 = Files.readAllBytes(Paths.get(privateKeyPath));
-        return KeyFactory.getInstance("RSA").generatePrivate(new PKCS8EncodedKeySpec(pkcs8));
+        return KeyFactory.getInstance("Ed25519").generatePrivate(new PKCS8EncodedKeySpec(pkcs8));
     }
 
     > [!WARNING]
@@ -426,10 +460,19 @@ public class VeridotConfig {
 
     @Bean
     public TrustRoot veridotTrustRoot() {
-        return new PublicKeyTrustRoot(id -> {
-            byte[] pem = Files.readAllBytes(Paths.get(trustDir, id + ".pub.pem"));
-            return parsePemPublicKey(pem);
-        });
+        return new PublicKeyTrustRoot() {
+            @Override
+            public TrustIdentity resolve(String id) {
+                try {
+                    byte[] pem = Files.readAllBytes(Paths.get(trustDir, id + ".pub.pem"));
+                    PublicKey key = parsePemPublicKey(pem);
+                    boolean isRoot = "root-signer-id".equals(id);
+                    return new TrustIdentity(key, isRoot);
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        };
     }
 
     @Bean
@@ -499,7 +542,7 @@ sv.publishConfig(
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `VDOT_KEYS_ROTATION_MINUTES` | Rotation interval for ephemeral RSA-3072 key pairs | `1440` (24 hours) |
+| `VDOT_KEYS_ROTATION_MINUTES` | Rotation interval for ephemeral Ed25519 key pairs | `1440` (24 hours) |
 
 ---
 
