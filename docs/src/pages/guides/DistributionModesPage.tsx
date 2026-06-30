@@ -1,6 +1,7 @@
 import { useApp } from '../../context/AppContext';
 import { CodeBlock } from '../../components/CodeBlock';
 import { Admonition } from '../../components/Admonition';
+import { Mermaid } from '../../components/Mermaid';
 
 const DIRECT_CODE = `// DIRECT mode: returns the fully signed JWT token string
 String token = signer.sign(userClaims,
@@ -50,6 +51,50 @@ String broadcastToken = signer.publishSecurePayload(
 // Verifying at recipient side:
 VerifiedData<byte[]> verified = verifier.verify(broadcastToken, bytes -> bytes);
 byte[] clearData = verified.data();`;
+
+const CLASSIC_FLOW_CHART = `sequenceDiagram
+    autonumber
+    actor Client
+    participant Emitter as Emitter Node
+    participant Broker as Untrusted Broker
+    participant Verifier as Verifier Node
+    participant Attacker as Passive Listener
+
+    Emitter->>Broker: Publish full JWT containing plaintext sensitive data
+    Note over Broker: JWT is stored in cleartext!
+    rect rgb(254, 226, 226)
+        Attacker->>Broker: Read metadata / logs
+        Note over Attacker: Leaks sensitive profile / role claims!
+    end
+    Emitter->>Client: Send lightweight Token (messageId reference)
+    Client->>Verifier: Present messageId reference
+    Verifier->>Broker: Fetch full JWT using messageId
+    Broker-->>Verifier: Return full JWT
+    Verifier->>Verifier: Validate signature & authenticate Client`;
+
+const SECURE_FLOW_CHART = `sequenceDiagram
+    autonumber
+    actor Client
+    participant Emitter as Emitter Node
+    participant Broker as Untrusted Broker
+    participant Verifier as Verifier Node
+    participant Attacker as Passive Listener
+
+    Emitter->>Emitter: Generate ephemeral key_sym & encrypt payload (AES-GCM)
+    Emitter->>Emitter: Encapsulate key_sym with Verifier's public key (RSA/ECDH)
+    Emitter->>Broker: Publish signed SECURE_PAYLOAD envelope
+    Note over Broker: Data is encrypted, key is encapsulated!
+    rect rgb(209, 250, 229)
+        Attacker->>Broker: Read metadata / logs
+        Note over Attacker: Only sees ciphertext & encrypted key blocks (Access Denied)
+    end
+    Emitter->>Client: Send lightweight Token (SECURE_PAYLOAD pointer)
+    Client->>Verifier: Present SECURE_PAYLOAD pointer
+    Verifier->>Broker: Fetch SECURE_PAYLOAD envelope
+    Broker-->>Verifier: Return envelope
+    Verifier->>Verifier: Verify envelope signature
+    Verifier->>Verifier: Decrypt key_sym using its private key
+    Verifier->>Verifier: Decrypt payload with key_sym (AES-GCM)`;
 
 export function DistributionModesPage() {
   const { language } = useApp();
@@ -121,6 +166,35 @@ export function DistributionModesPage() {
             ? 'To guarantee strict confidentiality, Veridot introduces the SECURE_PAYLOAD entry type (Tag 0x07). This protocol layer utilizes high-performance hybrid encryption to protect sensitive token payloads before publishing them, ensuring that only authorized verifying processors can extract and read the data.'
             : 'Pour garantir une confidentialité absolue, Veridot introduit le type d\'entrée SECURE_PAYLOAD (Tag 0x07). Ce protocole applique un chiffrement hybride à haute performance pour protéger les charges utiles sensibles avant publication, s\'assurant que seuls les processeurs de vérification autorisés puissent extraire et déchiffrer les données.'}
         </Admonition>
+      </section>
+
+      {/* Sequence Diagrams Comparison */}
+      <section className="border-t border-slate-100 dark:border-slate-800 pt-6">
+        <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-4">
+          {language === 'en' ? 'Sequence Diagrams Comparison' : 'Comparatif des Diagrammes de Séquence'}
+        </h2>
+        
+        <div className="space-y-6">
+          <div>
+            <h4 className="font-semibold text-sm text-red-600 dark:text-red-400 mb-2">
+              {language === 'en' ? '1. Classic Indirect Mode Flow (Security Risk)' : '1. Flux en Mode Indirect Classique (Risque de Sécurité)'}
+            </h4>
+            <Mermaid 
+              chart={CLASSIC_FLOW_CHART} 
+              caption={language === 'en' ? 'Classic indirect mode exposes JWT in cleartext on the broker.' : 'Le mode indirect classique expose le JWT en clair sur le broker.'} 
+            />
+          </div>
+
+          <div>
+            <h4 className="font-semibold text-sm text-emerald-600 dark:text-emerald-400 mb-2">
+              {language === 'en' ? '2. SECURE_PAYLOAD Mode Flow (End-to-End Encryption)' : '2. Flux en Mode SECURE_PAYLOAD (Chiffrement de Bout en Bout)'}
+            </h4>
+            <Mermaid 
+              chart={SECURE_FLOW_CHART} 
+              caption={language === 'en' ? 'SECURE_PAYLOAD encrypts data at source and only authorized verifiers can decrypt.' : 'SECURE_PAYLOAD chiffre les données à la source et seuls les vérificateurs autorisés peuvent déchiffrer.'} 
+            />
+          </div>
+        </div>
       </section>
 
       {/* Cryptographic Architecture Flowchart */}
