@@ -32,8 +32,5 @@ target/
 **/target/
 node_modules/
 **/node_modules/
-.vitepress/dist/
-.vitepress/cache/
-docs/.vitepress/dist/
-docs/.vitepress/cache/
+docs/dist/
 docs/node_modules/
