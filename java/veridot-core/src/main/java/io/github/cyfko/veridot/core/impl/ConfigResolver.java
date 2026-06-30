@@ -94,6 +94,9 @@ final class ConfigResolver {
             }
 
             // (L-02): CONFIG must pass through watermark acceptance
+            // CRITICAL SECURITY HARDENING (V4201): Protocol V4 §11.1 explicitly dictates that version 0
+            // is unconditionally invalid to prevent initial-state replay/rollback attacks (where watermark is 0
+            // and 0 < 0 is false, allowing version 0 to pass relative monotone checks).
             if (envelope.version == 0) {
                 return null;
             }

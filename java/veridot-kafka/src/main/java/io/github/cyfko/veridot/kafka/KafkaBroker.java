@@ -32,6 +32,18 @@ import java.util.logging.Logger;
 public class KafkaBroker implements Broker, WatermarkStore, AutoCloseable {
 
     private static final Logger logger = Logger.getLogger(KafkaBroker.class.getName());
+    
+    // CRITICAL SECURITY HARDENING (§13.3.1): Prefix the watermark snapshot storage key
+    // with 0xFF. Since 0xFF is an invalid UTF-8 start byte and all protocol scope/key
+    // entries are validated UTF-8, this guarantees that watermark metadata cannot conflict
+    // or be overwritten by any client-defined entry keys in RocksDB's shared key space.
+    private static final byte[] WATERMARK_KEY;
+    static {
+        byte[] raw = "__watermark_snapshot__".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        WATERMARK_KEY = new byte[raw.length + 1];
+        WATERMARK_KEY[0] = (byte) 0xFF;
+        System.arraycopy(raw, 0, WATERMARK_KEY, 1, raw.length);
+    }
 
     private final KafkaProducer<String, String> producer;
     private final KafkaConsumer<String, String> consumer;
@@ -308,7 +320,7 @@ public class KafkaBroker implements Broker, WatermarkStore, AutoCloseable {
     public void save(byte[] snapshot) {
         if (closed || db == null) return;
         try {
-            db.put("__watermark_snapshot__".getBytes(StandardCharsets.UTF_8), snapshot);
+            db.put(WATERMARK_KEY, snapshot);
         } catch (org.rocksdb.RocksDBException e) {
             logger.severe("Failed to save watermark snapshot to RocksDB: " + e.getMessage());
         }
@@ -318,7 +330,7 @@ public class KafkaBroker implements Broker, WatermarkStore, AutoCloseable {
     public byte[] load() {
         if (closed || db == null) return null;
         try {
-            return db.get("__watermark_snapshot__".getBytes(StandardCharsets.UTF_8));
+            return db.get(WATERMARK_KEY);
         } catch (org.rocksdb.RocksDBException e) {
             logger.severe("Failed to load watermark snapshot from RocksDB: " + e.getMessage());
             return null;

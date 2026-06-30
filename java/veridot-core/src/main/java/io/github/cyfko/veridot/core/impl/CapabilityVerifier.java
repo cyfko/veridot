@@ -114,6 +114,9 @@ final class CapabilityVerifier {
 
         // Step 3: Validate capability entry envelope
         Envelope capEnvelope = Envelope.parse(capBytes);
+        // CRITICAL SECURITY HARDENING (V4201): Protocol V4 §11.1 explicitly dictates that version 0
+        // is unconditionally invalid to prevent initial-state replay/rollback attacks (where watermark is 0
+        // and 0 < 0 is false, allowing version 0 to pass relative monotone checks).
         if (capEnvelope.version == 0) {
             throw new VeridotException(ErrorCode.STALE_VERSION, targetEntryId.loggable(),
                 "Entry version 0 is unconditionally rejected (§11.1 V4201)");

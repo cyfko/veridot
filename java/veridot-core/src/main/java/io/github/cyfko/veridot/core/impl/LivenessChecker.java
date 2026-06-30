@@ -72,6 +72,9 @@ final class LivenessChecker {
         }
 
         // 5. Verify version is strictly greater than or equal to watermark (§11.1)
+        // CRITICAL SECURITY HARDENING (V4201): Protocol V4 §11.1 explicitly dictates that version 0
+        // is unconditionally invalid to prevent initial-state replay/rollback attacks (where watermark is 0
+        // and 0 < 0 is false, allowing version 0 to pass relative monotone checks).
         if (envelope.version == 0) {
             throw new VeridotException(ErrorCode.STALE_VERSION, loggable,
                 "Entry version 0 is unconditionally rejected (§11.1 V4201)");
