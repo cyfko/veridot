@@ -16,21 +16,30 @@ record LivenessPayload(
     public static final byte ACTIVE  = 0x01;
     public static final byte REVOKED = 0x02;
 
+    public enum Tag {
+        STATUS((byte) 0x01),
+        AS_OF((byte) 0x02),
+        VALID_UNTIL((byte) 0x03);
+
+        public final byte code;
+        Tag(byte code) { this.code = code; }
+    }
+
     public static LivenessPayload decode(byte[] tlvBytes) {
         Map<Byte, byte[]> fields = TlvCodec.parse(tlvBytes);
 
-        byte status = TlvCodec.readU8(fields, (byte) 0x01, true);
-        long asOf = TlvCodec.readI64(fields, (byte) 0x02, true);
-        long validUntil = TlvCodec.readI64(fields, (byte) 0x03, true);
+        byte status = TlvCodec.readU8(fields, Tag.STATUS.code, true);
+        long asOf = TlvCodec.readI64(fields, Tag.AS_OF.code, true);
+        long validUntil = TlvCodec.readI64(fields, Tag.VALID_UNTIL.code, true);
 
         return new LivenessPayload(status, asOf, validUntil);
     }
 
     public byte[] encode() {
         List<TlvCodec.TlvField> fields = new ArrayList<>();
-        fields.add(TlvCodec.u8((byte) 0x01, status));
-        fields.add(TlvCodec.i64((byte) 0x02, asOf));
-        fields.add(TlvCodec.i64((byte) 0x03, validUntil));
+        fields.add(TlvCodec.u8(Tag.STATUS.code, status));
+        fields.add(TlvCodec.i64(Tag.AS_OF.code, asOf));
+        fields.add(TlvCodec.i64(Tag.VALID_UNTIL.code, validUntil));
         return TlvCodec.encode(fields);
     }
 

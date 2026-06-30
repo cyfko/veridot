@@ -23,31 +23,43 @@ record ConfigPayload(
     OptionalLong validity       // tag 0x06: optional u64 (validity duration in ms)
 ) {
 
+    public enum Tag {
+        MAX((byte) 0x01),
+        POL((byte) 0x02),
+        DTTL((byte) 0x03),
+        NAME((byte) 0x04),
+        DESCRIPTION((byte) 0x05),
+        VALIDITY((byte) 0x06);
+
+        public final byte code;
+        Tag(byte code) { this.code = code; }
+    }
+
     public static ConfigPayload decode(byte[] tlvBytes) {
         Map<Byte, byte[]> fields = TlvCodec.parse(tlvBytes);
 
-        OptionalInt max = fields.containsKey((byte) 0x01) 
-            ? OptionalInt.of((int) TlvCodec.readU32(fields, (byte) 0x01, true))
+        OptionalInt max = fields.containsKey(Tag.MAX.code) 
+            ? OptionalInt.of((int) TlvCodec.readU32(fields, Tag.MAX.code, true))
             : OptionalInt.empty();
 
-        byte pol = fields.containsKey((byte) 0x02)
-            ? TlvCodec.readU8(fields, (byte) 0x02, true)
+        byte pol = fields.containsKey(Tag.POL.code)
+            ? TlvCodec.readU8(fields, Tag.POL.code, true)
             : 0x01; // Default FIFO
 
-        OptionalLong dttl = fields.containsKey((byte) 0x03)
-            ? OptionalLong.of(TlvCodec.readU64(fields, (byte) 0x03, true))
+        OptionalLong dttl = fields.containsKey(Tag.DTTL.code)
+            ? OptionalLong.of(TlvCodec.readU64(fields, Tag.DTTL.code, true))
             : OptionalLong.empty();
 
-        Optional<String> name = fields.containsKey((byte) 0x04)
-            ? Optional.of(TlvCodec.readString(fields, (byte) 0x04, true))
+        Optional<String> name = fields.containsKey(Tag.NAME.code)
+            ? Optional.of(TlvCodec.readString(fields, Tag.NAME.code, true))
             : Optional.empty();
 
-        Optional<String> description = fields.containsKey((byte) 0x05)
-            ? Optional.of(TlvCodec.readString(fields, (byte) 0x05, true))
+        Optional<String> description = fields.containsKey(Tag.DESCRIPTION.code)
+            ? Optional.of(TlvCodec.readString(fields, Tag.DESCRIPTION.code, true))
             : Optional.empty();
 
-        OptionalLong validity = fields.containsKey((byte) 0x06)
-            ? OptionalLong.of(TlvCodec.readU64(fields, (byte) 0x06, true))
+        OptionalLong validity = fields.containsKey(Tag.VALIDITY.code)
+            ? OptionalLong.of(TlvCodec.readU64(fields, Tag.VALIDITY.code, true))
             : OptionalLong.empty();
 
         return new ConfigPayload(max, pol, dttl, name, description, validity);
@@ -58,17 +70,17 @@ record ConfigPayload(
         if (max.isPresent()) {
             byte[] bytes = new byte[4];
             ByteBuffer.wrap(bytes).putInt(max.getAsInt());
-            fields.add(new TlvCodec.TlvField((byte) 0x01, bytes));
+            fields.add(new TlvCodec.TlvField(Tag.MAX.code, bytes));
         }
         // Always write policy to avoid ambiguity
-        fields.add(TlvCodec.u8((byte) 0x02, pol));
+        fields.add(TlvCodec.u8(Tag.POL.code, pol));
         if (dttl.isPresent()) {
-            fields.add(TlvCodec.u64((byte) 0x03, dttl.getAsLong()));
+            fields.add(TlvCodec.u64(Tag.DTTL.code, dttl.getAsLong()));
         }
-        name.ifPresent(s -> fields.add(TlvCodec.string((byte) 0x04, s)));
-        description.ifPresent(s -> fields.add(TlvCodec.string((byte) 0x05, s)));
+        name.ifPresent(s -> fields.add(TlvCodec.string(Tag.NAME.code, s)));
+        description.ifPresent(s -> fields.add(TlvCodec.string(Tag.DESCRIPTION.code, s)));
         if (validity.isPresent()) {
-            fields.add(TlvCodec.u64((byte) 0x06, validity.getAsLong()));
+            fields.add(TlvCodec.u64(Tag.VALIDITY.code, validity.getAsLong()));
         }
 
         return TlvCodec.encode(fields);

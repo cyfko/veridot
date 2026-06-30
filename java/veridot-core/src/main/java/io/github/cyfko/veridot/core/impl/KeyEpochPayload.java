@@ -23,6 +23,19 @@ record KeyEpochPayload(
     String token         // tag 0x07: optional token for indirect mode
 ) {
 
+    public enum Tag {
+        ALG((byte) 0x01),
+        EPOCH_ID((byte) 0x02),
+        PK((byte) 0x03),
+        VALID_FROM((byte) 0x04),
+        VALID_UNTIL((byte) 0x05),
+        SITE((byte) 0x06),
+        TOKEN((byte) 0x07);
+
+        public final byte code;
+        Tag(byte code) { this.code = code; }
+    }
+
     @Deprecated
     public KeyEpochPayload(byte algCode, long epochId, byte[] pk, long validFrom, long validUntil, String site, String token) {
         this(Algorithm.fromCode(algCode), epochId, pk, validFrom, validUntil, site, token);
@@ -31,29 +44,29 @@ record KeyEpochPayload(
     public static KeyEpochPayload decode(byte[] tlvBytes) {
         Map<Byte, byte[]> fields = TlvCodec.parse(tlvBytes);
 
-        Algorithm alg = Algorithm.fromCode(TlvCodec.readU8(fields, (byte) 0x01, true));
-        long epochId = TlvCodec.readU64(fields, (byte) 0x02, true);
-        byte[] pk = TlvCodec.readBytes(fields, (byte) 0x03, true);
-        long validFrom = TlvCodec.readI64(fields, (byte) 0x04, true);
-        long validUntil = TlvCodec.readI64(fields, (byte) 0x05, true);
-        String site = TlvCodec.readString(fields, (byte) 0x06, false);
-        String token = TlvCodec.readString(fields, (byte) 0x07, false);
+        Algorithm alg = Algorithm.fromCode(TlvCodec.readU8(fields, Tag.ALG.code, true));
+        long epochId = TlvCodec.readU64(fields, Tag.EPOCH_ID.code, true);
+        byte[] pk = TlvCodec.readBytes(fields, Tag.PK.code, true);
+        long validFrom = TlvCodec.readI64(fields, Tag.VALID_FROM.code, true);
+        long validUntil = TlvCodec.readI64(fields, Tag.VALID_UNTIL.code, true);
+        String site = TlvCodec.readString(fields, Tag.SITE.code, false);
+        String token = TlvCodec.readString(fields, Tag.TOKEN.code, false);
 
         return new KeyEpochPayload(alg, epochId, pk, validFrom, validUntil, site, token);
     }
 
     public byte[] encode() {
         List<TlvCodec.TlvField> fields = new ArrayList<>();
-        fields.add(TlvCodec.u8((byte) 0x01, alg.getCode()));
-        fields.add(TlvCodec.u64((byte) 0x02, epochId));
-        fields.add(TlvCodec.bytes((byte) 0x03, pk));
-        fields.add(TlvCodec.i64((byte) 0x04, validFrom));
-        fields.add(TlvCodec.i64((byte) 0x05, validUntil));
+        fields.add(TlvCodec.u8(Tag.ALG.code, alg.getCode()));
+        fields.add(TlvCodec.u64(Tag.EPOCH_ID.code, epochId));
+        fields.add(TlvCodec.bytes(Tag.PK.code, pk));
+        fields.add(TlvCodec.i64(Tag.VALID_FROM.code, validFrom));
+        fields.add(TlvCodec.i64(Tag.VALID_UNTIL.code, validUntil));
         if (site != null) {
-            fields.add(TlvCodec.string((byte) 0x06, site));
+            fields.add(TlvCodec.string(Tag.SITE.code, site));
         }
         if (token != null) {
-            fields.add(TlvCodec.string((byte) 0x07, token));
+            fields.add(TlvCodec.string(Tag.TOKEN.code, token));
         }
         return TlvCodec.encode(fields);
     }
