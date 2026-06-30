@@ -149,14 +149,12 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         } else {
             String path = Config.WATERMARK_PERSISTENCE_FILE;
             if (path != null && !path.isBlank()) {
-                byte[] hmacKey = null;
+                byte[] hmacKey;
                 try {
-                    byte[] encoded = longTermKey.getEncoded();
-                    if (encoded != null) {
-                        java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
-                        hmacKey = md.digest(encoded);
-                    }
-                } catch (Exception ignored) {}
+                    hmacKey = deriveHmacKey(longTermKey);
+                } catch (Exception e) {
+                    throw new RuntimeException("Failed to initialize FileWatermarkStore: " + e.getMessage(), e);
+                }
                 this.watermarkStore = new FileWatermarkStore(new java.io.File(path), hmacKey);
             } else if (broker instanceof io.github.cyfko.veridot.core.WatermarkStore) {
                 this.watermarkStore = (io.github.cyfko.veridot.core.WatermarkStore) broker;
@@ -196,6 +194,30 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         }
         this.keyRotationService = new KeyRotationService(ephemeralAlg);
         this.livenessManager = new LivenessManager(entryPublisher, broker, longTermKey, envelopeSigAlg, issuerId);
+    }
+
+    private static byte[] deriveHmacKey(PrivateKey key) throws Exception {
+        byte[] encoded = key.getEncoded();
+        if (encoded == null) {
+            throw new IllegalStateException(
+                "Cannot derive HMAC key: PrivateKey.getEncoded() returned null. " +
+                "Provide an explicit WatermarkStore with a pre-configured HMAC key."
+            );
+        }
+        try {
+            // HKDF-Extract (RFC 5869) with fixed salt for the watermark
+            javax.crypto.Mac hmac = javax.crypto.Mac.getInstance("HmacSHA256");
+            hmac.init(new javax.crypto.spec.SecretKeySpec("veridot-watermark-v4".getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            byte[] prk = hmac.doFinal(encoded);
+
+            // HKDF-Expand
+            hmac.init(new javax.crypto.spec.SecretKeySpec(prk, "HmacSHA256"));
+            hmac.update("watermark-integrity-key".getBytes(StandardCharsets.UTF_8));
+            hmac.update((byte) 1);
+            return hmac.doFinal();
+        } finally {
+            Arrays.fill(encoded, (byte) 0); // clear memory of the key encoding copy
+        }
     }
 
     @Override
