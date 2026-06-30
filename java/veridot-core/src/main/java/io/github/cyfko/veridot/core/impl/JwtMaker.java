@@ -102,7 +102,16 @@ class JwtMaker {
             } catch (Exception ignored) {}
         }
         signature.initSign(privateKey);
-        signature.update(data.getBytes(StandardCharsets.UTF_8));
+
+        // Convert to a temporary byte array and actively wipe it post-signature
+        // to reduce the persistence of raw sensitive data in the JVM Heap.
+        byte[] dataBytes = data.getBytes(StandardCharsets.UTF_8);
+        try {
+            signature.update(dataBytes);
+        } finally {
+            java.util.Arrays.fill(dataBytes, (byte) 0);
+        }
+
         byte[] signed = signature.sign();
         return base64UrlEncode(signed);
     }
