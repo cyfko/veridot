@@ -34,3 +34,4 @@ node_modules/
 **/node_modules/
 docs/dist/
 docs/node_modules/
+docs/.vite/

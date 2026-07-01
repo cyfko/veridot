@@ -569,7 +569,15 @@ sv.publishConfig(
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `VDOT_KEYS_ROTATION_MINUTES` | Rotation interval for ephemeral Ed25519 key pairs | `1440` (24 hours) |
+| `VDOT_KEYS_ROTATION_MINUTES` | Rotation interval for ephemeral key pairs | `1440` (24 hours) |
+| `VDOT_RECONCILIATION_INTERVAL_MINUTES` | Interval for watermark periodic reconciliation against the broker | `15` minutes |
+| `VDOT_CAPABILITY_CACHE_TTL_SECONDS` | Positive cache TTL for verified capabilities | `10` seconds |
+| `VDOT_CAPABILITY_NEGATIVE_CACHE_TTL_SECONDS` | Negative cache TTL for capability validation failures | `5` seconds |
+| `VDOT_CLOCK_DRIFT_TOLERANCE_SECONDS` | Maximum allowed clock drift tolerance between signers and verifiers | `300` seconds |
+| `VDOT_ALLOWED_SIG_ALGS` | Allowed signature algorithms for envelope verification (comma-separated) | `ED25519,RSA_PSS` |
+| `VDOT_MIN_RSA_KEY_LENGTH` | Minimum allowed RSA public key length | `2048` bits |
+| `VDOT_WATERMARK_PERSISTENCE_FILE` | Optional local file path for persistent version watermarks snapshot | *None* |
+| `VDOT_RECONCILIATION_MAX_STALENESS_MINUTES` | Maximum allowed watermark staleness before rejecting validation | `60` minutes |
 
 ---
 
