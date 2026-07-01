@@ -23,7 +23,8 @@ const EVICTION_CODE = `public enum EvictionPolicy {
 
 const DISTRIBUTION_CODE = `public enum DistributionMode {
     DIRECT,   // Return the signed JWT directly. Default mode.
-    INDIRECT  // Store JWT in broker; return messageId ("4:<groupId>:<sequenceId>")
+    INDIRECT, // Store JWT in broker; return messageId ("4:<groupId>:<sequenceId>")
+    PRIVATE   // Encrypt payload at source (AES-GCM + RSA/ECDH); store envelope on broker; return reference token ("7:<groupId>:<sequenceId>")
 }`;
 
 const CONFIG_SCOPE_CODE = `public enum ConfigScope {

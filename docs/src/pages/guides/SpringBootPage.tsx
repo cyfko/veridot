@@ -71,7 +71,15 @@ public class VeridotAutoConfiguration {
             }
         });
 
-        return preloadedKeys::get;
+        // PublicKeyTrustRoot acts as a functional interface permitting lambdas
+        PublicKeyTrustRoot trust = issuer -> {
+            PublicKey key = preloadedKeys.get(issuer);
+            if (key == null) {
+                return null;
+            }
+            return new TrustIdentity(key, "root-signer-id".equals(issuer));
+        };
+        return trust;
     }
 
     // ── 3. Kafka Broker instantiation ──
@@ -80,7 +88,7 @@ public class VeridotAutoConfiguration {
         Properties p = new Properties();
         p.setProperty("bootstrap.servers", properties.kafkaBootstrapServers());
         p.setProperty("embedded.db.path", properties.localDbPath());
-        return KafkaBroker.of(p);
+        return new KafkaBroker(p);
     }
 
     // ── 4. Main orchestrator with destruction hook ──

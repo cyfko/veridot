@@ -22,6 +22,7 @@ export function ErrorCodesPage() {
     { code: 'V4301', name: 'FENCE_TOKEN_STALE', category: language === 'en' ? 'Capacity' : 'Capacité', desc: language === 'en' ? 'fenceCounter is not strictly greater than the recorded watermark for the scope. Another processor already advanced the fence.' : 'fenceCounter n\'est pas strictement supérieur au watermark enregistré pour le scope. Un autre processeur a déjà avancé le fence.' },
     { code: 'V4302', name: 'CAPACITY_EXCEEDED', category: language === 'en' ? 'Capacity' : 'Capacité', desc: language === 'en' ? 'maxSessions reached under pol = REJECT. No new session can be created for this group.' : 'maxSessions atteint sous pol = REJECT. Aucune nouvelle session ne peut être créée pour ce groupe.' },
     { code: 'V4401', name: 'TRANSPORT_UNAVAILABLE', category: language === 'en' ? 'Transport' : 'Transport', desc: language === 'en' ? 'Broker read or write failure. Treated as rejection (fail-closed). Logged separately from trust/liveness errors.' : 'Échec de lecture ou d\'écriture du broker. Traité comme un rejet (fail-closed). Journalisé séparément des erreurs de trust/liveness.' },
+    { code: 'V4402', name: 'RECONCILIATION_STALE', category: language === 'en' ? 'Ordering' : 'Ordre', desc: language === 'en' ? 'The background cache reconciliation has exceeded the maximum staleness interval (§11.4).' : 'La réconciliation en arrière-plan du cache local a dépassé la limite maximale de fraîcheur (§11.4).' },
   ];
 
   const categoryColors: Record<string, string> = {

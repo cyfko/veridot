@@ -1,5 +1,34 @@
 import { useApp } from '../../context/AppContext';
 import { Admonition } from '../../components/Admonition';
+import { CodeBlock } from '../../components/CodeBlock';
+
+const METRICS_BRIDGE_CODE = `// Bridge Veridot's LongAdder metrics to Spring Boot Micrometer
+@Configuration
+public class VeridotMetricsConfig {
+
+    @Autowired
+    public void registerVeridotMetrics(MeterRegistry registry) {
+        FunctionCounter.builder("veridot.envelopes.accepted", 
+                VeridotMetrics.ENVELOPE_ACCEPTED, LongAdder::doubleValue)
+            .description("Total number of accepted envelopes")
+            .register(registry);
+
+        FunctionCounter.builder("veridot.envelopes.rejected", 
+                VeridotMetrics.ENVELOPE_REJECTED, LongAdder::doubleValue)
+            .description("Total number of rejected envelopes (failures)")
+            .register(registry);
+
+        FunctionCounter.builder("veridot.fence.contentions", 
+                VeridotMetrics.FENCE_CONTENTIONS, LongAdder::doubleValue)
+            .description("Total number of FENCE contentions detected")
+            .register(registry);
+
+        FunctionCounter.builder("veridot.reconciliations", 
+                VeridotMetrics.RECONCILIATIONS, LongAdder::doubleValue)
+            .description("Total number of database cache reconciliations performed")
+            .register(registry);
+    }
+}`;
 
 export function MetricsPage() {
   const { language } = useApp();
@@ -11,30 +40,35 @@ export function MetricsPage() {
         <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-3">Metrics Reference</h1>
         <p className="text-lg text-slate-600 dark:text-slate-400">
           {language === 'en'
-            ? 'Monitor Veridot performance and detect security anomalies using standard Prometheus metrics exposed by the verifier instances.'
-            : 'Surveillez les performances et détectez les menaces à l\'aide des métriques Prometheus exposées par les vérificateurs.'}
+            ? 'Veridot core is designed with zero external dependencies and tracks security and operational metrics using standard JVM LongAdder counters.'
+            : 'Le cœur de Veridot est conçu sans dépendance externe et suit les performances via des compteurs JVM LongAdder.'}
         </p>
       </div>
 
       <section>
         <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-4">
-          {language === 'en' ? 'Prometheus Metrics' : 'Métriques Prometheus'}
+          {language === 'en' ? 'Core LongAdder Counters' : 'Compteurs LongAdder Cœur'}
         </h2>
-        <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+        <p className="text-slate-600 dark:text-slate-400 mb-3 text-sm">
+          {language === 'en'
+            ? 'The VeridotMetrics class provides thread-safe static counters that can be inspected directly or bridged to micrometer/Prometheus:'
+            : 'La classe VeridotMetrics expose des compteurs statiques sûrs pour les threads :' }
+        </p>
+        <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 mb-6">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-slate-50 dark:bg-slate-800/50">
-                {['Metric Name', 'Type', language === 'en' ? 'Description' : 'Description'].map(h => (
+                {['Metric Field', 'Type', language === 'en' ? 'Description' : 'Description'].map(h => (
                   <th key={h} className="px-4 py-3 text-left font-semibold text-slate-700 dark:text-slate-300">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900">
               {[
-                { name: 'veridot_rejections_total', type: 'Counter', desc: language === 'en' ? 'Total number of rejected tokens, labeled by error (V4201, V4202, etc.)' : 'Nombre total de rejets de tokens, étiqueté par code d\'erreur' },
-                { name: 'veridot_watermark_staleness_ms', type: 'Gauge', desc: language === 'en' ? 'Current delay in milliseconds since the last successful reconciliation' : 'Délai actuel depuis la dernière réconciliation du cache' },
-                { name: 'veridot_fence_contention_total', type: 'Counter', desc: language === 'en' ? 'Number of failed concurrent quota mutations due to stale fence tokens' : 'Nombre de collisions de jetons de barrière (FENCE) lors de mutations concurrentes' },
-                { name: 'veridot_active_sessions', type: 'Gauge', desc: language === 'en' ? 'Current count of active sessions for a monitored user group' : 'Nombre de sessions actives pour un groupe d\'utilisateurs surveillé' },
+                { name: 'ENVELOPE_ACCEPTED', type: 'LongAdder', desc: language === 'en' ? 'Total number of successfully parsed and verified envelopes' : 'Nombre total d\'enveloppes analysées et vérifiées avec succès' },
+                { name: 'ENVELOPE_REJECTED', type: 'LongAdder', desc: language === 'en' ? 'Total number of rejected tokens/envelopes (due to signature, expired key, revocation, etc.)' : 'Nombre total de rejets d\'enveloppes ou de jetons' },
+                { name: 'FENCE_CONTENTIONS', type: 'LongAdder', desc: language === 'en' ? 'Number of failed concurrent operations due to stale fence version watermarks' : 'Nombre de collisions détectées sur les jetons de barrière (FENCE)' },
+                { name: 'RECONCILIATIONS', type: 'LongAdder', desc: language === 'en' ? 'Number of full-scope cache database reconciliations successfully performed' : 'Nombre total de réconciliations du cache effectuées' },
               ].map(row => (
                 <tr key={row.name}>
                   <td className="px-4 py-3 font-mono font-medium text-violet-600">{row.name}</td>
@@ -47,10 +81,22 @@ export function MetricsPage() {
         </div>
       </section>
 
+      <section>
+        <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-4">
+          {language === 'en' ? 'Prometheus & Micrometer Export' : 'Exportation Prometheus & Micrometer'}
+        </h2>
+        <p className="text-slate-600 dark:text-slate-400 mb-3 text-sm">
+          {language === 'en'
+            ? 'To expose these metrics to Prometheus, register them as FunctionCounters inside your Spring Boot application configuration:'
+            : 'Pour exposer ces compteurs à Prometheus, enregistrez-les comme FunctionCounter dans la configuration de votre application Spring Boot :' }
+        </p>
+        <CodeBlock code={METRICS_BRIDGE_CODE} language="java" title="Bridging VeridotMetrics to Micrometer" />
+      </section>
+
       <Admonition type="warning" title={language === 'en' ? 'Critical Alerts' : 'Alertes Critiques'}>
         {language === 'en'
-          ? 'Set up alerts on veridot_rejections_total for codes V4101 (Trust failure) and V4201 (Stale version). An increase in these codes indicates potential key compromises or configuration sync issues.'
-          : 'Configurez des alertes sur veridot_rejections_total pour les codes V4101 (échec signature) et V4201 (version obsolète) afin de repérer les attaques de rejeu.'}
+          ? 'Set up alerts on veridot.envelopes.rejected. An increase in rejections indicates potential key compromises, expired token attempts, or configuration sync issues.'
+          : 'Configurez des alertes sur veridot.envelopes.rejected. Une augmentation brutale des rejets signale des anomalies de signature ou des tentatives de rejeu.'}
       </Admonition>
     </div>
   );
