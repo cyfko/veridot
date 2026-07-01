@@ -13,6 +13,8 @@ import java.security.Signature;
  */
 final class SignatureVerifier {
 
+    private static final java.util.logging.Logger logger = java.util.logging.Logger.getLogger(SignatureVerifier.class.getName());
+
     public void verify(Envelope envelope, TrustRoot trustRoot) {
         if (envelope == null) {
             throw new IllegalArgumentException("Envelope cannot be null");
@@ -81,6 +83,11 @@ final class SignatureVerifier {
 
         // 4. Verify cryptographic signature
         try {
+            if (envelope.sigAlg != Algorithm.ED25519) {
+                logger.warning("Non-constant-time signature algorithm in use: " 
+                    + envelope.sigAlg + " for entry " + envelope.entryId().loggable() 
+                    + ". §14.1 recommends Ed25519 for timing-safe verification.");
+            }
             Signature sig = Signature.getInstance(envelope.sigAlg.getJcaSignatureAlg());
             if (envelope.sigAlg == Algorithm.RSA_PSS) {
                 try {
