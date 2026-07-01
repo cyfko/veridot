@@ -225,7 +225,7 @@ TrustRoot trust = new PublicKeyTrustRoot() {
 };
 
 // ── 4. Build signer/verifier ──────────────────────────────────────
-var sv = new GenericSignerVerifier(broker, trust, "auth-service", longTermKey);
+var sv = new GenericSignerVerifier(broker, trust, "auth-service", longTermKey, Algorithm.ED25519);
 
 // ── 5. Sign ───────────────────────────────────────────────────────
 String token = sv.sign("alice@example.com",
@@ -249,7 +249,7 @@ sv.revoke("user-alice", null);             // revoke ALL sessions for this group
 
 ---
 
-## Distribution modes: DIRECT vs INDIRECT
+## Distribution modes: DIRECT, INDIRECT, and PRIVATE
 
 ### DIRECT (default)
 
@@ -291,8 +291,35 @@ VerifiedData<ReportData> result = sv.verify(messageId,
 
 **Use INDIRECT when:**
 - Payload is large (> a few KB) and should not be embedded in a JWT.
-- Payload is sensitive and should not transit over client-facing channels.
-- You want to invalidate a specific data document, not just a session.
+- You want to save client-side network bandwidth for large session claims.
+
+### PRIVATE (Hybrid Encryption)
+
+The payload is encrypted at the source using high-performance hybrid cryptography (AES-256-GCM + RSA/ECDH). It is published as a `SECURE_PAYLOAD` envelope to the broker. The caller receives a reference token (format: `"7:scope:key"`). Only verifying processors explicitly listed as recipients can decrypt the payload.
+
+```java
+List<String> recipients = List.of("processor-alice", "processor-bob");
+byte[] sensitiveData = "Confidential business details".getBytes(StandardCharsets.UTF_8);
+
+String secureToken = sv.sign(sensitiveData,
+    BasicConfigurer.builder()
+        .groupId("confidential-docs")
+        .sequenceId("doc-123")
+        .distribution(DistributionMode.PRIVATE)
+        .validity(3600)
+        .recipients(recipients)
+        .mimeType("application/json")
+        .build()
+);
+
+// Decrypt and verify at recipient side:
+VerifiedData<byte[]> result = sv.verify(secureToken, bytes -> bytes);
+byte[] clearData = result.data();
+```
+
+**Use PRIVATE when:**
+- Raw business payloads (JSON objects, files) must transit across untrusted message brokers.
+- Strict end-to-end confidentiality is required.
 
 ---
 
@@ -303,12 +330,12 @@ Enforce a maximum number of concurrent active sessions per `groupId`. Useful for
 ```java
 // Allow up to 3 sessions, evict the oldest on overflow (FIFO)
 var sv = new GenericSignerVerifier(
-    broker, trust, "auth-service", longTermKey,
+    broker, trust, "auth-service", longTermKey, Algorithm.ED25519,
     3, EvictionPolicy.FIFO);
 
 // Allow only 1 session. Reject any attempt to create a second.
 var sv = new GenericSignerVerifier(
-    broker, trust, "auth-service", longTermKey,
+    broker, trust, "auth-service", longTermKey, Algorithm.ED25519,
     1, EvictionPolicy.REJECT);
 ```
 
@@ -492,7 +519,7 @@ public class VeridotConfig {
                                          TrustRoot trust,
                                          PrivateKey longTermKey) {
         return new GenericSignerVerifier(
-            broker, trust, signerId, longTermKey,
+            broker, trust, signerId, longTermKey, Algorithm.ED25519,
             maxSessions, EvictionPolicy.FIFO);
     }
 
@@ -552,10 +579,10 @@ sv.publishConfig(
 
 ```java
 // Minimal — no session limit
-new GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String sid, PrivateKey longTermKey)
+new GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String sid, PrivateKey longTermKey, Algorithm envelopeSigAlg)
 
 // With session capacity management
-new GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String sid, PrivateKey longTermKey, int maxSessions, EvictionPolicy evictionPolicy)
+new GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String sid, PrivateKey longTermKey, Algorithm envelopeSigAlg, int maxSessions, EvictionPolicy evictionPolicy)
 ```
 
 ### `BasicConfigurer` builder methods
@@ -565,7 +592,9 @@ new GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String sid, Privat
 | `.groupId(String)` | ✅ | Logical group (userId, clientId…) |
 | `.sequenceId(String)` | — | Session ID within group (UUID if omitted) |
 | `.validity(long seconds)` | ✅ | Token TTL in seconds |
-| `.distribution(DistributionMode)` | — | `DIRECT` (default) or `INDIRECT` |
+| `.distribution(DistributionMode)` | — | `DIRECT` (default), `INDIRECT`, or `PRIVATE` |
+| `.recipients(List<String>)` | — | List of authorized recipient processor IDs (for `PRIVATE` mode) |
+| `.mimeType(String)` | — | MIME type of the payload (for `PRIVATE` mode, e.g. "application/json") |
 | `.serializedBy(Function<Object, String>)` | — | Custom payload serializer |
 
 ### `VerifiedData<T>`

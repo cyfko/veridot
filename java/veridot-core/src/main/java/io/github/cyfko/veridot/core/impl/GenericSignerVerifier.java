@@ -242,13 +242,10 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
                 config = defaultConfig;
             }
 
-            // 2. Ephemeral Key Rotation Snapshot (F-04)
-            KeyRotationService.KeySnapshot keySnapshot = keyRotationService.snapshot();
-
-            // 3. Enforce capacity limits
+            // 2. Enforce capacity limits
             capacityManager.enforceCapacity(scope, config, signerId, broker, trustRoot, entryPublisher, watermark, livenessChecker, longTermPrivateKey, envelopeSigAlg, signerId);
 
-            // 4. Serialize data
+            // 3. Serialize data
             String serializedData;
             try {
                 serializedData = configurer.getSerializer().apply(data);
@@ -257,6 +254,20 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             } catch (Exception e) {
                 throw new DataSerializationException("Failed to serialize payload", e);
             }
+
+            if (configurer.getDistribution() == DistributionMode.PRIVATE) {
+                byte[] plaintext = serializedData.getBytes(StandardCharsets.UTF_8);
+                try {
+                    String secureToken = publishSecurePayloadInternal(scope, sequenceId, plaintext, configurer.getRecipients(), configurer.getMimeType());
+                    saveWatermark();
+                    return secureToken;
+                } catch (Exception e) {
+                    throw new RuntimeException("Broker publication failed for SECURE_PAYLOAD", e);
+                }
+            }
+
+            // 4. Ephemeral Key Rotation Snapshot (F-04)
+            KeyRotationService.KeySnapshot keySnapshot = keyRotationService.snapshot();
 
             // 5. Build signed JWT
             String messageId = Protocol.buildMessageId(groupId, sequenceId);
@@ -664,7 +675,7 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
     /**
      * Publishes an encrypted SECURE_PAYLOAD entry (§12) to the broker.
      */
-    public String publishSecurePayload(
+    private String publishSecurePayloadInternal(
         Scope scope,
         String key,
         byte[] plaintext,
@@ -747,7 +758,7 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
     /**
      * Retrieves and decrypts a SECURE_PAYLOAD entry (§12) from the broker.
      */
-    public byte[] retrieveSecurePayload(
+    private byte[] retrieveSecurePayload(
         Scope scope,
         String key
     ) throws Exception {

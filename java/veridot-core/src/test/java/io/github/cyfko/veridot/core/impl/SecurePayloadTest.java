@@ -1,6 +1,7 @@
 package io.github.cyfko.veridot.core.impl;
 
 import io.github.cyfko.veridot.core.Algorithm;
+import io.github.cyfko.veridot.core.DistributionMode;
 import io.github.cyfko.veridot.core.InMemoryBroker;
 import io.github.cyfko.veridot.core.PublicKeyTrustRoot;
 import io.github.cyfko.veridot.core.TrustRoot;
@@ -27,7 +28,15 @@ public class SecurePayloadTest {
         byte[] payload = "Hello World Public".getBytes(StandardCharsets.UTF_8);
 
         // 1. Publish Broadcast Public (no recipients)
-        String token = node.publishSecurePayload(scope, "doc-1", payload, null, "text/plain");
+        String token = node.sign("Hello World Public",
+            BasicConfigurer.builder()
+                .groupId("test-group")
+                .sequenceId("doc-1")
+                .distribution(DistributionMode.PRIVATE)
+                .validity(3600)
+                .mimeType("text/plain")
+                .build()
+        );
         assertTrue(token.startsWith("7:"));
 
         // 2. Verify and decrypt
@@ -87,7 +96,16 @@ public class SecurePayloadTest {
         byte[] payload = "Highly Sensitive Data".getBytes(StandardCharsets.UTF_8);
 
         // Publish to Alice and Bob only
-        String token = signerNode.publishSecurePayload(scope, "secret-1", payload, Arrays.asList(aliceId, bobId), "text/plain");
+        String token = signerNode.sign("Highly Sensitive Data",
+            BasicConfigurer.builder()
+                .groupId("confidential-docs")
+                .sequenceId("secret-1")
+                .distribution(DistributionMode.PRIVATE)
+                .validity(3600)
+                .recipients(Arrays.asList(aliceId, bobId))
+                .mimeType("text/plain")
+                .build()
+        );
 
         // 1. Alice can decrypt
         VerifiedData<String> verifiedAlice = aliceNode.verify(token, s -> s);

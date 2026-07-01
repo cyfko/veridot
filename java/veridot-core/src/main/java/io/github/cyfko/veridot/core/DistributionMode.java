@@ -60,5 +60,16 @@ public enum DistributionMode {
      * // messageId → "4:service-X:<uuid>", safe to pass as an opaque reference
      * }</pre>
      */
-    INDIRECT
+    INDIRECT,
+
+    /**
+     * The signed payload is encrypted using hybrid encryption (AES-GCM + RSA/ECDH) 
+     * and stored in the {@link Broker}; only a compact reference token of the form 
+     * {@code "7:<groupId>:<sequenceId>"} is returned.
+     *
+     * <p>Only verifying processors explicitly listed as recipients can decrypt the 
+     * payload using their private key material. This mode guarantees absolute 
+     * end-to-end confidentiality on untrusted metadata brokers.</p>
+     */
+    PRIVATE
 }
