@@ -893,4 +893,22 @@ public class CoreUnitTest {
         JwtVerifier badVerifier = JwtVerifier.verifyWith(rsaKeyPair.getPublic(), Algorithm.ECDSA_SHA256);
         assertThrows(SecurityException.class, () -> badVerifier.parseSignedClaims(token));
     }
+
+    @Test
+    void testHybridEncryptor() throws Exception {
+        byte[] symKey = new byte[32];
+        new SecureRandom().nextBytes(symKey);
+
+        // 1. Test RSA path
+        byte[] encryptedRsa = HybridEncryptor.encryptAsymmetric(symKey, rsaKeyPair.getPublic());
+        assertNotNull(encryptedRsa);
+        byte[] decryptedRsa = HybridEncryptor.decryptAsymmetric(encryptedRsa, rsaKeyPair.getPrivate());
+        assertArrayEquals(symKey, decryptedRsa);
+
+        // 2. Test EC path
+        byte[] encryptedEc = HybridEncryptor.encryptAsymmetric(symKey, ecKeyPair.getPublic());
+        assertNotNull(encryptedEc);
+        byte[] decryptedEc = HybridEncryptor.decryptAsymmetric(encryptedEc, ecKeyPair.getPrivate());
+        assertArrayEquals(symKey, decryptedEc);
+    }
 }

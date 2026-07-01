@@ -9,6 +9,7 @@ import java.security.Signature;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 class JwtMaker {
@@ -59,7 +60,7 @@ class JwtMaker {
     public String compact() throws Exception {
         if (privateKey == null) throw new IllegalStateException("Private key must be set");
 
-        Map<String, Object> header = new HashMap<>();
+        Map<String, Object> header = new LinkedHashMap<>();
         String algStr = "RS256";
         if (alg == Algorithm.ECDSA_SHA256) {
             algStr = "ES256";
@@ -71,10 +72,13 @@ class JwtMaker {
         header.put("alg", algStr);
         header.put("typ", "JWT");
 
-        Map<String, Object> payload = new HashMap<>(claims);
+        Map<String, Object> payload = new LinkedHashMap<>();
         if (subject != null) payload.put("sub", subject);
         if (issuedAt != null) payload.put("iat", issuedAt.getEpochSecond());
         if (expiration != null) payload.put("exp", expiration.getEpochSecond());
+        claims.entrySet().stream()
+            .sorted(Map.Entry.comparingByKey())
+            .forEach(e -> payload.putIfAbsent(e.getKey(), e.getValue()));
 
         String headerJson = objectMapper.writeValueAsString(header);
         String payloadJson = objectMapper.writeValueAsString(payload);
@@ -103,14 +107,7 @@ class JwtMaker {
         }
         signature.initSign(privateKey);
 
-        // Convert to a temporary byte array and actively wipe it post-signature
-        // to reduce the persistence of raw sensitive data in the JVM Heap.
-        byte[] dataBytes = data.getBytes(StandardCharsets.UTF_8);
-        try {
-            signature.update(dataBytes);
-        } finally {
-            java.util.Arrays.fill(dataBytes, (byte) 0);
-        }
+        signature.update(data.getBytes(StandardCharsets.UTF_8));
 
         byte[] signed = signature.sign();
         return base64UrlEncode(signed);
