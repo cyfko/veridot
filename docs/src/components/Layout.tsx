@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   Moon, Sun, Search, Menu, X, Globe, ChevronRight, ChevronDown,
@@ -167,8 +167,38 @@ function NavChild({ item }: { item: { label: { en: string; fr: string }; path: s
 }
 
 export function Layout({ children }: { children: React.ReactNode }) {
+  const location = useLocation();
   const { theme, toggleTheme, language, setLanguage, searchQuery, setSearchQuery } = useApp();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    // Dynamic page title & description for SEO optimization
+    let label = '';
+    for (const section of NAV_ITEMS) {
+      if (section.children) {
+        const match = section.children.find(child => child.path === location.pathname);
+        if (match) {
+          label = match.label[language];
+          break;
+        }
+      }
+    }
+
+    if (location.pathname === '/') {
+      label = language === 'en' ? 'Distributed Token Verification Protocol' : 'Protocole de Vérification Distribuée de Jeton';
+    }
+
+    const titleText = label ? `Veridot — ${label}` : 'Veridot — Distributed Token Verification Protocol';
+    document.title = titleText;
+
+    const metaDesc = document.querySelector("meta[name='description']");
+    if (metaDesc) {
+      const descText = language === 'en'
+        ? `Official documentation for Veridot v4.0 - ${label || 'Distributed Token Verification Protocol'}. A Java library for distributed token signature and validation.`
+        : `Documentation officielle de Veridot v4.0 - ${label || 'Protocole de Vérification Distribuée'}. Bibliothèque Java de signature et validation distribuée de jetons.`;
+      metaDesc.setAttribute('content', descText);
+    }
+  }, [location.pathname, language]);
 
   return (
     <div className="min-h-screen bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100">

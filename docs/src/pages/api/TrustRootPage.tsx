@@ -2,59 +2,93 @@ import { useApp } from '../../context/AppContext';
 import { CodeBlock } from '../../components/CodeBlock';
 import { Admonition } from '../../components/Admonition';
 
-const PUBLIC_KEY_TRUST_ROOT = `// PublicKeyTrustRoot: you provide the public key, Veridot verifies
-TrustRoot trust = new PublicKeyTrustRoot(signerId -> {
-    // Load the long-term public key for this signerId.
-    // This function is called once per unique signerId.
-    // You can return a cached result.
-    byte[] pem = Files.readAllBytes(
-        Paths.get("/etc/veridot/trust/" + signerId + ".pub.pem"));
-    return parsePemPublicKey(pem); // your PEM → PublicKey helper
-});`;
+const PUBLIC_KEY_TRUST_ROOT = `// PublicKeyTrustRoot: resolve issuer's public key (functional interface)
+PublicKeyTrustRoot trust = issuer -> {
+    try {
+        // Load the long-term public key for this issuer.
+        // This function is called when verifying a new KEY_EPOCH.
+        byte[] pem = Files.readAllBytes(
+            Paths.get("/etc/veridot/trust/" + issuer + ".pub.pem"));
+        PublicKey publicKey = parsePemPublicKey(pem); // your PEM → PublicKey helper
+        boolean isRoot = "root-signer-id".equals(issuer);
+        return new TrustIdentity(publicKey, isRoot);
+    } catch (IOException e) {
+        throw new RuntimeException("Failed to load public key", e);
+    }
+};`;
 
-const DELEGATED_TRUST_ROOT = `// DelegatedTrustRoot: you delegate verification to a KMS or HSM
-TrustRoot trust = new DelegatedTrustRoot((signerId, canonicalBytes, signature) -> {
-    // Your KMS or HSM verifies the RSA signature.
-    // The long-term private key never leaves the KMS.
-    return vaultTransitEngine.verify(
-        signerId,        // Vault key name
-        canonicalBytes,  // bytes to verify
-        signature        // RSA signature to check
-    );
-});`;
+const DELEGATED_TRUST_ROOT = `// DelegatedTrustRoot: delegate signature verification to a KMS or HSM
+DelegatedTrustRoot trust = new DelegatedTrustRoot() {
+    @Override
+    public TrustIdentity resolve(String issuer) {
+        // resolve() is required by TrustRoot, but for delegated trust verification, 
+        // the verifier delegates signature checks directly to verifySignature().
+        // You can return a TrustIdentity with a dummy public key here.
+        return new TrustIdentity(dummyPublicKey, "root-signer-id".equals(issuer));
+    }
+
+    @Override
+    public boolean verifySignature(String issuer, byte[] data, byte[] signature, Algorithm sigAlg) {
+        // Your KMS or HSM verifies the signature of the envelope.
+        // The long-term private key never leaves the secure KMS boundary.
+        return vaultTransitEngine.verify(
+            issuer,       // KMS key name
+            data,         // canonical bytes to verify
+            signature,    // envelope signature bytes
+            sigAlg        // signature algorithm used
+        );
+    }
+};`;
 
 const VAULT_EXAMPLE = `// Production example: HashiCorp Vault Transit Engine
-TrustRoot trust = new DelegatedTrustRoot((signerId, bytes, sig) -> {
-    VaultTransitVerifyRequest req = VaultTransitVerifyRequest.builder()
-        .input(Base64.getEncoder().encodeToString(bytes))
-        .signature("vault:v1:" + Base64.getEncoder().encodeToString(sig))
-        .signatureAlgorithm("pkcs1v15")
-        .hashAlgorithm("sha2-256")
-        .build();
+DelegatedTrustRoot trust = new DelegatedTrustRoot() {
+    @Override
+    public TrustIdentity resolve(String issuer) {
+        return new TrustIdentity(dummyPublicKey, "root-signer-id".equals(issuer));
+    }
 
-    VaultTransitVerifyResponse resp = vaultClient.opsForTransit()
-        .verify(signerId, req);
+    @Override
+    public boolean verifySignature(String issuer, byte[] data, byte[] signature, Algorithm sigAlg) {
+        VaultTransitVerifyRequest req = VaultTransitVerifyRequest.builder()
+            .input(Base64.getEncoder().encodeToString(data))
+            .signature("vault:v1:" + Base64.getEncoder().encodeToString(signature))
+            .signatureAlgorithm("pkcs1v15")
+            .hashAlgorithm("sha2-256")
+            .build();
 
-    return resp.isValid();
-});`;
+        VaultTransitVerifyResponse resp = vaultClient.opsForTransit()
+            .verify(issuer, req);
+
+        return resp.isValid();
+    }
+};`;
 
 const AWS_KMS_EXAMPLE = `// Production example: AWS KMS
-TrustRoot trust = new DelegatedTrustRoot((signerId, bytes, sig) -> {
-    VerifyRequest request = VerifyRequest.builder()
-        .keyId("arn:aws:kms:eu-west-1:123456789:key/" + signerId)
-        .message(SdkBytes.fromByteArray(bytes))
-        .signature(SdkBytes.fromByteArray(sig))
-        .messageType(MessageType.RAW)
-        .signingAlgorithm(SigningAlgorithmSpec.RSASSA_PKCS1_V1_5_SHA_256)
-        .build();
+DelegatedTrustRoot trust = new DelegatedTrustRoot() {
+    @Override
+    public TrustIdentity resolve(String issuer) {
+        return new TrustIdentity(dummyPublicKey, "root-signer-id".equals(issuer));
+    }
 
-    VerifyResponse response = kmsClient.verify(request);
-    return response.signatureValid();
-});`;
+    @Override
+    public boolean verifySignature(String issuer, byte[] data, byte[] signature, Algorithm sigAlg) {
+        VerifyRequest request = VerifyRequest.builder()
+            .keyId("arn:aws:kms:eu-west-1:123456789:key/" + issuer)
+            .message(SdkBytes.fromByteArray(data))
+            .signature(SdkBytes.fromByteArray(signature))
+            .messageType(MessageType.RAW)
+            .signingAlgorithm(SigningAlgorithmSpec.RSASSA_PKCS1_V1_5_SHA_256)
+            .build();
 
-const TRUST_IDENTITY = `// TrustIdentity: returned by TrustRoot.resolve()
-// Used internally by the verification pipeline.
-// If you implement a custom TrustRoot, return a TrustIdentity.
+        VerifyResponse response = kmsClient.verify(request);
+        return response.signatureValid();
+    }
+};`;
+
+const TRUST_IDENTITY = `// TrustIdentity represents a resolved public key and its root status
+public record TrustIdentity(PublicKey publicKey, boolean isRoot) {}
+
+// TrustRoot is the sealed base interface
 public sealed interface TrustRoot permits PublicKeyTrustRoot, DelegatedTrustRoot {
     TrustIdentity resolve(String issuer);
 }`;

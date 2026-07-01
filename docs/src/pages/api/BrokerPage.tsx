@@ -6,8 +6,7 @@ const INTERFACE_CODE = `public interface Broker {
     CompletableFuture<Void> put(byte[] storageKey, byte[] envelopeBytes);
     byte[] get(byte[] storageKey);
     List<BrokerEntry> snapshot(Scope scope);
-    
-    default void putLocal(byte[] storageKey, byte[] envelopeBytes) {}
+    void putLocal(byte[] storageKey, byte[] envelopeBytes);
 }`;
 
 const ENTRY_CODE = `public record BrokerEntry(byte[] storageKey, byte[] envelopeBytes) {
@@ -53,6 +52,14 @@ public class InMemoryBroker implements Broker {
             }
         });
         return list;
+    }
+
+    @Override
+    public void putLocal(byte[] storageKey, byte[] envelopeBytes) {
+        // Cache entry locally to bypass read-after-write latencies
+        if (storageKey != null && envelopeBytes != null) {
+            store.put(bytesToHex(storageKey), envelopeBytes);
+        }
     }
 }`;
 

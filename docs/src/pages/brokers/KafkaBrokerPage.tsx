@@ -5,7 +5,7 @@ import { Admonition } from '../../components/Admonition';
 const SETUP_CODE = `Properties props = new Properties();
 props.put("bootstrap.servers", "kafka:9092");
 props.put("embedded.db.path", "/var/lib/veridot-rocks");
-props.put("broker.topic", "veridot-v4-metadata");
+props.put("broker.topic", "token-verifier");
 
 // ── Production Security Configurations ────────────────────────────
 props.put("security.protocol", "SASL_SSL");
@@ -23,12 +23,12 @@ Broker kafkaBroker = new KafkaBroker(props);`;
 const ACL_COMMANDS = `# 1. Give Signer instances permission to WRITE to the Veridot topic
 kafka-acls.sh --bootstrap-server localhost:9092 \\
   --add --allow-principal User:veridot-signer-service \\
-  --operation Write --topic veridot-v4-metadata
+  --operation Write --topic token-verifier
 
 # 2. Give Verifier instances permission to READ from the Veridot topic
 kafka-acls.sh --bootstrap-server localhost:9092 \\
   --add --allow-principal User:veridot-verifier-service \\
-  --operation Read --topic veridot-v4-metadata`;
+  --operation Read --topic token-verifier`;
 
 export function KafkaBrokerPage() {
   const { language } = useApp();
@@ -53,7 +53,7 @@ export function KafkaBrokerPage() {
         <ul className="list-disc pl-5 space-y-1 text-sm text-slate-600 dark:text-slate-400">
           <li><strong>bootstrap.servers</strong>: Kafka cluster bootstrap endpoints (required).</li>
           <li><strong>embedded.db.path</strong>: Filesystem path to initialize the local RocksDB instance (required).</li>
-          <li><strong>broker.topic</strong>: Compacted topic name (default: `veridot-token-metadata`).</li>
+          <li><strong>broker.topic</strong>: Compacted topic name (default: `token-verifier`).</li>
         </ul>
       </section>
 

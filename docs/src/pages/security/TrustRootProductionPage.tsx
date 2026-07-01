@@ -2,19 +2,21 @@ import { useApp } from '../../context/AppContext';
 import { CodeBlock } from '../../components/CodeBlock';
 import { Admonition } from '../../components/Admonition';
 
-const DELEGATED_TRUST = `public class VaultDelegatedTrustRoot implements TrustRoot {
+const DELEGATED_TRUST = `public class VaultPublicKeyTrustRoot implements PublicKeyTrustRoot {
     private final VaultTemplate vaultTemplate;
 
-    public VaultDelegatedTrustRoot(VaultTemplate vaultTemplate) {
+    public VaultPublicKeyTrustRoot(VaultTemplate vaultTemplate) {
         this.vaultTemplate = vaultTemplate;
     }
 
     @Override
-    public PublicKey resolve(String issuerId) {
+    public TrustIdentity resolve(String issuerId) {
         // Dynamic lookup in HashiCorp Vault key-value engine
         VaultResponse response = vaultTemplate.read("secret/data/veridot/trust/" + issuerId);
         String publicKeyPem = (String) response.getRequiredData().get("public_key");
-        return parsePemPublicKey(publicKeyPem);
+        PublicKey publicKey = parsePemPublicKey(publicKeyPem);
+        boolean isRoot = "root-signer-id".equals(issuerId);
+        return new TrustIdentity(publicKey, isRoot);
     }
 }`;
 

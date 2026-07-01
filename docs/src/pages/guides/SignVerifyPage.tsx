@@ -17,7 +17,9 @@ try {
     VerifiedData<String> verified = verifier.verify(token, s -> s);
     System.out.println("Valid invoice verification: " + verified.data());
 } catch (BrokerExtractionException e) {
-    System.err.println("Verification rejected. Reason code: " + e.getErrorCode());
+    // e.getErrorCode() will return the ErrorCode if the failure has a protocol cause
+    ErrorCode code = e.getErrorCode();
+    System.err.println("Verification rejected. Reason: " + (code != null ? code.name() : e.getMessage()));
 }`;
 
 export function SignVerifyPage() {
