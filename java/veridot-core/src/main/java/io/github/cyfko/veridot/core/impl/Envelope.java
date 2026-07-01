@@ -40,12 +40,6 @@ public final class Envelope {
         this.signature = signature != null ? signature : new byte[0];
     }
 
-    @Deprecated
-    public Envelope(byte protoVersion, EntryType entryType, byte flags, Scope scope, String key,
-                    long version, long timestamp, String issuer, byte[] payload, byte sigAlgCode, byte[] signature) {
-        this(protoVersion, entryType, flags, scope, key, version, timestamp, issuer, payload, Algorithm.fromCode(sigAlgCode), signature);
-    }
-
     /**
      * Parses and structurally validates the envelope (§3.1, §3.2).
      * Does not verify the signature.

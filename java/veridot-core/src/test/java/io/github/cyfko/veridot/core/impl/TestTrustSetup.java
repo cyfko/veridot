@@ -1,5 +1,6 @@
 package io.github.cyfko.veridot.core.impl;
 
+import io.github.cyfko.veridot.core.Algorithm;
 import io.github.cyfko.veridot.core.InMemoryBroker;
 import io.github.cyfko.veridot.core.PublicKeyTrustRoot;
 import io.github.cyfko.veridot.core.TrustRoot;
@@ -53,13 +54,13 @@ public class TestTrustSetup {
     }
 
     public GenericSignerVerifier newSignerVerifier(InMemoryBroker broker) {
-        return new GenericSignerVerifier(broker, trustRoot, signerId, longTermKeyPair.getPrivate(), (byte) 0x01);
+        return new GenericSignerVerifier(broker, trustRoot, signerId, longTermKeyPair.getPrivate(), Algorithm.RSA_SHA256);
     }
 
     public GenericSignerVerifier newSignerVerifier(InMemoryBroker broker,
                                                     int maxSessions,
                                                     io.github.cyfko.veridot.core.EvictionPolicy policy) {
-        return new GenericSignerVerifier(broker, trustRoot, signerId, longTermKeyPair.getPrivate(), (byte) 0x01,
+        return new GenericSignerVerifier(broker, trustRoot, signerId, longTermKeyPair.getPrivate(), Algorithm.RSA_SHA256,
                 maxSessions, policy);
     }
 }

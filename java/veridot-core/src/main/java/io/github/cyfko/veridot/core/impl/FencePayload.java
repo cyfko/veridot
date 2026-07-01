@@ -14,21 +14,30 @@ record FencePayload(
     long validUntil      // tag 0x03
 ) {
 
+    public enum Tag {
+        FENCE_COUNTER((byte) 0x01),
+        GRANTED_TO((byte) 0x02),
+        VALID_UNTIL((byte) 0x03);
+
+        public final byte code;
+        Tag(byte code) { this.code = code; }
+    }
+
     public static FencePayload decode(byte[] tlvBytes) {
         Map<Byte, byte[]> fields = TlvCodec.parse(tlvBytes);
 
-        long fenceCounter = TlvCodec.readU64(fields, (byte) 0x01, true);
-        String grantedTo = TlvCodec.readString(fields, (byte) 0x02, true);
-        long validUntil = TlvCodec.readI64(fields, (byte) 0x03, true);
+        long fenceCounter = TlvCodec.readU64(fields, Tag.FENCE_COUNTER.code, true);
+        String grantedTo = TlvCodec.readString(fields, Tag.GRANTED_TO.code, true);
+        long validUntil = TlvCodec.readI64(fields, Tag.VALID_UNTIL.code, true);
 
         return new FencePayload(fenceCounter, grantedTo, validUntil);
     }
 
     public byte[] encode() {
         List<TlvCodec.TlvField> fields = new ArrayList<>();
-        fields.add(TlvCodec.u64((byte) 0x01, fenceCounter));
-        fields.add(TlvCodec.string((byte) 0x02, grantedTo));
-        fields.add(TlvCodec.i64((byte) 0x03, validUntil));
+        fields.add(TlvCodec.u64(Tag.FENCE_COUNTER.code, fenceCounter));
+        fields.add(TlvCodec.string(Tag.GRANTED_TO.code, grantedTo));
+        fields.add(TlvCodec.i64(Tag.VALID_UNTIL.code, validUntil));
         return TlvCodec.encode(fields);
     }
 

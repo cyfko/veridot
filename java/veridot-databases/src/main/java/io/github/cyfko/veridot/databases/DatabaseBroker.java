@@ -23,6 +23,18 @@ import java.util.logging.Logger;
 public class DatabaseBroker implements Broker, WatermarkStore {
 
     private static final Logger logger = Logger.getLogger(DatabaseBroker.class.getName());
+    
+    // CRITICAL SECURITY HARDENING (§13.3.1): Prefix the watermark snapshot storage key
+    // with 0xFF. Since 0xFF is an invalid UTF-8 start byte and all protocol scope/key
+    // entries are validated UTF-8, this guarantees that watermark metadata cannot conflict
+    // or be overwritten by any client-defined entry keys in database's shared key space.
+    private static final byte[] WATERMARK_KEY;
+    static {
+        byte[] raw = "__watermark_snapshot__".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        WATERMARK_KEY = new byte[raw.length + 1];
+        WATERMARK_KEY[0] = (byte) 0xFF;
+        System.arraycopy(raw, 0, WATERMARK_KEY, 1, raw.length);
+    }
 
     private final DataSource dataSource;
     private final String tableName;
@@ -287,11 +299,10 @@ public class DatabaseBroker implements Broker, WatermarkStore {
     @Override
     public void save(byte[] snapshot) {
         if (snapshot == null) return;
-        byte[] key = "__watermark_snapshot__".getBytes(StandardCharsets.UTF_8);
         try (Connection conn = dataSource.getConnection()) {
             String sql = buildUpsertSql();
             try (PreparedStatement stmt = conn.prepareStatement(sql)) {
-                stmt.setBytes(1, key);
+                stmt.setBytes(1, WATERMARK_KEY);
                 stmt.setBytes(2, snapshot);
                 stmt.executeUpdate();
             }
@@ -302,11 +313,10 @@ public class DatabaseBroker implements Broker, WatermarkStore {
 
     @Override
     public byte[] load() {
-        byte[] key = "__watermark_snapshot__".getBytes(StandardCharsets.UTF_8);
         try (Connection conn = dataSource.getConnection()) {
             String sql = String.format("SELECT entry_bytes FROM %s WHERE storage_key = ?", tableName);
             try (PreparedStatement stmt = conn.prepareStatement(sql)) {
-                stmt.setBytes(1, key);
+                stmt.setBytes(1, WATERMARK_KEY);
                 try (ResultSet rs = stmt.executeQuery()) {
                     if (rs.next()) {
                         return rs.getBytes("entry_bytes");

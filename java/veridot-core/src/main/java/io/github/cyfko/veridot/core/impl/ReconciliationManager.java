@@ -164,22 +164,4 @@ final class ReconciliationManager implements AutoCloseable {
         lastReconciled.put(scope, timestamp);
     }
 
-    @Deprecated
-    public void reconcile(Scope scope, Broker broker, VersionWatermark watermark,
-                          SignatureVerifier sigVerifier, TrustRoot trustRoot,
-                          EntryPublisher publisher, String issuerId,
-                          PrivateKey signingKey, byte sigAlgCode, CapabilityVerifier capabilityVerifier, Runnable saveCallback) {
-        reconcile(scope, broker, watermark, sigVerifier, trustRoot, publisher, issuerId, signingKey, Algorithm.fromCode(sigAlgCode), capabilityVerifier, saveCallback);
-    }
-
-    @Deprecated
-    public void startPeriodicReconciliation(Scope scope, Duration maxInterval,
-                                             ScheduledExecutorService scheduler,
-                                             Broker broker, VersionWatermark watermark,
-                                             TrustRoot trustRoot, EntryPublisher publisher,
-                                             String issuerId, PrivateKey signingKey, byte sigAlgCode,
-                                             CapabilityVerifier capabilityVerifier,
-                                             Runnable saveCallback) {
-        startPeriodicReconciliation(scope, maxInterval, scheduler, broker, watermark, trustRoot, publisher, issuerId, signingKey, Algorithm.fromCode(sigAlgCode), capabilityVerifier, saveCallback);
-    }
 }

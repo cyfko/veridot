@@ -71,6 +71,8 @@ public class BasicConfigurer implements DataSigner.Configurer {
         private DistributionMode distribution = DistributionMode.DIRECT;
         private Function<Object, String> serializer;
         private Long seconds;
+        private java.util.List<String> recipients = java.util.Collections.emptyList();
+        private String mimeType;
 
         /**
          * Sets the group identifier.
@@ -137,6 +139,32 @@ public class BasicConfigurer implements DataSigner.Configurer {
                 throw new IllegalArgumentException("serializer must not be null");
             }
             this.serializer = serializer;
+            return this;
+        }
+
+        /**
+         * Sets the list of authorized recipient processor IDs for PRIVATE distribution mode.
+         *
+         * @param recipients a list of recipient IDs; must not be {@code null}
+         * @return this builder
+         * @throws IllegalArgumentException if {@code recipients} is {@code null}
+         */
+        public Builder recipients(java.util.List<String> recipients) {
+            if (recipients == null) {
+                throw new IllegalArgumentException("recipients list must not be null");
+            }
+            this.recipients = new java.util.ArrayList<>(recipients);
+            return this;
+        }
+
+        /**
+         * Sets the MIME type of the payload for PRIVATE distribution mode.
+         *
+         * @param mimeType the MIME type string
+         * @return this builder
+         */
+        public Builder mimeType(String mimeType) {
+            this.mimeType = mimeType;
             return this;
         }
 
@@ -249,5 +277,15 @@ public class BasicConfigurer implements DataSigner.Configurer {
     @Override
     public Function<Object, String> getSerializer() {
         return builderConfig.serializer;
+    }
+
+    @Override
+    public java.util.List<String> getRecipients() {
+        return builderConfig.recipients;
+    }
+
+    @Override
+    public String getMimeType() {
+        return builderConfig.mimeType;
     }
 }

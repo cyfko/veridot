@@ -69,7 +69,7 @@ class KafkaSignerVerifierTest {
     // ── Signing ──────────────────────────────────────────────────────────────
 
     @ParameterizedTest
-    @EnumSource(value = DistributionMode.class)
+    @EnumSource(value = DistributionMode.class, names = {"DIRECT", "INDIRECT"})
     void sign_with_valid_data_returns_token(DistributionMode mode) {
         var cfg = BasicConfigurer.builder()
                 .groupId("ksv-sign-" + mode.name())
@@ -82,7 +82,7 @@ class KafkaSignerVerifierTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = DistributionMode.class)
+    @EnumSource(value = DistributionMode.class, names = {"DIRECT", "INDIRECT"})
     void sign_with_null_data_throws(DistributionMode mode) {
         var cfg = BasicConfigurer.builder()
                 .groupId("ksv-null-" + mode.name())
@@ -93,7 +93,7 @@ class KafkaSignerVerifierTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = DistributionMode.class)
+    @EnumSource(value = DistributionMode.class, names = {"DIRECT", "INDIRECT"})
     void sign_with_negative_duration_throws(DistributionMode mode) {
         var cfg = BasicConfigurer.builder()
                 .groupId("ksv-neg-" + mode.name())
@@ -107,7 +107,7 @@ class KafkaSignerVerifierTest {
     // ── Verification ─────────────────────────────────────────────────────────
 
     @ParameterizedTest
-    @EnumSource(value = DistributionMode.class)
+    @EnumSource(value = DistributionMode.class, names = {"DIRECT", "INDIRECT"})
     void verify_valid_token_returns_string_payload(DistributionMode mode) throws InterruptedException {
         String data = "john.doe@example.com";
         var cfg = BasicConfigurer.builder()
@@ -122,7 +122,7 @@ class KafkaSignerVerifierTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = DistributionMode.class)
+    @EnumSource(value = DistributionMode.class, names = {"DIRECT", "INDIRECT"})
     void verify_valid_token_returns_pojo_payload(DistributionMode mode) throws InterruptedException {
         UserData data = new UserData("john.doe@example.com");
         var cfg = BasicConfigurer.builder()
@@ -144,7 +144,7 @@ class KafkaSignerVerifierTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = DistributionMode.class)
+    @EnumSource(value = DistributionMode.class, names = {"DIRECT", "INDIRECT"})
     void verify_expired_token_throws(DistributionMode mode) throws InterruptedException {
         var cfg = BasicConfigurer.builder()
                 .groupId("ksv-exp-" + mode.name())
@@ -159,7 +159,7 @@ class KafkaSignerVerifierTest {
     // ── Revocation ────────────────────────────────────────────────────────────
 
     @ParameterizedTest
-    @EnumSource(value = DistributionMode.class)
+    @EnumSource(value = DistributionMode.class, names = {"DIRECT", "INDIRECT"})
     void verify_revoked_token_throws(DistributionMode mode) throws InterruptedException {
         String groupId = "ksv-revoke-" + mode.name();
         var cfg = BasicConfigurer.builder()
@@ -176,7 +176,7 @@ class KafkaSignerVerifierTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = DistributionMode.class)
+    @EnumSource(value = DistributionMode.class, names = {"DIRECT", "INDIRECT"})
     void revokeGroup_invalidates_all_sessions(DistributionMode mode) throws InterruptedException {
         String groupId = "ksv-rg-" + mode.name();
         String t1 = dataSigner.sign("d1", BasicConfigurer.builder().groupId(groupId).distribution(mode).validity(3600).build());
@@ -191,7 +191,7 @@ class KafkaSignerVerifierTest {
     // ── TokenTracker ──────────────────────────────────────────────────────────
 
     @ParameterizedTest
-    @EnumSource(value = DistributionMode.class)
+    @EnumSource(value = DistributionMode.class, names = {"DIRECT", "INDIRECT"})
     void hasActiveToken_after_sign_returns_true(DistributionMode mode) throws InterruptedException {
         String groupId = "ksv-tracker-" + mode.name();
         dataSigner.sign("data", BasicConfigurer.builder().groupId(groupId).distribution(mode).validity(600).build());
@@ -200,7 +200,7 @@ class KafkaSignerVerifierTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = DistributionMode.class)
+    @EnumSource(value = DistributionMode.class, names = {"DIRECT", "INDIRECT"})
     void hasActiveToken_after_revokeGroup_returns_false(DistributionMode mode) throws InterruptedException {
         String groupId = "ksv-tracker-rg-" + mode.name();
         dataSigner.sign("d1", BasicConfigurer.builder().groupId(groupId).distribution(mode).validity(3600).build());

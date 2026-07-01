@@ -49,6 +49,7 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
     private final LivenessManager livenessManager;
     private final CapacityManager capacityManager = new CapacityManager();
     private final EntryVerifier entryVerifier = new EntryVerifier();
+    private final SignatureVerifier signatureVerifier = new SignatureVerifier();
     private final VersionWatermark watermark = new VersionWatermark();
     private final SessionCounter sessionCounter = new SessionCounter();
 
@@ -69,7 +70,7 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
 
     public GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String issuerId, 
                                  PrivateKey longTermKey, Algorithm envelopeSigAlg,
-                                 io.github.cyfko.veridot.core.WatermarkStore watermarkStore) {
+                                 WatermarkStore watermarkStore) {
         this(broker, trustRoot, issuerId, longTermKey, envelopeSigAlg, -1, EvictionPolicy.FIFO, Config.RECONCILIATION_INTERVAL_MINUTES, watermarkStore);
     }
 
@@ -82,47 +83,11 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
     public GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String issuerId, 
                                  PrivateKey longTermKey, Algorithm envelopeSigAlg,
                                  int maxSessions, EvictionPolicy policy,
-                                 io.github.cyfko.veridot.core.WatermarkStore watermarkStore) {
+                                 WatermarkStore watermarkStore) {
         this(broker, trustRoot, issuerId, longTermKey, envelopeSigAlg, maxSessions, policy, Config.RECONCILIATION_INTERVAL_MINUTES, watermarkStore);
     }
 
-    @Deprecated
-    public GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String issuerId, 
-                                 PrivateKey longTermKey, byte envelopeSigAlgCode) {
-        this(broker, trustRoot, issuerId, longTermKey, Algorithm.fromCode(envelopeSigAlgCode));
-    }
 
-    @Deprecated
-    public GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String issuerId, 
-                                 PrivateKey longTermKey, byte envelopeSigAlgCode,
-                                 io.github.cyfko.veridot.core.WatermarkStore watermarkStore) {
-        this(broker, trustRoot, issuerId, longTermKey, Algorithm.fromCode(envelopeSigAlgCode), watermarkStore);
-    }
-
-    @Deprecated
-    public GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String issuerId, 
-                                 PrivateKey longTermKey, byte envelopeSigAlgCode,
-                                 int maxSessions, EvictionPolicy policy) {
-        this(broker, trustRoot, issuerId, longTermKey, Algorithm.fromCode(envelopeSigAlgCode), maxSessions, policy);
-    }
-
-    @Deprecated
-    public GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String issuerId, 
-                                 PrivateKey longTermKey, byte envelopeSigAlgCode,
-                                 int maxSessions, EvictionPolicy policy,
-                                 io.github.cyfko.veridot.core.WatermarkStore watermarkStore) {
-        this(broker, trustRoot, issuerId, longTermKey, Algorithm.fromCode(envelopeSigAlgCode), maxSessions, policy, watermarkStore);
-    }
-
-    // Constructor package-private for test override
-    GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String issuerId, 
-                          PrivateKey longTermKey, byte envelopeSigAlgCode,
-                          int maxSessions, EvictionPolicy policy,
-                          long reconciliationIntervalMinutesOverride,
-                          io.github.cyfko.veridot.core.WatermarkStore watermarkStore) {
-        this(broker, trustRoot, issuerId, longTermKey, Algorithm.fromCode(envelopeSigAlgCode),
-             maxSessions, policy, reconciliationIntervalMinutesOverride, watermarkStore);
-    }
 
     // Constructor package-private for test override
     GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String issuerId, 
@@ -149,14 +114,12 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         } else {
             String path = Config.WATERMARK_PERSISTENCE_FILE;
             if (path != null && !path.isBlank()) {
-                byte[] hmacKey = null;
+                byte[] hmacKey;
                 try {
-                    byte[] encoded = longTermKey.getEncoded();
-                    if (encoded != null) {
-                        java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
-                        hmacKey = md.digest(encoded);
-                    }
-                } catch (Exception ignored) {}
+                    hmacKey = deriveHmacKey(longTermKey);
+                } catch (Exception e) {
+                    throw new RuntimeException("Failed to initialize FileWatermarkStore: " + e.getMessage(), e);
+                }
                 this.watermarkStore = new FileWatermarkStore(new java.io.File(path), hmacKey);
             } else if (broker instanceof io.github.cyfko.veridot.core.WatermarkStore) {
                 this.watermarkStore = (io.github.cyfko.veridot.core.WatermarkStore) broker;
@@ -196,6 +159,30 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         }
         this.keyRotationService = new KeyRotationService(ephemeralAlg);
         this.livenessManager = new LivenessManager(entryPublisher, broker, longTermKey, envelopeSigAlg, issuerId);
+    }
+
+    private static byte[] deriveHmacKey(PrivateKey key) throws Exception {
+        byte[] encoded = key.getEncoded();
+        if (encoded == null) {
+            throw new IllegalStateException(
+                "Cannot derive HMAC key: PrivateKey.getEncoded() returned null. " +
+                "Provide an explicit WatermarkStore with a pre-configured HMAC key."
+            );
+        }
+        try {
+            // HKDF-Extract (RFC 5869) with fixed salt for the watermark
+            javax.crypto.Mac hmac = javax.crypto.Mac.getInstance("HmacSHA256");
+            hmac.init(new javax.crypto.spec.SecretKeySpec("veridot-watermark-v4".getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            byte[] prk = hmac.doFinal(encoded);
+
+            // HKDF-Expand
+            hmac.init(new javax.crypto.spec.SecretKeySpec(prk, "HmacSHA256"));
+            hmac.update("watermark-integrity-key".getBytes(StandardCharsets.UTF_8));
+            hmac.update((byte) 1);
+            return hmac.doFinal();
+        } finally {
+            Arrays.fill(encoded, (byte) 0); // clear memory of the key encoding copy
+        }
     }
 
     @Override
@@ -255,13 +242,10 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
                 config = defaultConfig;
             }
 
-            // 2. Ephemeral Key Rotation Snapshot (F-04)
-            KeyRotationService.KeySnapshot keySnapshot = keyRotationService.snapshot();
-
-            // 3. Enforce capacity limits
+            // 2. Enforce capacity limits
             capacityManager.enforceCapacity(scope, config, signerId, broker, trustRoot, entryPublisher, watermark, livenessChecker, longTermPrivateKey, envelopeSigAlg, signerId);
 
-            // 4. Serialize data
+            // 3. Serialize data
             String serializedData;
             try {
                 serializedData = configurer.getSerializer().apply(data);
@@ -270,6 +254,20 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
             } catch (Exception e) {
                 throw new DataSerializationException("Failed to serialize payload", e);
             }
+
+            if (configurer.getDistribution() == DistributionMode.PRIVATE) {
+                byte[] plaintext = serializedData.getBytes(StandardCharsets.UTF_8);
+                try {
+                    String secureToken = publishSecurePayloadInternal(scope, sequenceId, plaintext, configurer.getRecipients(), configurer.getMimeType());
+                    saveWatermark();
+                    return secureToken;
+                } catch (Exception e) {
+                    throw new RuntimeException("Broker publication failed for SECURE_PAYLOAD", e);
+                }
+            }
+
+            // 4. Ephemeral Key Rotation Snapshot (F-04)
+            KeyRotationService.KeySnapshot keySnapshot = keyRotationService.snapshot();
 
             // 5. Build signed JWT
             String messageId = Protocol.buildMessageId(groupId, sequenceId);
@@ -333,6 +331,45 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
     @Override
     public <T> VerifiedData<T> verify(String token, Function<String, T> deserializer) throws BrokerExtractionException {
         try {
+            if (token != null && token.startsWith("7:")) {
+                // Secure payload token
+                // Format: "7:scope:key"
+                int firstColon = token.indexOf(':');
+                int lastColon = token.lastIndexOf(':');
+                if (firstColon == -1 || lastColon == -1 || firstColon == lastColon) {
+                    throw new BrokerExtractionException("Malformed SECURE_PAYLOAD token: " + token);
+                }
+                String scopeStr = token.substring(firstColon + 1, lastColon);
+                String keyStr = token.substring(lastColon + 1);
+                Scope scope = Scope.parse(scopeStr);
+                
+                ensureReconciliationStarted(scope);
+                checkReconciliationStaleness(scope);
+                
+                // Retrieve and decrypt secure payload
+                byte[] plaintextBytes;
+                try {
+                    plaintextBytes = retrieveSecurePayload(scope, keyStr);
+                } catch (VeridotException e) {
+                    throw e;
+                } catch (Exception e) {
+                    throw new BrokerExtractionException("Failed to retrieve/decrypt SECURE_PAYLOAD", e);
+                }
+                
+                String plaintext = new String(plaintextBytes, StandardCharsets.UTF_8);
+                T deserialized = deserializer.apply(plaintext);
+                
+                // Load envelope for version/issuer metadata
+                EntryId entryId = new EntryId(scope, EntryType.SECURE_PAYLOAD, keyStr);
+                byte[] envelopeBytes = broker.get(entryId.storageKey());
+                if (envelopeBytes == null) {
+                    throw new BrokerExtractionException("SECURE_PAYLOAD entry absent from broker");
+                }
+                Envelope envelope = Envelope.parse(envelopeBytes);
+                
+                return new VerifiedData<>(scope.groupId(), keyStr, deserialized);
+            }
+
             final String messageId;
             final String jwtToken;
 
@@ -633,5 +670,155 @@ public class GenericSignerVerifier implements DataSigner, TokenVerifier, TokenRe
         } catch (Exception e) {
             return -1L;
         }
+    }
+
+    /**
+     * Publishes an encrypted SECURE_PAYLOAD entry (§12) to the broker.
+     */
+    private String publishSecurePayloadInternal(
+        Scope scope,
+        String key,
+        byte[] plaintext,
+        List<String> recipientSids,
+        String payloadType
+    ) throws Exception {
+        byte[] dataToPublish;
+        byte[] nonce = null;
+        Byte encAlg = null;
+        byte[] recipientsBytes = null;
+
+        if (recipientSids != null && !recipientSids.isEmpty()) {
+            // 1. Generate key_sym and nonce
+            java.security.SecureRandom sr = new java.security.SecureRandom();
+            byte[] keySym = new byte[32];
+            sr.nextBytes(keySym);
+            nonce = new byte[12];
+            sr.nextBytes(nonce);
+
+            // 2. Encrypt plaintext
+            dataToPublish = HybridEncryptor.encryptSymmetric(plaintext, keySym, nonce);
+
+            // 3. Prepare recipients block
+            encAlg = (byte) 0x01; // AES-256-GCM
+            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+            for (String sid : recipientSids) {
+                // Resolve public key from TrustRoot
+                TrustIdentity identity = trustRoot.resolve(sid);
+                if (identity == null) {
+                    throw new IllegalArgumentException("Recipient not found in TrustRoot: " + sid);
+                }
+                java.security.PublicKey pubKey = identity.publicKey();
+                long epochId = 0L; // Use 0L for long-term key reference
+
+                // Encrypt key_sym with recipient public key
+                byte[] encKey = HybridEncryptor.encryptAsymmetric(keySym, pubKey);
+
+                // Serialize block
+                RecipientBlock block = new RecipientBlock(sid, epochId, encKey);
+                baos.write(block.encode());
+            }
+            recipientsBytes = baos.toByteArray();
+        } else {
+            // Broadcast Public Mode: data in plaintext
+            dataToPublish = plaintext;
+        }
+
+        // 4. Build SecurePayload
+        SecurePayload payload = new SecurePayload(
+            encAlg,
+            nonce,
+            recipientsBytes,
+            dataToPublish,
+            payloadType
+        );
+
+        // 5. Encapsulate in envelope, sign and publish to Broker
+        EntryId entryId = new EntryId(scope, EntryType.SECURE_PAYLOAD, key);
+        long version = Math.max(watermark.current(entryId) + 1, 1);
+
+        byte[] payloadBytes = payload.encode();
+        entryPublisher.publish(
+            EntryType.SECURE_PAYLOAD,
+            scope,
+            key,
+            version,
+            payloadBytes,
+            longTermPrivateKey,
+            envelopeSigAlg,
+            signerId,
+            broker
+        ).join();
+
+        watermark.accept(entryId, version);
+        saveWatermark();
+
+        return String.format("%d:%s:%s", EntryType.SECURE_PAYLOAD.code, scope.value(), key);
+    }
+
+    /**
+     * Retrieves and decrypts a SECURE_PAYLOAD entry (§12) from the broker.
+     */
+    private byte[] retrieveSecurePayload(
+        Scope scope,
+        String key
+    ) throws Exception {
+        EntryId entryId = new EntryId(scope, EntryType.SECURE_PAYLOAD, key);
+        byte[] bytes = broker.get(entryId.storageKey());
+        if (bytes == null) {
+            throw new BrokerExtractionException("SECURE_PAYLOAD entry absent from broker");
+        }
+
+        Envelope envelope = Envelope.parse(bytes);
+        
+        // 1. Verify structure and signature
+        signatureVerifier.verify(envelope, trustRoot);
+        
+        // 2. Validate capability
+        capabilityVerifier.assertAuthorized(envelope.issuer, envelope.scope, broker, trustRoot);
+
+        // 3. Verify version monotone
+        if (envelope.version == 0) {
+            throw new VeridotException(ErrorCode.STALE_VERSION, entryId.loggable(),
+                "Entry version 0 is unconditionally rejected (§11.1 V4201)");
+        }
+        long currentWatermark = watermark.current(entryId);
+        if (envelope.version < currentWatermark) {
+            throw new VeridotException(ErrorCode.STALE_VERSION, entryId.loggable(),
+                "SECURE_PAYLOAD version is stale. Watermark is " + currentWatermark);
+        }
+        if (envelope.version > currentWatermark) {
+            watermark.accept(entryId, envelope.version);
+            saveWatermark();
+        }
+
+        // 4. Decode payload
+        SecurePayload payload = SecurePayload.decode(envelope.payload);
+
+        // 5. Determine mode
+        if (payload.recipients() == null || payload.recipients().length == 0) {
+            // Broadcast Public mode: data is in plaintext
+            return payload.data();
+        }
+
+        // Multicast/Unicast mode: decrypt symmetric key
+        List<RecipientBlock> blocks = RecipientBlock.decodeList(payload.recipients());
+        RecipientBlock myBlock = null;
+        for (RecipientBlock block : blocks) {
+            if (signerId.equals(block.recipientSid())) {
+                myBlock = block;
+                break;
+            }
+        }
+
+        if (myBlock == null) {
+            throw new VeridotException(ErrorCode.CAPABILITY_NOT_FOUND, entryId.loggable(),
+                "Access Denied: Processor " + signerId + " is not an authorized recipient");
+        }
+
+        // Decrypt symmetric key
+        byte[] keySym = HybridEncryptor.decryptAsymmetric(myBlock.encryptedKey(), longTermPrivateKey);
+
+        // Decrypt data payload
+        return HybridEncryptor.decryptSymmetric(payload.data(), keySym, payload.nonce());
     }
 }

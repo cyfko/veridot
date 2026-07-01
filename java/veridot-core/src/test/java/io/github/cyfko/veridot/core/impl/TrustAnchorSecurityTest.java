@@ -1,5 +1,6 @@
 package io.github.cyfko.veridot.core.impl;
 
+import io.github.cyfko.veridot.core.Algorithm;
 import io.github.cyfko.veridot.core.InMemoryBroker;
 import io.github.cyfko.veridot.core.PublicKeyTrustRoot;
 import io.github.cyfko.veridot.core.TrustIdentity;
@@ -27,7 +28,7 @@ class TrustAnchorSecurityTest {
 
         long ts = System.currentTimeMillis();
         KeyEpochPayload payload = new KeyEpochPayload(
-            (byte) 0x01, 1L, attackerKp.getPublic().getEncoded(), ts, ts + 3600000L, null, null
+            Algorithm.RSA_SHA256, 1L, attackerKp.getPublic().getEncoded(), ts, ts + 3600000L, null, null
         );
 
         EnvelopeBuilder builder = new EnvelopeBuilder()
@@ -39,7 +40,7 @@ class TrustAnchorSecurityTest {
             .timestamp(ts)
             .issuer(trust.signerId)
             .payload(payload.encode())
-            .sigAlg((byte) 0x01);
+            .sigAlg(Algorithm.RSA_SHA256);
 
         byte[] emptySignature = new byte[0];
         byte[] encoded = Envelope.encode(builder, emptySignature);
@@ -64,7 +65,7 @@ class TrustAnchorSecurityTest {
 
         long ts = System.currentTimeMillis();
         KeyEpochPayload payload = new KeyEpochPayload(
-            (byte) 0x01, 1L, attackerKp.getPublic().getEncoded(), ts, ts + 3600000L, null, null
+            Algorithm.RSA_SHA256, 1L, attackerKp.getPublic().getEncoded(), ts, ts + 3600000L, null, null
         );
 
         EnvelopeBuilder builder = new EnvelopeBuilder()
@@ -76,7 +77,7 @@ class TrustAnchorSecurityTest {
             .timestamp(ts)
             .issuer(trust.signerId)
             .payload(payload.encode())
-            .sigAlg((byte) 0x01);
+            .sigAlg(Algorithm.RSA_SHA256);
 
         byte[] fakeSignature = new byte[256];
         new SecureRandom().nextBytes(fakeSignature);
@@ -103,7 +104,7 @@ class TrustAnchorSecurityTest {
         };
 
         try (var sv = new GenericSignerVerifier(broker, flakeyRoot, trust.signerId,
-                trust.longTermKeyPair.getPrivate(), (byte) 0x01)) {
+                trust.longTermKeyPair.getPrivate(), Algorithm.RSA_SHA256)) {
 
             String token = sv.sign("data",
                     BasicConfigurer.builder().groupId("infra-test").validity(600).build());
@@ -126,7 +127,7 @@ class TrustAnchorSecurityTest {
         KeyPair fakeKp = gen.generateKeyPair();
 
         KeyEpochPayload payload = new KeyEpochPayload(
-            (byte) 0x01, 1L, fakeKp.getPublic().getEncoded(), ts, ts + 3600000L, null, null
+            Algorithm.RSA_SHA256, 1L, fakeKp.getPublic().getEncoded(), ts, ts + 3600000L, null, null
         );
 
         EnvelopeBuilder builder = new EnvelopeBuilder()
@@ -138,9 +139,9 @@ class TrustAnchorSecurityTest {
             .timestamp(ts)
             .issuer("unknown-signer")
             .payload(payload.encode())
-            .sigAlg((byte) 0x01);
+            .sigAlg(Algorithm.RSA_SHA256);
 
-        Envelope tempEnv = new Envelope(Envelope.PROTO_VERSION, EntryType.KEY_EPOCH, (byte) 0x00, Scope.group("victim"), "unknown-attack", 1L, ts, "unknown-signer", payload.encode(), (byte) 0x01, new byte[0]);
+        Envelope tempEnv = new Envelope(Envelope.PROTO_VERSION, EntryType.KEY_EPOCH, (byte) 0x00, Scope.group("victim"), "unknown-attack", 1L, ts, "unknown-signer", payload.encode(), Algorithm.RSA_SHA256, new byte[0]);
         Signature sig = Signature.getInstance("SHA256withRSA");
         sig.initSign(fakeKp.getPrivate());
         sig.update(tempEnv.canonicalSigningBytes());
@@ -159,8 +160,8 @@ class TrustAnchorSecurityTest {
     void canonical_announcement_is_deterministic() {
         Scope scope = Scope.group("test");
         byte[] payload = new byte[]{1, 2, 3, 4};
-        Envelope a1 = new Envelope(Envelope.PROTO_VERSION, EntryType.KEY_EPOCH, (byte) 0x00, scope, "seq1", 1L, 1706712000L, "svc-A", payload, (byte) 0x01, new byte[0]);
-        Envelope a2 = new Envelope(Envelope.PROTO_VERSION, EntryType.KEY_EPOCH, (byte) 0x00, scope, "seq1", 1L, 1706712000L, "svc-A", payload, (byte) 0x01, new byte[0]);
+        Envelope a1 = new Envelope(Envelope.PROTO_VERSION, EntryType.KEY_EPOCH, (byte) 0x00, scope, "seq1", 1L, 1706712000L, "svc-A", payload, Algorithm.RSA_SHA256, new byte[0]);
+        Envelope a2 = new Envelope(Envelope.PROTO_VERSION, EntryType.KEY_EPOCH, (byte) 0x00, scope, "seq1", 1L, 1706712000L, "svc-A", payload, Algorithm.RSA_SHA256, new byte[0]);
         assertArrayEquals(a1.canonicalSigningBytes(), a2.canonicalSigningBytes(), "canonicalSigningBytes must be deterministic");
     }
 
@@ -168,11 +169,11 @@ class TrustAnchorSecurityTest {
     void canonical_announcement_changes_when_any_field_changes() {
         Scope scope = Scope.group("g");
         byte[] payload = new byte[]{1, 2, 3};
-        Envelope base = new Envelope(Envelope.PROTO_VERSION, EntryType.KEY_EPOCH, (byte) 0x00, scope, "s", 1L, 1706712000L, "svc-A", payload, (byte) 0x01, new byte[0]);
+        Envelope base = new Envelope(Envelope.PROTO_VERSION, EntryType.KEY_EPOCH, (byte) 0x00, scope, "s", 1L, 1706712000L, "svc-A", payload, Algorithm.RSA_SHA256, new byte[0]);
 
-        Envelope diffPayload = new Envelope(Envelope.PROTO_VERSION, EntryType.KEY_EPOCH, (byte) 0x00, scope, "s", 1L, 1706712000L, "svc-A", new byte[]{1, 2, 4}, (byte) 0x01, new byte[0]);
-        Envelope diffTs = new Envelope(Envelope.PROTO_VERSION, EntryType.KEY_EPOCH, (byte) 0x00, scope, "s", 1L, 1706712001L, "svc-A", payload, (byte) 0x01, new byte[0]);
-        Envelope diffIssuer = new Envelope(Envelope.PROTO_VERSION, EntryType.KEY_EPOCH, (byte) 0x00, scope, "s", 1L, 1706712000L, "svc-B", payload, (byte) 0x01, new byte[0]);
+        Envelope diffPayload = new Envelope(Envelope.PROTO_VERSION, EntryType.KEY_EPOCH, (byte) 0x00, scope, "s", 1L, 1706712000L, "svc-A", new byte[]{1, 2, 4}, Algorithm.RSA_SHA256, new byte[0]);
+        Envelope diffTs = new Envelope(Envelope.PROTO_VERSION, EntryType.KEY_EPOCH, (byte) 0x00, scope, "s", 1L, 1706712001L, "svc-A", payload, Algorithm.RSA_SHA256, new byte[0]);
+        Envelope diffIssuer = new Envelope(Envelope.PROTO_VERSION, EntryType.KEY_EPOCH, (byte) 0x00, scope, "s", 1L, 1706712000L, "svc-B", payload, Algorithm.RSA_SHA256, new byte[0]);
 
         assertFalse(Arrays.equals(base.canonicalSigningBytes(), diffPayload.canonicalSigningBytes()));
         assertFalse(Arrays.equals(base.canonicalSigningBytes(), diffTs.canonicalSigningBytes()));

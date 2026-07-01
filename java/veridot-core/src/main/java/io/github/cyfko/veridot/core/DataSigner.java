@@ -100,6 +100,24 @@ public interface DataSigner {
          * @return a non-null {@link Function} from {@code Object} to {@code String}
          */
         Function<Object, String> getSerializer();
+
+        /**
+         * The list of authorized recipient processor IDs for PRIVATE distribution mode.
+         *
+         * @return a list of recipient IDs, or an empty list if not specified
+         */
+        default java.util.List<String> getRecipients() {
+            return java.util.Collections.emptyList();
+        }
+
+        /**
+         * The MIME type of the payload for PRIVATE distribution mode (e.g., "application/json").
+         *
+         * @return the MIME type string, or null if not specified
+         */
+        default String getMimeType() {
+            return null;
+        }
     }
 
     /**

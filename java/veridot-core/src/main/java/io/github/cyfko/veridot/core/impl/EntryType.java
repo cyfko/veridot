@@ -11,7 +11,8 @@ public enum EntryType {
     CONFIG((byte) 0x03),
     LIVENESS((byte) 0x04),
     FENCE((byte) 0x05),
-    SNAPSHOT_MARKER((byte) 0x06);
+    SNAPSHOT_MARKER((byte) 0x06),
+    SECURE_PAYLOAD((byte) 0x07);
 
     public final byte code;
 

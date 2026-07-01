@@ -21,11 +21,6 @@ public final class KeyRotationService implements AutoCloseable {
         this(Algorithm.ED25519); // Default to Ed25519 as per §13.1
     }
 
-    @Deprecated
-    public KeyRotationService(byte algCode) {
-        this(Algorithm.fromCode(algCode));
-    }
-
     public KeyRotationService(Algorithm alg) {
         if (alg == null) {
             throw new IllegalArgumentException("Algorithm cannot be null");
@@ -51,8 +46,23 @@ public final class KeyRotationService implements AutoCloseable {
             }
 
             KeyPair keyPair = gen.generateKeyPair();
+            
+            // Retain the reference to the old snapshot to actively destroy its private key
+            // and prevent lingering cryptographic material in memory (Forward Secrecy hardening).
+            KeySnapshot old = this.currentSnapshot;
+
             // F-04: capture atomically as a single record
             this.currentSnapshot = new KeySnapshot(keyPair.getPrivate(), keyPair.getPublic(), alg);
+
+            if (old != null) {
+                try {
+                    if (old.privateKey() instanceof javax.security.auth.Destroyable d) {
+                        d.destroy();
+                    }
+                } catch (javax.security.auth.DestroyFailedException e) {
+                    logger.warning("Could not destroy old ephemeral private key: " + e.getMessage());
+                }
+            }
 
             logger.info("Ephemeral key pair rotated successfully. Algorithm: " + alg.name() 
                         + " on thread: " + Thread.currentThread().getName());

@@ -122,11 +122,11 @@ public class CoreUnitTest {
             .timestamp(System.currentTimeMillis())
             .issuer("root-rsa")
             .payload(payload)
-            .sigAlg((byte) 0x01); // RSA-SHA256
+            .sigAlg(Algorithm.RSA_SHA256); // RSA-SHA256
 
         Envelope tempEnv = new Envelope(
             Envelope.PROTO_VERSION, EntryType.KEY_EPOCH, (byte) 0x00, scope, "session-A",
-            10L, builder.timestamp, "root-rsa", payload, (byte) 0x01, null
+            10L, builder.timestamp, "root-rsa", payload, Algorithm.RSA_SHA256, null
         );
 
         Signature sig = Signature.getInstance("SHA256withRSA");
@@ -197,7 +197,7 @@ public class CoreUnitTest {
         Scope scope = Scope.parse("group:user-123");
         Envelope envelope = new Envelope(
             Envelope.PROTO_VERSION, EntryType.KEY_EPOCH, (byte) 0x00, scope, "session-A",
-            10L, System.currentTimeMillis(), "root-rsa", new byte[0], (byte) 0x01, new byte[0]
+            10L, System.currentTimeMillis(), "root-rsa", new byte[0], Algorithm.RSA_SHA256, new byte[0]
         );
         
         SignatureVerifier verifier = new SignatureVerifier();
@@ -233,7 +233,7 @@ public class CoreUnitTest {
                 trustRoot,
                 "root-rsa",
                 rsaKeyPair.getPrivate(),
-                (byte) 0x01
+                Algorithm.RSA_SHA256
         )) {
             // Act: sign a valid token (should increment accepted)
             String token = sv.sign("data", BasicConfigurer.builder().groupId("group1").sequenceId("sessionA").validity(600).build());
@@ -263,7 +263,7 @@ public class CoreUnitTest {
                 trustRoot,
                 "root-rsa",
                 rsaKeyPair.getPrivate(),
-                (byte) 0x01,
+                Algorithm.RSA_SHA256,
                 -1,
                 EvictionPolicy.FIFO,
                 1, // 1 minute interval override
@@ -278,7 +278,7 @@ public class CoreUnitTest {
             sv.reconciliationManager.reconcile(
                 Scope.group("group1"), inMemoryBroker, sv.watermarkForTest(),
                 new SignatureVerifier(), trustRoot, new EntryPublisher(), "root-rsa",
-                rsaKeyPair.getPrivate(), (byte) 0x01, sv.capabilityVerifier, null
+                rsaKeyPair.getPrivate(), Algorithm.RSA_SHA256, sv.capabilityVerifier, null
             );
             
             // Trigger reconciliation periodic start so it registers in reconciledScopes
@@ -319,7 +319,7 @@ public class CoreUnitTest {
                 System.currentTimeMillis(),
                 "issuer-pss",
                 new byte[] { 0x01, 0x02 },
-                (byte) 0x03, // RSA-PSS
+                Algorithm.RSA_PSS, // RSA-PSS
                 null
         );
 
@@ -370,7 +370,7 @@ public class CoreUnitTest {
                 trustRoot,
                 "issuer-rsa",
                 rsaKeyPair.getPrivate(),
-                (byte) 0x03, // Ephemeral alg = RSA-PSS
+                Algorithm.RSA_PSS, // Ephemeral alg = RSA-PSS
                 -1,
                 EvictionPolicy.FIFO,
                 60,
@@ -448,7 +448,7 @@ public class CoreUnitTest {
                 trustRoot,
                 "issuer-rsa",
                 rsaKeyPair.getPrivate(),
-                (byte) 0x01,
+                Algorithm.RSA_SHA256,
                 3, // max sessions = 3
                 EvictionPolicy.FIFO,
                 60,
@@ -497,7 +497,7 @@ public class CoreUnitTest {
                 trustRoot,
                 "issuer-rsa",
                 rsaKeyPair.getPrivate(),
-                (byte) 0x01
+                Algorithm.RSA_SHA256
         )) {
             // Before verification / reconciliation, staleness should be -1
             assertEquals(-1L, sv.getReconciliationStalenessMs("group:group1"));
@@ -545,7 +545,7 @@ public class CoreUnitTest {
             };
             
             byte[] payloadBytes = new KeyEpochPayload(
-                (byte) 0x01, // alg
+                Algorithm.RSA_SHA256, // alg
                 1L, // epochId
                 kp.getPublic().getEncoded(), // pk
                 System.currentTimeMillis() - 100000L, // validFrom
@@ -565,7 +565,7 @@ public class CoreUnitTest {
                 .timestamp(driftTime)
                 .issuer("issuer-drift")
                 .payload(payloadBytes)
-                .sigAlg((byte) 0x01);
+                .sigAlg(Algorithm.RSA_SHA256);
 
             Envelope env = new Envelope(
                 Envelope.PROTO_VERSION,
@@ -577,7 +577,7 @@ public class CoreUnitTest {
                 driftTime,
                 "issuer-drift",
                 payloadBytes,
-                (byte) 0x01,
+                Algorithm.RSA_SHA256,
                 null
             );
             
@@ -601,7 +601,7 @@ public class CoreUnitTest {
                 .timestamp(System.currentTimeMillis())
                 .issuer("issuer-drift")
                 .payload(livePayloadBytes)
-                .sigAlg((byte) 0x01);
+                .sigAlg(Algorithm.RSA_SHA256);
 
             Envelope liveEnv = new Envelope(
                 Envelope.PROTO_VERSION,
@@ -613,7 +613,7 @@ public class CoreUnitTest {
                 System.currentTimeMillis(),
                 "issuer-drift",
                 livePayloadBytes,
-                (byte) 0x01,
+                Algorithm.RSA_SHA256,
                 null
             );
             sig.initSign(kp.getPrivate());
@@ -629,7 +629,7 @@ public class CoreUnitTest {
                     tr,
                     "issuer-drift",
                     kp.getPrivate(),
-                    (byte) 0x01
+                    Algorithm.RSA_SHA256
             )) {
                 String header = Base64.getUrlEncoder().encodeToString("{\"alg\":\"RS256\"}".getBytes());
                 String jwtPayload = Base64.getUrlEncoder().encodeToString("{\"sub\":\"3:group1:session-drift\",\"data\":\"my-data\"}".getBytes());
@@ -653,7 +653,7 @@ public class CoreUnitTest {
 
     @Test
     public void testEmptyIssuerRejection() throws Exception {
-        byte[] payloadBytes = new KeyEpochPayload((byte) 0x01, 1L, rsaKeyPair.getPublic().getEncoded(), System.currentTimeMillis(), System.currentTimeMillis() + 100000L, "site1", null).encode();
+        byte[] payloadBytes = new KeyEpochPayload(Algorithm.RSA_SHA256, 1L, rsaKeyPair.getPublic().getEncoded(), System.currentTimeMillis(), System.currentTimeMillis() + 100000L, "site1", null).encode();
         EnvelopeBuilder envBuilder = new EnvelopeBuilder()
             .entryType(EntryType.KEY_EPOCH)
             .flags((byte) 0x00)
@@ -663,7 +663,7 @@ public class CoreUnitTest {
             .timestamp(System.currentTimeMillis())
             .issuer("") // Empty issuer
             .payload(payloadBytes)
-            .sigAlg((byte) 0x01);
+            .sigAlg(Algorithm.RSA_SHA256);
 
         Envelope env = new Envelope(
             Envelope.PROTO_VERSION,
@@ -675,7 +675,7 @@ public class CoreUnitTest {
             System.currentTimeMillis(),
             "", // Empty issuer
             payloadBytes,
-            (byte) 0x01,
+            Algorithm.RSA_SHA256,
             null
         );
 
@@ -695,7 +695,7 @@ public class CoreUnitTest {
 
     @Test
     public void testTooLongIssuerRejection() throws Exception {
-        byte[] payloadBytes = new KeyEpochPayload((byte) 0x01, 1L, rsaKeyPair.getPublic().getEncoded(), System.currentTimeMillis(), System.currentTimeMillis() + 100000L, "site1", null).encode();
+        byte[] payloadBytes = new KeyEpochPayload(Algorithm.RSA_SHA256, 1L, rsaKeyPair.getPublic().getEncoded(), System.currentTimeMillis(), System.currentTimeMillis() + 100000L, "site1", null).encode();
         
         char[] arr = new char[4097];
         Arrays.fill(arr, 'a');
@@ -710,7 +710,7 @@ public class CoreUnitTest {
             .timestamp(System.currentTimeMillis())
             .issuer(longIssuer) // Too long issuer
             .payload(payloadBytes)
-            .sigAlg((byte) 0x01);
+            .sigAlg(Algorithm.RSA_SHA256);
 
         Envelope env = new Envelope(
             Envelope.PROTO_VERSION,
@@ -722,7 +722,7 @@ public class CoreUnitTest {
             System.currentTimeMillis(),
             longIssuer, // Too long issuer
             payloadBytes,
-            (byte) 0x01,
+            Algorithm.RSA_SHA256,
             null
         );
 
@@ -771,7 +771,7 @@ public class CoreUnitTest {
     @Test
     public void testJwtHeaderAlgCoherence() throws Exception {
         io.github.cyfko.veridot.core.InMemoryBroker inMemoryBroker = new io.github.cyfko.veridot.core.InMemoryBroker();
-        byte[] payloadBytes = new KeyEpochPayload((byte) 0x01, 1L, rsaKeyPair.getPublic().getEncoded(), System.currentTimeMillis(), System.currentTimeMillis() + 100000L, "site1", null).encode();
+        byte[] payloadBytes = new KeyEpochPayload(Algorithm.RSA_SHA256, 1L, rsaKeyPair.getPublic().getEncoded(), System.currentTimeMillis(), System.currentTimeMillis() + 100000L, "site1", null).encode();
         EnvelopeBuilder envBuilder = new EnvelopeBuilder()
             .entryType(EntryType.KEY_EPOCH)
             .flags((byte) 0x00)
@@ -781,7 +781,7 @@ public class CoreUnitTest {
             .timestamp(System.currentTimeMillis())
             .issuer("root-rsa")
             .payload(payloadBytes)
-            .sigAlg((byte) 0x01);
+            .sigAlg(Algorithm.RSA_SHA256);
 
         Envelope env = new Envelope(
             Envelope.PROTO_VERSION,
@@ -793,7 +793,7 @@ public class CoreUnitTest {
             System.currentTimeMillis(),
             "root-rsa",
             payloadBytes,
-            (byte) 0x01,
+            Algorithm.RSA_SHA256,
             null
         );
 
@@ -815,7 +815,7 @@ public class CoreUnitTest {
             .timestamp(System.currentTimeMillis())
             .issuer("root-rsa")
             .payload(livePayloadBytes)
-            .sigAlg((byte) 0x01);
+            .sigAlg(Algorithm.RSA_SHA256);
 
         Envelope liveEnv = new Envelope(
             Envelope.PROTO_VERSION,
@@ -827,7 +827,7 @@ public class CoreUnitTest {
             System.currentTimeMillis(),
             "root-rsa",
             livePayloadBytes,
-            (byte) 0x01,
+            Algorithm.RSA_SHA256,
             null
         );
         sig.initSign(rsaKeyPair.getPrivate());
@@ -840,7 +840,7 @@ public class CoreUnitTest {
                 trustRoot,
                 "root-rsa",
                 rsaKeyPair.getPrivate(),
-                (byte) 0x01
+                Algorithm.RSA_SHA256
         )) {
             // Build JWT with wrong header alg: ES256 instead of expected RS256
             String header = Base64.getUrlEncoder().encodeToString("{\"alg\":\"ES256\"}".getBytes());

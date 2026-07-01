@@ -25,7 +25,7 @@ public abstract class TrustRootContractTest {
             // An internal error (e.g. invalid signature format or null/empty inputs) should always fail closed
             boolean result = false;
             try {
-                result = delegated.verifySignature("any", new byte[0], new byte[0], (byte) 0x01);
+                result = delegated.verifySignature("any", new byte[0], new byte[0], Algorithm.RSA_SHA256);
             } catch (Exception e) {
                 // If it throws, that is also fail-closed, which is safe.
                 return;

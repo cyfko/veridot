@@ -15,23 +15,33 @@ record CapabilityPayload(
     long validUntil               // tag 0x04
 ) {
 
+    public enum Tag {
+        SUBJECT_SID((byte) 0x01),
+        SCOPE_PATTERNS((byte) 0x02),
+        MAX_DELEGATION_DEPTH((byte) 0x03),
+        VALID_UNTIL((byte) 0x04);
+
+        public final byte code;
+        Tag(byte code) { this.code = code; }
+    }
+
     public static CapabilityPayload decode(byte[] tlvBytes) {
         Map<Byte, byte[]> fields = TlvCodec.parse(tlvBytes);
 
-        String subjectSid = TlvCodec.readString(fields, (byte) 0x01, true);
-        List<String> scopePatterns = TlvCodec.readStringList(fields, (byte) 0x02, true);
-        byte maxDelegationDepth = TlvCodec.readU8(fields, (byte) 0x03, true);
-        long validUntil = TlvCodec.readI64(fields, (byte) 0x04, true);
+        String subjectSid = TlvCodec.readString(fields, Tag.SUBJECT_SID.code, true);
+        List<String> scopePatterns = TlvCodec.readStringList(fields, Tag.SCOPE_PATTERNS.code, true);
+        byte maxDelegationDepth = TlvCodec.readU8(fields, Tag.MAX_DELEGATION_DEPTH.code, true);
+        long validUntil = TlvCodec.readI64(fields, Tag.VALID_UNTIL.code, true);
 
         return new CapabilityPayload(subjectSid, scopePatterns, maxDelegationDepth, validUntil);
     }
 
     public byte[] encode() {
         List<TlvCodec.TlvField> fields = new ArrayList<>();
-        fields.add(TlvCodec.string((byte) 0x01, subjectSid));
-        fields.add(TlvCodec.stringList((byte) 0x02, scopePatterns));
-        fields.add(TlvCodec.u8((byte) 0x03, maxDelegationDepth));
-        fields.add(TlvCodec.i64((byte) 0x04, validUntil));
+        fields.add(TlvCodec.string(Tag.SUBJECT_SID.code, subjectSid));
+        fields.add(TlvCodec.stringList(Tag.SCOPE_PATTERNS.code, scopePatterns));
+        fields.add(TlvCodec.u8(Tag.MAX_DELEGATION_DEPTH.code, maxDelegationDepth));
+        fields.add(TlvCodec.i64(Tag.VALID_UNTIL.code, validUntil));
         return TlvCodec.encode(fields);
     }
 

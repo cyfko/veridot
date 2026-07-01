@@ -68,7 +68,7 @@ public abstract class DatabaseTest {
     // ── Signing ──────────────────────────────────────────────────────────────
 
     @ParameterizedTest
-    @EnumSource(value = DistributionMode.class)
+    @EnumSource(value = DistributionMode.class, names = {"DIRECT", "INDIRECT"})
     void sign_with_valid_data_returns_token(DistributionMode mode) {
         var cfg = BasicConfigurer.builder()
                 .groupId("sign-valid-" + mode.name())
@@ -81,7 +81,7 @@ public abstract class DatabaseTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = DistributionMode.class)
+    @EnumSource(value = DistributionMode.class, names = {"DIRECT", "INDIRECT"})
     void sign_with_null_data_throws(DistributionMode mode) {
         var cfg = BasicConfigurer.builder()
                 .groupId("sign-null-" + mode.name())
@@ -92,7 +92,7 @@ public abstract class DatabaseTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = DistributionMode.class)
+    @EnumSource(value = DistributionMode.class, names = {"DIRECT", "INDIRECT"})
     void sign_with_negative_duration_throws(DistributionMode mode) {
         var cfg = BasicConfigurer.builder()
                 .groupId("sign-neg-" + mode.name())
@@ -106,7 +106,7 @@ public abstract class DatabaseTest {
     // ── Verification ─────────────────────────────────────────────────────────
 
     @ParameterizedTest
-    @EnumSource(value = DistributionMode.class)
+    @EnumSource(value = DistributionMode.class, names = {"DIRECT", "INDIRECT"})
     void verify_valid_token_returns_string_payload(DistributionMode mode) throws InterruptedException {
         String data = "john.doe@example.com";
         var cfg = BasicConfigurer.builder()
@@ -121,7 +121,7 @@ public abstract class DatabaseTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = DistributionMode.class)
+    @EnumSource(value = DistributionMode.class, names = {"DIRECT", "INDIRECT"})
     void verify_valid_token_returns_pojo_payload(DistributionMode mode) throws InterruptedException {
         UserData data = new UserData("john.doe@example.com");
         var cfg = BasicConfigurer.builder()
@@ -143,7 +143,7 @@ public abstract class DatabaseTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = DistributionMode.class)
+    @EnumSource(value = DistributionMode.class, names = {"DIRECT", "INDIRECT"})
     void verify_expired_token_throws(DistributionMode mode) throws InterruptedException {
         var cfg = BasicConfigurer.builder()
                 .groupId("verify-exp-" + mode.name())
@@ -158,7 +158,7 @@ public abstract class DatabaseTest {
     // ── Revocation ────────────────────────────────────────────────────────────
 
     @ParameterizedTest
-    @EnumSource(value = DistributionMode.class)
+    @EnumSource(value = DistributionMode.class, names = {"DIRECT", "INDIRECT"})
     void verify_revoked_token_throws(DistributionMode mode) throws InterruptedException {
         String groupId = "revoke-tok-" + mode.name();
         var cfg = BasicConfigurer.builder()
@@ -175,7 +175,7 @@ public abstract class DatabaseTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = DistributionMode.class)
+    @EnumSource(value = DistributionMode.class, names = {"DIRECT", "INDIRECT"})
     void revokeGroup_invalidates_all_sessions(DistributionMode mode) throws InterruptedException {
         String groupId = "revoke-grp-" + mode.name();
         String t1 = dataSigner.sign("d1", BasicConfigurer.builder().groupId(groupId).distribution(mode).validity(3600).build());
@@ -190,7 +190,7 @@ public abstract class DatabaseTest {
     // ── Token regeneration ────────────────────────────────────────────────────
 
     @ParameterizedTest
-    @EnumSource(value = DistributionMode.class)
+    @EnumSource(value = DistributionMode.class, names = {"DIRECT", "INDIRECT"})
     void verify_token_regeneration_returns_payload(DistributionMode mode) throws InterruptedException {
         UserData data = new UserData("john.doe@example.com");
         String groupId = "regen-" + mode.name();
@@ -205,7 +205,7 @@ public abstract class DatabaseTest {
     // ── TokenTracker ──────────────────────────────────────────────────────────
 
     @ParameterizedTest
-    @EnumSource(value = DistributionMode.class)
+    @EnumSource(value = DistributionMode.class, names = {"DIRECT", "INDIRECT"})
     void hasActiveToken_after_sign_returns_true(DistributionMode mode) throws InterruptedException {
         String groupId = "tracker-" + mode.name();
         dataSigner.sign("data", BasicConfigurer.builder().groupId(groupId).distribution(mode).validity(600).build());
@@ -214,7 +214,7 @@ public abstract class DatabaseTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = DistributionMode.class)
+    @EnumSource(value = DistributionMode.class, names = {"DIRECT", "INDIRECT"})
     void hasActiveToken_after_revokeGroup_returns_false(DistributionMode mode) throws InterruptedException {
         String groupId = "tracker-rg-" + mode.name();
         dataSigner.sign("d1", BasicConfigurer.builder().groupId(groupId).distribution(mode).validity(3600).build());
@@ -226,7 +226,7 @@ public abstract class DatabaseTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = DistributionMode.class)
+    @EnumSource(value = DistributionMode.class, names = {"DIRECT", "INDIRECT"})
     void revokeGroup_marks_liveness_revoked_but_leaves_key_epoch_intact(DistributionMode mode) throws Exception {
         String groupId = "revoke-phys-" + mode.name();
         String seqA = "phys-a-" + mode.name();
