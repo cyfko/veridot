@@ -5,6 +5,19 @@ All notable changes to the Veridot project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.1] - 2026-07-01
+
+### 🔐 Security
+
+- **Hardened Asymmetric Key Encapsulation (ECIES and RSA)** — Replaced textbook RSA encryption with `RSA/ECB/OAEPWithSHA-256AndMGF1Padding` for RSA keys. Replaced insecure `AES/ECB/PKCS5Padding` and SHA-256 direct hash key derivation with `AES/GCM/NoPadding` (authenticated encryption using randomly generated 12-byte IVs) and `HKDF-SHA256` key derivation for EC (ECIES) keys.
+- **Timing attack warnings** — Signature verification now emits a warning log when verifying signatures with non-constant-time JCA algorithms (RSA, ECDSA), recommending migrating to Ed25519.
+- **Default allowed algorithms restriction** — `Config.ALLOWED_SIG_ALGS` defaults to only `ED25519` and `RSA_PSS` to prevent the use of weaker algorithms (like RSA PKCS#1 v1.5) by default.
+
+### Changed
+
+- **Reduced cache latency** — Reduced `CAPABILITY_CACHE_TTL_SECONDS` default from 60 seconds to 10 seconds to shorten the propagation window of revoked capabilities.
+- **Deterministic JWT serialization** — `JwtMaker` now uses `LinkedHashMap` and sorts custom claims alphabetically to produce canonical, deterministic JSON output.
+
 ## [4.0.0] - 2026-06-28
 
 ### ⚠️ Breaking Changes

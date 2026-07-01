@@ -69,20 +69,20 @@ sv.revoke("user-alice", null)
     <dependency>
         <groupId>io.github.cyfko</groupId>
         <artifactId>veridot-core</artifactId>
-        <version>4.0.0</version>
+        <version>4.0.1</version>
     </dependency>
 
     <!-- Pick exactly one broker -->
     <dependency>
         <groupId>io.github.cyfko</groupId>
         <artifactId>veridot-kafka</artifactId>      <!-- Kafka + RocksDB (recommended) -->
-        <version>4.0.0</version>
+        <version>4.0.1</version>
     </dependency>
     <!-- OR -->
     <dependency>
         <groupId>io.github.cyfko</groupId>
         <artifactId>veridot-databases</artifactId>  <!-- SQL database -->
-        <version>4.0.0</version>
+        <version>4.0.1</version>
     </dependency>
 </dependencies>
 ```
@@ -96,8 +96,8 @@ java {
 }
 
 dependencies {
-    implementation 'io.github.cyfko:veridot-core:4.0.0'
-    implementation 'io.github.cyfko:veridot-kafka:4.0.0'  // or veridot-databases
+    implementation 'io.github.cyfko:veridot-core:4.0.1'
+    implementation 'io.github.cyfko:veridot-kafka:4.0.1'  // or veridot-databases
 }
 ```
 
@@ -623,7 +623,7 @@ record VerifiedData<T>(T data, String groupId, String sequenceId) {}
 ./mvnw test -pl veridot-tests -am --no-transfer-progress
 ```
 
-**v4.0.0 test results:** 98 unit tests, 34 integration tests, 0 failures, 0 errors.
+**v4.0.1 test results:** 98 unit tests, 34 integration tests, 0 failures, 0 errors.
 
 ---
 

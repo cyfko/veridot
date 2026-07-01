@@ -18,6 +18,19 @@ export function ChangelogPage() {
       <div className="space-y-8 border-l border-slate-200 dark:border-slate-800 pl-6 ml-4">
         <div className="relative">
           <span className="absolute -left-[31px] top-1 h-3 w-3 rounded-full bg-violet-600 border-2 border-white dark:border-slate-950" />
+          <h2 className="text-xl font-bold text-slate-900 dark:text-white">v4.0.1 (2026-07-01)</h2>
+          <p className="text-xs text-slate-400 mt-1">Security Hardening & Performance Fixes</p>
+          <ul className="list-disc pl-5 mt-3 text-sm text-slate-600 dark:text-slate-400 space-y-1">
+            <li><strong>RSA-OAEP Migration</strong>: Replaced textbook RSA encryption with RSA-OAEP (SHA-256 / MGF1 padding) for wrapping symmetric keys.</li>
+            <li><strong>Hardened ECIES Envelope</strong>: Replaced ECIES AES-ECB with AES-GCM (AEAD) using random 12-byte IVs and HKDF-SHA256 for key derivation.</li>
+            <li><strong>Deterministic JWT Claim Ordering</strong>: Claims in headers and payloads are sorted alphabetically and serialized using LinkedHashMap for canonical output.</li>
+            <li><strong>Timing-safe Warning logs</strong>: SignatureVerifier warns on timing-unsafe signature verifications (RSA, ECDSA), urging transition to Ed25519.</li>
+            <li><strong>Aggressive Capability Revocations</strong>: Reduced positive cache TTL default to 10 seconds to shorten revoked capability propagation window.</li>
+          </ul>
+        </div>
+
+        <div className="relative">
+          <span className="absolute -left-[31px] top-1 h-3 w-3 rounded-full bg-slate-300 dark:bg-slate-700 border-2 border-white dark:border-slate-950" />
           <h2 className="text-xl font-bold text-slate-900 dark:text-white">v4.0.0 (2026-06-28)</h2>
           <p className="text-xs text-slate-400 mt-1">Protocol V4 Standard Release</p>
           <ul className="list-disc pl-5 mt-3 text-sm text-slate-600 dark:text-slate-400 space-y-1">
