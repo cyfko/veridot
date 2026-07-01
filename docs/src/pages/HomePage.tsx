@@ -270,17 +270,17 @@ export function HomePage() {
         <div className="p-5 space-y-3">
           <div className="flex items-center gap-2">
             <CheckCircle size={14} className="text-emerald-500 flex-shrink-0" />
-            <code className="text-sm text-slate-700 dark:text-slate-300 font-mono">io.github.cyfko:veridot-core:4.0.0</code>
+            <code className="text-sm text-slate-700 dark:text-slate-300 font-mono">io.github.cyfko:veridot-core:4.0.1</code>
             <span className="text-xs text-slate-400">— {language === 'en' ? 'Core API (Java 25+)' : 'API centrale (Java 25+)'}</span>
           </div>
           <div className="flex items-center gap-2">
             <CheckCircle size={14} className="text-emerald-500 flex-shrink-0" />
-            <code className="text-sm text-slate-700 dark:text-slate-300 font-mono">io.github.cyfko:veridot-kafka:4.0.0</code>
+            <code className="text-sm text-slate-700 dark:text-slate-300 font-mono">io.github.cyfko:veridot-kafka:4.0.1</code>
             <span className="text-xs text-slate-400">— {language === 'en' ? 'Kafka broker (Java 17+)' : 'Broker Kafka (Java 17+)'}</span>
           </div>
           <div className="flex items-center gap-2">
             <CheckCircle size={14} className="text-emerald-500 flex-shrink-0" />
-            <code className="text-sm text-slate-700 dark:text-slate-300 font-mono">io.github.cyfko:veridot-databases:4.0.0</code>
+            <code className="text-sm text-slate-700 dark:text-slate-300 font-mono">io.github.cyfko:veridot-databases:4.0.1</code>
             <span className="text-xs text-slate-400">— {language === 'en' ? 'SQL broker (Java 17+)' : 'Broker SQL (Java 17+)'}</span>
           </div>
           <Link to="/installation" className="inline-flex items-center gap-1.5 text-violet-600 dark:text-violet-400 text-sm hover:underline font-medium">

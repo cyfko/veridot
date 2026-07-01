@@ -14,9 +14,9 @@ Java implementation of the Veridot distributed token verification protocol.
 
 | Module | Artifact | Java | Role |
 |--------|----------|:----:|------|
-| [`veridot-core`](veridot-core/) | `io.github.cyfko:veridot-core:4.0.0` | 25+ | Core API, `GenericSignerVerifier`, `TrustRoot`, Protocol V4 |
-| [`veridot-kafka`](veridot-kafka/) | `io.github.cyfko:veridot-kafka:4.0.0` | 17+ | `Broker` backed by Kafka + RocksDB |
-| [`veridot-databases`](veridot-databases/) | `io.github.cyfko:veridot-databases:4.0.0` | 17+ | `Broker` backed by SQL (PostgreSQL, MySQL…) |
+| [`veridot-core`](veridot-core/) | `io.github.cyfko:veridot-core:4.0.1` | 25+ | Core API, `GenericSignerVerifier`, `TrustRoot`, Protocol V4 |
+| [`veridot-kafka`](veridot-kafka/) | `io.github.cyfko:veridot-kafka:4.0.1` | 17+ | `Broker` backed by Kafka + RocksDB |
+| [`veridot-databases`](veridot-databases/) | `io.github.cyfko:veridot-databases:4.0.1` | 17+ | `Broker` backed by SQL (PostgreSQL, MySQL…) |
 | [`veridot-tests`](veridot-tests/) | _(internal)_ | 25+ | Integration tests across all brokers |
 
 > **Start reading here**: [`veridot-core/README.md`](veridot-core/README.md) — self-contained reference for all developers.
@@ -51,7 +51,7 @@ Choose the broker that matches your infrastructure:
 ./mvnw test -pl veridot-tests -am --no-transfer-progress
 ```
 
-**v4.0.0 results**: 98 unit tests, 34 integration tests, 0 failures, 0 errors.
+**v4.0.1 results**: 98 unit tests, 34 integration tests, 0 failures, 0 errors.
 
 ---
 

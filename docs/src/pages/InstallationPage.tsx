@@ -5,33 +5,28 @@ import { Admonition } from '../components/Admonition';
 const MAVEN_CORE = `<dependency>
   <groupId>io.github.cyfko</groupId>
   <artifactId>veridot-core</artifactId>
-  <version>4.0.0</version>
+  <version>4.0.1</version>
 </dependency>`;
 
 const MAVEN_KAFKA = `<dependency>
   <groupId>io.github.cyfko</groupId>
   <artifactId>veridot-kafka</artifactId>
-  <version>4.0.0</version>
+  <version>4.0.1</version>
 </dependency>`;
 
 const MAVEN_DB = `<dependency>
   <groupId>io.github.cyfko</groupId>
   <artifactId>veridot-databases</artifactId>
-  <version>4.0.0</version>
+  <version>4.0.1</version>
 </dependency>`;
 
 const GRADLE = `dependencies {
-    implementation 'io.github.cyfko:veridot-core:4.0.0'
+    implementation 'io.github.cyfko:veridot-core:4.0.1'
 
     // Pick ONE broker:
-    implementation 'io.github.cyfko:veridot-kafka:4.0.0'
+    implementation 'io.github.cyfko:veridot-kafka:4.0.1'
     // OR
-    implementation 'io.github.cyfko:veridot-databases:4.0.0'
-}
-
-java {
-    sourceCompatibility = JavaVersion.VERSION_25
-    targetCompatibility = JavaVersion.VERSION_25
+    implementation 'io.github.cyfko:veridot-databases:4.0.1'
 }`;
 
 const MAVEN_FULL = `<properties>
@@ -44,14 +39,14 @@ const MAVEN_FULL = `<properties>
   <dependency>
     <groupId>io.github.cyfko</groupId>
     <artifactId>veridot-core</artifactId>
-    <version>4.0.0</version>
+    <version>4.0.1</version>
   </dependency>
 
   <!-- Kafka broker — recommended for Kafka environments -->
   <dependency>
     <groupId>io.github.cyfko</groupId>
     <artifactId>veridot-kafka</artifactId>
-    <version>4.0.0</version>
+    <version>4.0.1</version>
   </dependency>
 </dependencies>`;
 
@@ -151,9 +146,9 @@ export function InstallationPage() {
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {[
-                { module: 'veridot-core', artifact: 'io.github.cyfko:veridot-core:4.0.0', java: '25+', role: language === 'en' ? 'Core API, GenericSignerVerifier, TrustRoot, Protocol V4' : 'API centrale, GenericSignerVerifier, TrustRoot, Protocole V4' },
-                { module: 'veridot-kafka', artifact: 'io.github.cyfko:veridot-kafka:4.0.0', java: '17+', role: language === 'en' ? 'Broker backed by Kafka + RocksDB' : 'Broker supporté par Kafka + RocksDB' },
-                { module: 'veridot-databases', artifact: 'io.github.cyfko:veridot-databases:4.0.0', java: '17+', role: language === 'en' ? 'Broker backed by any JDBC DataSource' : 'Broker supporté par n\'importe quel DataSource JDBC' },
+                { module: 'veridot-core', artifact: 'io.github.cyfko:veridot-core:4.0.1', java: '25+', role: language === 'en' ? 'Core API, GenericSignerVerifier, TrustRoot, Protocol V4' : 'API centrale, GenericSignerVerifier, TrustRoot, Protocole V4' },
+                { module: 'veridot-kafka', artifact: 'io.github.cyfko:veridot-kafka:4.0.1', java: '17+', role: language === 'en' ? 'Broker backed by Kafka + RocksDB' : 'Broker supporté par Kafka + RocksDB' },
+                { module: 'veridot-databases', artifact: 'io.github.cyfko:veridot-databases:4.0.1', java: '17+', role: language === 'en' ? 'Broker backed by any JDBC DataSource' : 'Broker supporté par n\'importe quel DataSource JDBC' },
               ].map(row => (
                 <tr key={row.module} className="bg-white dark:bg-slate-900">
                   <td className="px-4 py-3 font-mono text-violet-700 dark:text-violet-300 font-medium">{row.module}</td>

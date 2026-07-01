@@ -7,14 +7,14 @@ const MAVEN_SPRING = `<dependencies>
   <dependency>
     <groupId>io.github.cyfko</groupId>
     <artifactId>veridot-core</artifactId>
-    <version>4.0.0</version>
+    <version>4.0.1</version>
   </dependency>
 
   <!-- Veridot Kafka Broker -->
   <dependency>
     <groupId>io.github.cyfko</groupId>
     <artifactId>veridot-kafka</artifactId>
-    <version>4.0.0</version>
+    <version>4.0.1</version>
   </dependency>
 
   <!-- Spring Boot Security Starter -->
