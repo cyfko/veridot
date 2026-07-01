@@ -10,7 +10,7 @@ abstract class ConstantDefault {
     static final long KEYS_ROTATION_MINUTES = 1440; // 24 hours
     static final int  ASYMMETRIC_KEY_SIZE   = 3072;  // RSA-3072 (NIST recommendation post-2030)
     static final long RECONCILIATION_INTERVAL_MINUTES = 15;
-    static final long CAPABILITY_CACHE_TTL_SECONDS = 60;
+    static final long CAPABILITY_CACHE_TTL_SECONDS = 10;
     static final long CAPABILITY_NEGATIVE_CACHE_TTL_SECONDS = 5;
     static final long MAX_CLOCK_DRIFT_SECONDS = 300;
     static final int  MIN_RSA_KEY_LENGTH = 2048;
@@ -155,7 +155,7 @@ public abstract class Config {
 
     static {
         long parsedRotation = ConstantDefault.KEYS_ROTATION_MINUTES;
-        final var rotationRate = System.getenv(Env.KEYS_ROTATION_MINUTES);
+        final var rotationRate = getEnvOrProp(Env.KEYS_ROTATION_MINUTES);
         if (rotationRate != null) {
             try {
                 long parsed = Long.parseLong(rotationRate);
@@ -177,7 +177,7 @@ public abstract class Config {
         KEYS_ROTATION_MINUTES = parsedRotation;
 
         long parsedReconciliation = ConstantDefault.RECONCILIATION_INTERVAL_MINUTES;
-        final var reconciliationRate = System.getenv(Env.RECONCILIATION_INTERVAL_MINUTES);
+        final var reconciliationRate = getEnvOrProp(Env.RECONCILIATION_INTERVAL_MINUTES);
         if (reconciliationRate != null) {
             try {
                 long parsed = Long.parseLong(reconciliationRate);
@@ -199,7 +199,7 @@ public abstract class Config {
         RECONCILIATION_INTERVAL_MINUTES = parsedReconciliation;
 
         long parsedCapCache = ConstantDefault.CAPABILITY_CACHE_TTL_SECONDS;
-        final var capCacheRate = System.getenv(Env.CAPABILITY_CACHE_TTL_SECONDS);
+        final var capCacheRate = getEnvOrProp(Env.CAPABILITY_CACHE_TTL_SECONDS);
         if (capCacheRate != null) {
             try {
                 long parsed = Long.parseLong(capCacheRate);
@@ -221,7 +221,7 @@ public abstract class Config {
         CAPABILITY_CACHE_TTL_SECONDS = parsedCapCache;
 
         long parsedCapNegCache = ConstantDefault.CAPABILITY_NEGATIVE_CACHE_TTL_SECONDS;
-        final var capNegCacheRate = System.getenv(Env.CAPABILITY_NEGATIVE_CACHE_TTL_SECONDS);
+        final var capNegCacheRate = getEnvOrProp(Env.CAPABILITY_NEGATIVE_CACHE_TTL_SECONDS);
         if (capNegCacheRate != null) {
             try {
                 long parsed = Long.parseLong(capNegCacheRate);
@@ -243,7 +243,7 @@ public abstract class Config {
         CAPABILITY_NEGATIVE_CACHE_TTL_SECONDS = parsedCapNegCache;
 
         long parsedClockDrift = ConstantDefault.MAX_CLOCK_DRIFT_SECONDS;
-        final var clockDriftRate = System.getenv(Env.CLOCK_DRIFT_TOLERANCE_SECONDS);
+        final var clockDriftRate = getEnvOrProp(Env.CLOCK_DRIFT_TOLERANCE_SECONDS);
         if (clockDriftRate != null) {
             try {
                 long parsed = Long.parseLong(clockDriftRate);
@@ -265,7 +265,7 @@ public abstract class Config {
         MAX_CLOCK_DRIFT_SECONDS = parsedClockDrift;
 
         int parsedMinRsa = ConstantDefault.MIN_RSA_KEY_LENGTH;
-        final var minRsaVal = System.getenv(Env.MIN_RSA_KEY_LENGTH);
+        final var minRsaVal = getEnvOrProp(Env.MIN_RSA_KEY_LENGTH);
         if (minRsaVal != null) {
             try {
                 int parsed = Integer.parseInt(minRsaVal);
@@ -287,16 +287,16 @@ public abstract class Config {
         MIN_RSA_KEY_LENGTH = parsedMinRsa;
 
         Set<Algorithm> parsedAlgs = new HashSet<>();
-        final var allowedAlgsVal = System.getenv(Env.ALLOWED_SIG_ALGS);
+        final var allowedAlgsVal = getEnvOrProp(Env.ALLOWED_SIG_ALGS);
         if (allowedAlgsVal != null && !allowedAlgsVal.isBlank()) {
             String[] parts = allowedAlgsVal.split(",");
             for (String part : parts) {
                 String clean = part.trim().toUpperCase();
-                if (clean.equals("RSA") || clean.equals("1") || clean.equals("0X01")) {
+                if (clean.equals("RSA") || clean.equals("1") || clean.equals("0X01") || clean.equals("RSA-SHA256") || clean.equals("RSA_SHA256")) {
                     parsedAlgs.add(Algorithm.RSA_SHA256);
-                } else if (clean.equals("ECDSA") || clean.equals("ECDSA-SHA256") || clean.equals("2") || clean.equals("0X02")) {
+                } else if (clean.equals("ECDSA") || clean.equals("ECDSA-SHA256") || clean.equals("ECDSA_SHA256") || clean.equals("2") || clean.equals("0X02")) {
                     parsedAlgs.add(Algorithm.ECDSA_SHA256);
-                } else if (clean.equals("RSA-PSS") || clean.equals("3") || clean.equals("0X03")) {
+                } else if (clean.equals("RSA-PSS") || clean.equals("RSA_PSS") || clean.equals("3") || clean.equals("0X03")) {
                     parsedAlgs.add(Algorithm.RSA_PSS);
                 } else if (clean.equals("ED25519") || clean.equals("EDDSA") || clean.equals("4") || clean.equals("0X04")) {
                     parsedAlgs.add(Algorithm.ED25519);
@@ -308,17 +308,15 @@ public abstract class Config {
             }
         }
         if (parsedAlgs.isEmpty()) {
-            parsedAlgs.add(Algorithm.RSA_SHA256);
-            parsedAlgs.add(Algorithm.ECDSA_SHA256);
             parsedAlgs.add(Algorithm.RSA_PSS);
             parsedAlgs.add(Algorithm.ED25519);
         }
         ALLOWED_SIG_ALGS = Collections.unmodifiableSet(parsedAlgs);
 
-        WATERMARK_PERSISTENCE_FILE = System.getenv(Env.WATERMARK_PERSISTENCE_FILE);
+        WATERMARK_PERSISTENCE_FILE = getEnvOrProp(Env.WATERMARK_PERSISTENCE_FILE);
 
         long parsedStaleness = ConstantDefault.RECONCILIATION_MAX_STALENESS_MINUTES;
-        final var stalenessVal = System.getenv(Env.RECONCILIATION_MAX_STALENESS_MINUTES);
+        final var stalenessVal = getEnvOrProp(Env.RECONCILIATION_MAX_STALENESS_MINUTES);
         if (stalenessVal != null) {
             try {
                 long parsed = Long.parseLong(stalenessVal);
@@ -338,5 +336,13 @@ public abstract class Config {
             }
         }
         RECONCILIATION_MAX_STALENESS_MINUTES = parsedStaleness;
+    }
+
+    private static String getEnvOrProp(String key) {
+        String val = System.getenv(key);
+        if (val == null || val.isBlank()) {
+            val = System.getProperty(key);
+        }
+        return val;
     }
 }

@@ -24,7 +24,7 @@ class CapabilityCacheTest {
 
     @Test
     void config_ttl_values_are_resolved_correctly() {
-        assertEquals(60, Config.CAPABILITY_CACHE_TTL_SECONDS);
+        assertEquals(10, Config.CAPABILITY_CACHE_TTL_SECONDS);
         assertEquals(5, Config.CAPABILITY_NEGATIVE_CACHE_TTL_SECONDS);
     }
 

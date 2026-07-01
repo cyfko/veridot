@@ -143,6 +143,10 @@ final class EntryVerifier {
         }
 
         try {
+            if (epoch.alg() != Algorithm.ED25519) {
+                logger.warning("Non-constant-time signature algorithm in use: " 
+                    + epoch.alg() + " for signed object. §14.1 recommends Ed25519 for timing-safe verification.");
+            }
             PublicKey pk = epoch.publicKey();
             Signature sig = Signature.getInstance(epoch.alg().getJcaSignatureAlg());
             if (epoch.alg() == Algorithm.RSA_PSS) {
