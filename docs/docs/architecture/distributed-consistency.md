@@ -23,8 +23,6 @@ graph LR
 
     E1 --> E2 --> E3 --> E4 --> E5
 
-    style E3 fill:#ffcdd2,stroke:#c62828
-    style E4 fill:#ffcdd2,stroke:#c62828
 ```
 
 **Rules:**
@@ -33,7 +31,7 @@ graph LR
 - This check is evaluated **before** any semantic interpretation of the payload
 - This applies uniformly across all entry types (`KEY_EPOCH`, `LIVENESS`, `CAPABILITY`, `CONFIG`, `FENCE`, etc.)
 
-:::info Why not timestamps?
+:::info[Why not timestamps?]
 Versions are 64-bit unsigned integers, independent of wall-clock time. This eliminates clock synchronization issues between services. The `timestamp` field in envelopes is advisory-only — it is never used for ordering or conflict resolution.
 :::
 
@@ -92,7 +90,7 @@ export VDOT_WATERMARK_PERSISTENCE_FILE=/var/lib/veridot/watermarks.dat
 
 The persisted snapshot is **cryptographically protected** (HMAC'ed using a key derived from the processor's long-term private key) to prevent local tampering and rollback attacks. If the integrity check fails, the snapshot is discarded and a full reconciliation is triggered.
 
-:::warning Without persistent watermarks
+:::warning[Without persistent watermarks]
 If no `WatermarkStore` is configured, a processor restart resets all watermarks to `0`. Combined with fail-closed liveness semantics (§8.3), this defaults to **rejection** (not acceptance) until fresh entries are observed — which is the safe behavior.
 :::
 
@@ -197,7 +195,7 @@ sequenceDiagram
 3. A mutation without a valid `FENCE`, or with a stale one, is rejected with `V4301`
 4. This holds regardless of the broker's consistency model
 
-:::tip Why fencing works without strong consistency
+:::tip[Why fencing works without strong consistency]
 The protocol's ordering guarantee doesn't depend on the broker providing strong consistency. Two processors cannot both succeed for the same admission slot because exactly one holds the next valid `fenceCounter`, and the other's attempt is rejected and must be retried.
 :::
 

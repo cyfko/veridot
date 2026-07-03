@@ -116,7 +116,7 @@ You load the public key; Veridot verifies signatures in-process.
 
 ### DelegatedTrustRoot
 
-You delegate verification to an external KMS/HSM (Vault Transit, AWS KMS, etc.).
+You delegate signature verification to an external HSM or hardware security module. Note: using cloud KMS providers directly on the verification path is discouraged — see [TAD Architecture](../architecture/tad-architecture.md) for the recommended production approach.
 
 ```java
 public non-sealed interface DelegatedTrustRoot extends TrustRoot {

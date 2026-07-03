@@ -9,7 +9,7 @@ sidebar_position: 5
 
 A `CAPABILITY` entry is a signed grant establishing that a given issuer identity is authorized to publish entries within one or more scope patterns. Authorization in Veridot V4 is **never** established by application-supplied logic — it is established exclusively through capability entries or root-identity status.
 
-:::info Specification reference
+:::info[Specification reference]
 This page corresponds to **§6** of the Veridot Protocol V4 specification.
 :::
 
@@ -22,7 +22,7 @@ A `CAPABILITY` entry authorizes its `subjectSid` to publish the following entry 
 - `CONFIG` — hierarchical configuration
 - `FENCE` — capacity mutation ordering
 
-:::danger No default grants
+:::danger[No default grants]
 There is **no** default-authorized scope and **no** fallback grant. Absence of a valid `CAPABILITY` entry for the required scope and identity MUST result in rejection of the dependent entry, with no exception.
 :::
 
@@ -105,11 +105,6 @@ graph TD
     CAP2 -->|"depth 2"| CAP3["CAPABILITY\nsubjectSid: service-C\nmaxDelegationDepth: 0"]
     CAP3 -.->|"❌ depth 3 exceeds limit"| CAP4["CAPABILITY\nsubjectSid: service-D"]
 
-    style TR fill:#3498db,color:#fff
-    style CAP1 fill:#2ecc71,color:#fff
-    style CAP2 fill:#2ecc71,color:#fff
-    style CAP3 fill:#2ecc71,color:#fff
-    style CAP4 fill:#e74c3c,color:#fff
 ```
 
 | Identity | Issued by | Depth | Bounded by |
@@ -158,7 +153,7 @@ sequenceDiagram
     Svc->>Broker: Publish KEY_EPOCH, LIVENESS, etc.
 ```
 
-:::warning No escape hatch
+:::warning[No escape hatch]
 All non-root identities MUST derive their authorization from a `CAPABILITY` entry issued — directly or transitively within `maxDelegationDepth` hops — by a root identity. A processor MUST NOT grant authorization to any identity that cannot establish this chain terminating at a root identity.
 :::
 

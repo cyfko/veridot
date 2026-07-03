@@ -138,6 +138,11 @@ const config = {
       },
       mermaid: {
         theme: {light: 'default', dark: 'dark'},
+        options: {
+          flowchart: {
+            curve: 'linear',
+          },
+        },
       },
       tableOfContents: {
         minHeadingLevel: 2,

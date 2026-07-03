@@ -9,7 +9,7 @@ sidebar_position: 4
 
 A `KEY_EPOCH` entry distributes the cryptographic elements required to verify a signed object: the ephemeral public key, its algorithm, and its temporal validity window. This is the foundational entry type that enables distributed verification without shared secrets.
 
-:::info Specification reference
+:::info[Specification reference]
 This page corresponds to **§5** of the Veridot Protocol V4 specification.
 :::
 
@@ -87,7 +87,7 @@ gantt
     Expired                            :done, exp, 3900, 4200
 ```
 
-:::warning Clock drift
+:::warning[Clock drift]
 The 5-minute tolerance is **fixed** by the protocol — it is not configurable. Processors MUST synchronize clocks to within this margin (NTP recommended).
 :::
 
@@ -113,13 +113,6 @@ flowchart TD
     S8 --> S9["9. Business validation\napplication rules\n(JWT exp, claims, etc.)"]
     S9 --> ACCEPT[ACCEPT]
 
-    style R1 fill:#e74c3c,color:#fff
-    style R2 fill:#e74c3c,color:#fff
-    style R3 fill:#e74c3c,color:#fff
-    style R4 fill:#e74c3c,color:#fff
-    style R5 fill:#e74c3c,color:#fff
-    style R6 fill:#e74c3c,color:#fff
-    style ACCEPT fill:#27ae60,color:#fff
 ```
 
 ### Step Details
@@ -136,7 +129,7 @@ flowchart TD
 | 8 | **Cryptographic validation**: use `pk` and `alg` to verify the signed object's own signature | Application-defined error |
 | 9 | **Business validation**: the application applies its own rules (JWT expiration, claims, permissions, etc.) | Application-defined error |
 
-:::danger Steps 4–7 are mandatory
+:::danger[Steps 4–7 are mandatory]
 Steps 4 through 7 MUST each independently produce rejection on failure. **None of them may be skipped, reordered to occur after step 8, or replaced by an alternate, non-equivalent check.**
 :::
 

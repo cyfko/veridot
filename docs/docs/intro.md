@@ -101,7 +101,7 @@ graph LR
 | **veridot-databases** | `io.github.cyfko:veridot-databases:4.0.1` | SQL `Broker` (PostgreSQL, MySQL, Oracle, MSSQL) |
 | **veridot-trustroots** | `io.github.cyfko:veridot-trustroots-*:4.0.1` | Production TrustRoot with L1/L2 cache + TAD cluster |
 
-:::tip Quick Install
+:::tip[Quick Install]
 
 ```xml
 <dependency>

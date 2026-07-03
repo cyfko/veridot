@@ -40,12 +40,9 @@ graph TB
     V1 -- "GET /v1/trust-entries/{subject}" --> F1
     V2 -- "GET /v1/trust-entries?modifiedSince=..." --> F2
 
-    style L fill:#2563eb,color:#fff,stroke:#1e40af
-    style F1 fill:#475569,color:#fff,stroke:#334155
-    style F2 fill:#475569,color:#fff,stroke:#334155
 ```
 
-:::info Key Insight
+:::info[Key Insight]
 **Writes go to the leader**, which replicates the entry to a majority of nodes before acknowledging. **Reads can be served by any node** (including followers), since the local RocksDB store on each node is updated via the deterministic Raft state machine.
 :::
 
@@ -186,7 +183,7 @@ public void onApply(Iterator iter) {
 }
 ```
 
-:::warning Determinism Requirement
+:::warning[Determinism Requirement]
 `onApply` **must** be deterministic. The same log entry applied on any node must produce the same state. This is why `TadStateMachine` uses `setSync(true)` for RocksDB writes — the state machine cannot return success unless the write is physically durable.
 :::
 
@@ -338,13 +335,13 @@ veridot:
 
 ### Production Recommendations
 
-:::tip Cluster Sizing
+:::tip[Cluster Sizing]
 - **3 nodes**: Tolerates 1 failure. Recommended for most deployments.
 - **5 nodes**: Tolerates 2 failures. Use for mission-critical environments.
 - Always deploy an **odd number** of nodes to avoid split-brain scenarios.
 :::
 
-:::danger Never Run a Single Node in Production
+:::danger[Never Run a Single Node in Production]
 A single TAD node cannot form a Raft quorum alone. If it crashes, no writes are possible until it recovers. Always deploy at least 3 nodes.
 :::
 

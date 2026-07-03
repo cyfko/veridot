@@ -33,10 +33,6 @@ graph TB
     E -- "Async propagation" --> G
     G -- "< 1ms read" --> H
 
-    style A fill:#4CAF50,color:#fff
-    style F fill:#2196F3,color:#fff
-    style E fill:#FF9800,color:#fff
-    style G fill:#9C27B0,color:#fff
 ```
 
 ## The Dual-Layer Cryptography
@@ -69,14 +65,9 @@ graph LR
     KE --> |"contains"| EPK["Ephemeral Public Key"]
     EPK --> |"verifies"| JWT["JWT Token"]
 
-    style TR fill:#E91E63,color:#fff
-    style LT fill:#FF5722,color:#fff
-    style KE fill:#FF9800,color:#fff
-    style LV fill:#4CAF50,color:#fff
-    style JWT fill:#2196F3,color:#fff
 ```
 
-:::info Why Two Layers?
+:::info[Why Two Layers?]
 The long-term key proves *who* the signer is. The ephemeral key proves *what* was signed. This separation means that verifiers trust the ephemeral key only because the long-term key vouched for it — and trust in the long-term key is established entirely out-of-band via the `TrustRoot`, never through the broker.
 :::
 
@@ -133,7 +124,7 @@ VerifiedData<String> result = verifier.verify(token, s -> s);
 | 8 | **JWT cryptographic validation** — verify JWT signature using the ephemeral public key | `BrokerExtractionException` |
 | 9 | **Deserialization** — extract and deserialize the payload | `DataDeserializationException` |
 
-:::warning Default-Deny Semantics
+:::warning[Default-Deny Semantics]
 Every step must independently pass. Missing data, expired attestations, signature failures, and broker unavailability all produce the **same result: rejection**. There is no fallback, no grace period, and no "soft fail" mode.
 :::
 

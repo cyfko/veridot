@@ -9,7 +9,7 @@ sidebar_position: 7
 
 A `LIVENESS` entry is a signed, positive statement of a session's current status. It is the cornerstone of Veridot V4's **default-deny** verification model: a session is valid **only when** a fresh, positively verified `ACTIVE` attestation exists.
 
-:::info Specification reference
+:::info[Specification reference]
 This page corresponds to **§8** of the Veridot Protocol V4 specification.
 :::
 
@@ -23,7 +23,7 @@ The `LIVENESS` entry replaces V3's tombstone-based revocation with a **positive-
 | Missing revocation = session is valid | Missing attestation = session is **rejected** |
 | Revocation is a destructive, irreversible action | Status can transition `ACTIVE` → `REVOKED` monotonically |
 
-:::danger The absence rule
+:::danger[The absence rule]
 The absence of a `LIVENESS` entry, an expired one, or one that fails verification **NEVER** constitutes evidence that a session is valid. Validity is established exclusively by the presence of a fresh, positively verified `ACTIVE` attestation.
 :::
 
@@ -77,11 +77,9 @@ flowchart TD
 
     REJECT["Session REJECTED ✗"]
 
-    style VALID fill:#27ae60,color:#fff
-    style REJECT fill:#e74c3c,color:#fff
 ```
 
-:::warning All failures are equal
+:::warning[All failures are equal]
 Any failure of conditions 1–4 — including **broker unavailability**, **network failure**, **signature failure**, or **simple absence** of any entry — MUST produce the same outcome: the session is treated as **not valid**. A conforming processor MUST NOT distinguish "no attestation found" from "attestation invalid" for the purpose of deciding the default outcome.
 :::
 
@@ -150,7 +148,7 @@ This margin — the **last 20%** of the attestation's validity window — accomm
 
 A session for which renewal has lapsed becomes **unverifiable** — indistinguishable from a revoked session — until a new attestation with a higher `version` is published. This is by design: the system fails safe.
 
-:::tip Caching
+:::tip[Caching]
 A processor MAY cache a positively verified attestation for the full duration of its `validUntil` window without re-querying the broker on every verification call.
 :::
 
@@ -170,7 +168,6 @@ flowchart LR
     ROOT -->|Yes| STATUS
     ROOT -->|No| REJECT["REJECT\nV4102"]
 
-    style REJECT fill:#e74c3c,color:#fff
 ```
 
 ## Related Error Codes

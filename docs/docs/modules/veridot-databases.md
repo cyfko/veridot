@@ -70,7 +70,6 @@ graph LR
     V -->|"1. cache hit?"| LC2
     LC2 -->|"2. miss → SELECT"| DB
 
-    style DB fill:#3b82f6,color:#fff,stroke:#2563eb
 ```
 
 Unlike `KafkaBroker`, `DatabaseBroker` does **not** have a background consumer loop. All services point to the **same database** (or synchronized replicas), and consistency is achieved through the database's own ACID guarantees.
@@ -96,7 +95,7 @@ Broker broker = new DatabaseBroker(dataSource);
 Broker broker = new DatabaseBroker(dataSource, "veridot_metadata");
 ```
 
-:::warning Table Name Validation
+:::warning[Table Name Validation]
 Only alphanumeric characters and underscores are allowed in the table name. This prevents SQL injection at the constructor level:
 ```java
 if (!tableName.matches("^[a-zA-Z][a-zA-Z0-9_]*$")) {
@@ -236,7 +235,7 @@ WHEN NOT MATCHED THEN INSERT (storage_key, entry_bytes) VALUES (s.k, s.v);
 </TabItem>
 </Tabs>
 
-:::info SQL Server HOLDLOCK
+:::info[SQL Server HOLDLOCK]
 The `WITH (HOLDLOCK)` hint on SQL Server prevents race conditions in the `MERGE` statement by holding a range lock for the duration of the transaction.
 :::
 
@@ -428,7 +427,7 @@ sv.revoke("user-123", null); // All sessions for user-123
 - Revocation is **immediately visible** to any instance querying the same database
 - If using read replicas, revocations may be subject to replication lag
 
-:::danger Read Replica Warning
+:::danger[Read Replica Warning]
 For **strict revocation consistency**, route verification reads to the primary database — not read replicas. Replication lag could allow a revoked token to be accepted for a short window.
 :::
 

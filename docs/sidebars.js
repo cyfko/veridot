@@ -4,14 +4,16 @@ const sidebars = {
     'intro',
     {
       type: 'category',
-      label: '🚀 Getting Started',
+      label: '📖 Learn Veridot',
       collapsed: false,
       items: [
-        'getting-started/what-is-veridot',
-        'getting-started/how-it-works',
-        'getting-started/quickstart',
-        'getting-started/choosing-a-broker',
-        'getting-started/installation',
+        'learn/the-problem',
+        'learn/how-veridot-works',
+        'learn/first-integration',
+        'learn/going-distributed',
+        'learn/capabilities',
+        'learn/session-management',
+        'learn/production',
       ],
     },
     {

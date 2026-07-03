@@ -9,7 +9,7 @@ sidebar_position: 3
 
 Every Veridot V4 entry carries an `entryType` byte in its [envelope](./wire-format.md) that determines the semantics of its payload. This page documents the complete registry of entry types and the TLV (Tag–Length–Value) encoding used for all payloads.
 
-:::info Specification reference
+:::info[Specification reference]
 This page corresponds to **§4** of the Veridot Protocol V4 specification.
 :::
 
@@ -31,7 +31,7 @@ This page corresponds to **§4** of the Veridot Protocol V4 specification.
 - A processor receiving an unassigned code MUST reject the entry with [`V4002`](./error-codes.md) rather than ignore it.
 - Entry types are **closed for extension** without a specification update — this prevents undocumented, unauthenticated semantics from entering the protocol surface.
 
-:::danger No silent extension
+:::danger[No silent extension]
 Unlike optional payload fields (which support forward-compatible extension via unknown TLV tags), entry types cannot be extended without updating this specification. This is a deliberate restriction.
 :::
 

@@ -18,7 +18,7 @@ graph LR
     Attacker["Attacker with<br/>broker write access"]
     Broker["Broker<br/>(Kafka / SQL)"]
     Verifier["Verifier<br/>Processor"]
-    TR["TrustRoot<br/>(KMS / HSM)"]
+    TR["TrustRoot<br/>(TAD / CachingTrustRoot)"]
 
     Attacker -->|"Injects forged<br/>KEY_EPOCH"| Broker
     Broker -->|"Delivers bytes"| Verifier
@@ -26,10 +26,6 @@ graph LR
     TR -->|"No matching key"| Verifier
     Verifier -->|"❌ REJECT V4101"| Verifier
 
-    style Attacker fill:#ffcdd2,stroke:#c62828
-    style Broker fill:#fff3e0,stroke:#ef6c00
-    style Verifier fill:#e8f5e9,stroke:#2e7d32
-    style TR fill:#f3e5f5,stroke:#7b1fa2
 ```
 
 A processor with write access to the broker but **without** the long-term private key material corresponding to a TrustRoot-resolvable `issuer` is structurally incapable of producing an entry that a conforming verifier will accept as a new, valid state for any EntryId it does not already control (Protocol V4 §14.4).
@@ -54,7 +50,7 @@ Veridot enforces fail-closed behavior in every failure scenario. There is no con
 ### TrustRoot Unavailable → Reject
 
 ```java
-// When KMS/HSM is unreachable, resolve() throws VeridotException
+// When TAD/TrustRoot is unreachable, resolve() throws VeridotException
 // The processor MUST reject — never fall back to accepting unverified entries
 try {
     TrustIdentity identity = trustRoot.resolve(envelope.issuer());
@@ -65,7 +61,7 @@ try {
 }
 ```
 
-:::danger No fallback
+:::danger[No fallback]
 A processor MUST NOT fall back to accepting entries without trust resolution. `TrustRoot` unavailability produces the same outcome as a definitive rejection: the token is not accepted.
 :::
 
@@ -106,7 +102,7 @@ if (alg != Algorithm.ED25519) {
 }
 ```
 
-:::tip Best practice
+:::tip[Best practice]
 Use `Algorithm.ED25519` for both long-term (envelope) and ephemeral (JWT) keys. It provides:
 - Constant-time verification (immune to timing attacks)
 - Small key sizes (32 bytes public key)
@@ -173,7 +169,7 @@ This protocol protects the integrity and ordering of state as distributed throug
 
 | Residual Risk | Explanation | Recommended Mitigation |
 |---|---|---|
-| **Compromise of a TrustRoot-resolvable private key** | Key custody is outside the protocol's scope. If an attacker obtains the long-term private key, they can produce valid entries. | Use HSM/KMS; never store keys in plaintext PEM files in production. Implement key rotation procedures. |
+| **Compromise of a TrustRoot-resolvable private key** | Key custody is outside the protocol's scope. If an attacker obtains the long-term private key, they can produce valid entries. | Use secure key storage (HSM, vault agents, or environment variables); never store keys in plaintext PEM files in production. Distribute public keys via the TAD cluster. Implement key rotation procedures. |
 | **Fencing authority unavailability** | If the fencing authority for a scope is unreachable, capacity-affecting mutations stall. This is a deliberate consistency-over-availability trade-off. | Deploy redundant fencing authorities; monitor for `FENCE_TOKEN_STALE` errors. |
 | **Resource exhaustion from unbounded entry volume** | The protocol does not define rate limits or storage quotas. | Apply rate limiting and storage quotas at the transport layer (Kafka quotas, SQL connection limits). |
 | **Clock drift beyond tolerance** | The protocol uses a fixed 5-minute clock drift tolerance for temporal validation. Services with greater drift will see spurious rejections. | Use NTP synchronization; monitor `V4203` errors for clock drift symptoms. |

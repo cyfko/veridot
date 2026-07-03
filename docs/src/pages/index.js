@@ -20,8 +20,8 @@ function HeroSection() {
         <div className="hero-buttons">
           <Link
             className="button button--secondary button--lg hero-btn-primary"
-            to="/docs/getting-started/what-is-veridot">
-            Get Started (5 min) 🚀
+            to="/docs/learn/the-problem">
+            Start Learning 📖
           </Link>
           <Link
             className="button button--outline button--lg hero-btn-secondary"

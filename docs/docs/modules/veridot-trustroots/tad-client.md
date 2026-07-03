@@ -54,14 +54,11 @@ flowchart LR
     N3 -->|200 OK| Return
     N1 -->|404| Empty["Return Optional.empty()"]
 
-    style Return fill:#c8e6c9,stroke:#4caf50
-    style Throw fill:#ffcdd2,stroke:#e53935
-    style Empty fill:#fff9c4,stroke:#f9a825
 ```
 
 The client iterates through all `clusterUrls` in order. If a node responds with an error or times out, it automatically tries the next node. The failover is **transparent** to callers.
 
-:::tip Follow Redirects
+:::tip[Follow Redirects]
 The HTTP client is configured with `HttpClient.Redirect.NORMAL`, so it automatically follows HTTP 307 redirects from follower nodes to the Raft leader.
 :::
 
@@ -227,13 +224,13 @@ record TadSyncResponse(
 ) { }
 ```
 
-:::warning Package-Private
+:::warning[Package-Private]
 `TadSyncResponse` is package-private and used internally by `TadTrustRootProvider`. You should not need to interact with it directly.
 :::
 
 ## Security Considerations
 
-:::danger Always Use TLS in Production
+:::danger[Always Use TLS in Production]
 Configure an `SSLContext` with proper certificates when connecting to the TAD cluster. The trust entries contain public keys (not secrets), but a man-in-the-middle could substitute malicious keys if the connection is unencrypted.
 :::
 

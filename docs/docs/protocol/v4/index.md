@@ -9,7 +9,7 @@ sidebar_position: 1
 
 The Veridot Protocol version 4 (V4) is a **self-describing binary message format** for distributing cryptographic verification metadata across nodes. It defines the wire format, semantics, state model, and processing rules that all conforming implementations MUST follow.
 
-:::info Version
+:::info[Version]
 **Protocol Version**: 4.0 &middot; **Status**: Standards Track &middot; **Created**: 2026-06-28
 :::
 
@@ -52,7 +52,7 @@ The protocol is built on six foundational principles that shape every processing
 
 Any entry that is malformed, unauthorized, stale, or for which authoritative state cannot be positively established **MUST be rejected**. Absence of information MUST NOT be interpreted as a permissive state.
 
-:::danger Critical invariant
+:::danger[Critical invariant]
 There is no "allow unless explicitly denied" path in V4. Every verification starts from rejection and requires positive proof to pass.
 :::
 

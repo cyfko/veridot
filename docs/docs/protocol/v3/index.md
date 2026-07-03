@@ -7,7 +7,7 @@ sidebar_position: 1
 
 # Protocol V3 (Archived)
 
-:::warning Superseded
+:::warning[Superseded]
 Protocol V3 has been **superseded by [Protocol V4](../v4/index.md)**. V3 is retained for reference only. All new deployments MUST use V4.
 :::
 
@@ -88,6 +88,6 @@ The complete V3 specification is available in the repository:
 
 For guidance on migrating from V3 to V4, see the [Protocol V4 overview](../v4/index.md#evolution-from-v3).
 
-:::tip Coexistence
+:::tip[Coexistence]
 Multiple protocol versions MAY coexist on the same broker. V3 messages start with ASCII `3:`, while V4 entries start with the binary magic `0x56 0x44`. Version detection is automatic.
 :::

@@ -35,10 +35,6 @@ flowchart TD
     Q3 -->|Yes| Spring["veridot-trustroots-spring<br/>(auto-configures everything)"]
     Q3 -->|No — manual setup| Manual["veridot-trustroots-core<br/>+ veridot-trustroots-tad-client"]
 
-    style PK fill:#e8f5e9,stroke:#4caf50
-    style Server fill:#fff3e0,stroke:#ff9800
-    style Spring fill:#e3f2fd,stroke:#2196f3
-    style Manual fill:#fce4ec,stroke:#e91e63
 ```
 
 ## Dependency Graph
@@ -59,8 +55,6 @@ graph BT
     Spring --> Core
     Spring --> Client
 
-    style API fill:#fff9c4,stroke:#f9a825
-    style VCore fill:#e8eaf6,stroke:#3f51b5
 ```
 
 ## Quick Comparison

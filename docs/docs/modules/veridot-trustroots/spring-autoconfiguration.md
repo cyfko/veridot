@@ -40,8 +40,6 @@ flowchart LR
 
     YourService["Your @Service"] -->|"Inject TrustRoot"| TrustRoot
 
-    style AutoConfig fill:#e3f2fd,stroke:#2196f3
-    style TrustRoot fill:#c8e6c9,stroke:#4caf50
 ```
 
 ## TrustRootsAutoConfiguration
@@ -61,7 +59,7 @@ The auto-configuration activates when:
 - `TrustRoot.class` is on the classpath (`@ConditionalOnClass`)
 - No existing `TrustRootProvider` or `TrustRoot` bean is already defined
 
-:::tip Custom Provider Override
+:::tip[Custom Provider Override]
 If you define your own `TrustRootProvider` bean (e.g., a Vault-backed provider), the auto-configuration will use it instead of creating a `TadTrustRootProvider`. The `CachingTrustRoot` bean is still created automatically using your custom provider.
 
 ```java
@@ -301,7 +299,7 @@ management:
 </dependencies>
 ```
 
-:::note Automatic Lifecycle
+:::note[Automatic Lifecycle]
 The `CachingTrustRoot` bean's `initialize()` method is called automatically on application startup via `initMethod`, and `close()` is called on shutdown via `destroyMethod`. You don't need to manage its lifecycle manually.
 :::
 
@@ -317,6 +315,6 @@ The `CachingTrustRoot` bean's `initialize()` method is called automatically on a
 | Slow first request | Cache cold-start; L2 is empty | Normal on first boot; subsequent starts will be fast due to L2 persistence |
 | `VeridotException: TrustRoot is closed` | Application context shut down | Don't call `resolve()` after Spring context close |
 
-:::warning First Boot
+:::warning[First Boot]
 On the very first startup (cold start), the engine must sync from the TAD cluster. Ensure the cluster is reachable before starting your consumer service for the first time. After the first sync, the L2 RocksDB cache persists to disk, enabling offline warm starts.
 :::

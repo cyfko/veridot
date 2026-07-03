@@ -30,13 +30,6 @@ graph TD
     KE -->|"Distributes"| EPH
     EPH -->|"Signs application payload"| JWT
 
-    style KMS fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
-    style TR fill:#f3e5f5,stroke:#7b1fa2
-    style CAP fill:#fff3e0,stroke:#ef6c00
-    style SID fill:#e3f2fd,stroke:#1565c0
-    style KE fill:#e8f5e9,stroke:#2e7d32
-    style EPH fill:#e8f5e9,stroke:#2e7d32
-    style JWT fill:#e8f5e9,stroke:#2e7d32
 ```
 
 ### Layer Responsibilities
@@ -75,7 +68,7 @@ The `TrustRoot` is a `sealed interface` with exactly two permitted implementatio
 | `PublicKeyTrustRoot` | Resolves `issuer → PublicKey` locally (trust store, TAD Local Cache, PEM file). Veridot verifies signatures in-process. This is the **recommended production option** when paired with TAD. |
 | `DelegatedTrustRoot` | Delegates signature verification to an external KMS/HSM (e.g., Vault Transit). The signature is verified outside of the JVM process. |
 
-:::warning Key Security & Operational Guidance
+:::warning[Key Security & Operational Guidance]
 1. **Never store long-term private keys in plain-text PEM files** on local disks in production. Use secure environment variables, vault agents, or local HSM-backed endpoints for signers.
 2. **Avoid direct Cloud KMS calls in DelegatedTrustRoot**: Direct synchronous calls to external cloud KMS APIs (such as AWS KMS or Azure Key Vault) on the verification path violate Protocol V4's offline-verification invariant and add runtime network dependencies. For distributed deployments, configure signers with local custody of their long-term private keys and distribute public keys via the **TAD (Trust Authority Directory)** cluster.
 :::
@@ -112,8 +105,6 @@ graph LR
     SvcPay -->|"Signs"| CapC
     CapC -.->|"❌ Rejected: depth 3 > maxDelegationDepth 2"| SvcNotif
 
-    style Root fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
-    style SvcNotif fill:#ffcdd2,stroke:#c62828
 ```
 
 **Delegation depth rules:**
@@ -160,7 +151,7 @@ sequenceDiagram
     Note over Broker: "auth-svc" is now authorized for all group scopes
 ```
 
-:::info No chicken-and-egg problem
+:::info[No chicken-and-egg problem]
 Root identities bypass the `CAPABILITY` check entirely. The first `CAPABILITY` entry in a deployment is always signed by a root identity, requiring no prior capability.
 :::
 
@@ -203,7 +194,7 @@ Rotated via an operational four-phase procedure:
 | **3. Session Rollover** | Wait for ephemeral key rotation to naturally expire old sessions, or force rollover | All active sessions use new trust chain |
 | **4. Decommission** | Remove old key from `TrustRoot`; destroy old private key in KMS | Old key can no longer authorize anything |
 
-:::tip Version monotonicity
+:::tip[Version monotonicity]
 Always increment the `version` field on any re-signed envelope. Veridot verifiers reject incoming entries with a version lower than the current watermark (`STALE_VERSION` error `V4201`).
 :::
 
@@ -238,9 +229,6 @@ graph TD
     KE -->|"Check session status"| LV
     LV -->|"All checks pass"| ACCEPT
 
-    style JWT fill:#fff3e0,stroke:#ef6c00
-    style ACCEPT fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
-    style TR fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
 ```
 
 ## Next Steps

@@ -47,7 +47,7 @@ Veridot supports four algorithms for the long-term envelope signature:
 | `Algorithm.RSA_PSS` | `0x03` | `RSASSA-PSS` | RSA |
 | `Algorithm.ED25519` | `0x04` | `Ed25519` | Ed25519 |
 
-:::tip Recommendation
+:::tip[Recommendation]
 **Use `ED25519`** for all new deployments. Ed25519 provides mathematically constant-time verification (immune to timing attacks), small key/signature sizes, and is recommended by NIST SP 800-186. Veridot defaults to Ed25519 for ephemeral key pairs.
 :::
 

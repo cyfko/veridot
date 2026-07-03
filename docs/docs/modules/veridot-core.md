@@ -79,10 +79,6 @@ graph TB
     CR --> B
     RM --> B
 
-    style B fill:#f59e0b,color:#000,stroke:#d97706
-    style TR fill:#f59e0b,color:#000,stroke:#d97706
-    style WS fill:#f59e0b,color:#000,stroke:#d97706
-    style DT fill:#f59e0b,color:#000,stroke:#d97706
 ```
 
 ### GenericSignerVerifier

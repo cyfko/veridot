@@ -29,10 +29,6 @@ graph TD
     F -- "Yes" --> G["✅ veridot-databases"]
     F -- "No" --> H["Use veridot-databases<br/>with embedded H2"]
 
-    style C fill:#4CAF50,color:#fff
-    style G fill:#2196F3,color:#fff
-    style E fill:#4CAF50,color:#fff
-    style H fill:#2196F3,color:#fff
 ```
 
 ## Comparison
@@ -48,7 +44,7 @@ graph TD
 | **Watermark persistence** | Built-in (RocksDB) | Built-in (same SQL table) |
 | **Java requirement** | 17+ (this module only) | 17+ (this module only) |
 
-:::info Both Require veridot-core
+:::info[Both Require veridot-core]
 Both broker implementations require `veridot-core` (Java 25+) as a dependency. The broker modules themselves compile on Java 17+, but `GenericSignerVerifier` needs Java 25+.
 :::
 
@@ -127,7 +123,7 @@ kafka-topics.sh --create \
   --bootstrap-server kafka:9092
 ```
 
-:::tip Retention
+:::tip[Retention]
 Set Kafka topic retention to at least as long as the maximum token TTL. A 7-day retention is sufficient for default settings.
 :::
 
@@ -207,7 +203,7 @@ Broker broker = new DatabaseBroker(ds, "veridot_entries");
 - **Implements `WatermarkStore`**: version watermarks are stored in the same SQL table
 - **Propagation trade-off**: revocation propagation depends on when verifier nodes query the database, making it slower than Kafka's push model
 
-:::warning Propagation Latency
+:::warning[Propagation Latency]
 With `veridot-databases`, revocation is not pushed to verifiers in real time. Verifiers will see the revocation only when they next reconcile or when a `verify()` call reads from the database. For instant revocation guarantees, use `veridot-kafka`.
 :::
 

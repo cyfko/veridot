@@ -9,7 +9,7 @@ sidebar_position: 2
 
 Every piece of state exchanged through the Veridot broker — key epochs, capabilities, configuration, liveness attestations, fence tokens, snapshots, and secure payloads — is encoded as a single **binary envelope**. This page specifies the envelope structure, field constraints, storage key derivation, canonical signing bytes, and identifier rules.
 
-:::info Specification reference
+:::info[Specification reference]
 This page corresponds to **§3** of the Veridot Protocol V4 specification.
 :::
 
@@ -63,7 +63,7 @@ block-beta
 | Reserved flags | Bits 1–7 of `flags`, if set → rejection | `V4005` |
 | COMPACT_SIG consistency | `flags` bit 0 MUST be `1` iff `sigAlg = 0x04` (Ed25519), `0` for `sigAlg ∈ {0x01, 0x03}` | `V4005` |
 
-:::warning Order matters
+:::warning[Order matters]
 `magic` and `protoVersion` MUST be validated **first**. On mismatch, the processor MUST NOT attempt to parse the remainder of the envelope.
 :::
 
@@ -112,7 +112,7 @@ version ‖ timestamp ‖ issuerLen ‖ issuer ‖ payloadLen ‖ payload
 
 **No field is excluded** from the signed region, and **no field is signed in isolation** from the others. This eliminates any possibility of relocating a valid signature to a different scope, key, version, or payload than the one it was produced for.
 
-:::tip Why everything is signed together
+:::tip[Why everything is signed together]
 By binding `scope`, `key`, `version`, and `payload` into a single signed region, V4 prevents "signature transplant" attacks where an adversary would reuse a legitimate signature from one entry on a different entry.
 :::
 
@@ -134,9 +134,6 @@ graph LR
     K[sigAlg] ~~~ L[sigLen] ~~~ M[signature]
     J --> K
 
-    style K fill:#f96,stroke:#333,color:#000
-    style L fill:#f96,stroke:#333,color:#000
-    style M fill:#f96,stroke:#333,color:#000
 ```
 
 ## Identifier Constraints
@@ -179,7 +176,7 @@ A scope not matching this grammar MUST be rejected with error [`V4006`](./error-
 | `0x03` | RSA-PSS | `0` |
 | `0x04` | Ed25519 | `1` |
 
-:::tip Recommended algorithm
+:::tip[Recommended algorithm]
 Implementations SHOULD prefer **Ed25519** (`sigAlg = 0x04`) for all long-term and ephemeral keys. Ed25519 verification is mathematically constant-time and immune to timing side-channel attacks (NIST SP 800-186).
 :::
 

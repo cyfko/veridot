@@ -38,12 +38,9 @@ graph TB
     Client["Verifier Services<br/>(TadTrustRootProvider)"] --> LB
     Publisher["Signer Services<br/>(TadPublisherClient)"] --> LB
 
-    style N1 fill:#c8e6c9,stroke:#4caf50
-    style N2 fill:#e3f2fd,stroke:#2196f3
-    style N3 fill:#e3f2fd,stroke:#2196f3
 ```
 
-:::info Why 3 Nodes?
+:::info[Why 3 Nodes?]
 Raft requires a **majority quorum** (⌊N/2⌋ + 1) for writes. A 3-node cluster tolerates **1 node failure** while maintaining write availability. For higher fault tolerance, use 5 nodes (tolerates 2 failures).
 :::
 
@@ -106,7 +103,7 @@ veridot:
 | `veridot.tad-server.initial-peers` | ✅ | — | Comma-separated `host:port` list of all nodes |
 | `veridot.tad-server.storage.directory` | ⬜ | `/tmp/veridot-tad` | Root directory for RocksDB + Raft data |
 
-:::warning Storage Directory
+:::warning[Storage Directory]
 **Always set a persistent directory** in production. The default `/tmp/veridot-tad` will be lost on container restart. Use a mounted volume.
 :::
 
@@ -197,7 +194,7 @@ docker compose ps
 docker compose logs -f tad-1 | grep -i "leader"
 ```
 
-:::tip Startup Order
+:::tip[Startup Order]
 Raft handles node ordering automatically. All 3 nodes can start simultaneously — they will discover each other via `initial-peers` and elect a leader within a few seconds.
 :::
 
@@ -311,7 +308,7 @@ cp -r /var/lib/docker/volumes/tad1-data/_data /backup/tad-$(date +%Y%m%d)
 docker compose start tad-1
 ```
 
-:::tip Online Backup
+:::tip[Online Backup]
 For zero-downtime backups, back up a **follower** node. The cluster maintains write availability as long as a majority of nodes are online.
 :::
 
@@ -337,7 +334,7 @@ In the catastrophic scenario where all nodes fail:
 2. Start that node as a single-node cluster temporarily
 3. Add the other nodes back and let them sync
 
-:::danger Never lose all RocksDB data
+:::danger[Never lose all RocksDB data]
 If all 3 nodes lose their data simultaneously (e.g., all volumes deleted), the trust entries are **permanently lost**. Maintain regular backups and consider cross-region replication for critical deployments.
 :::
 

@@ -9,7 +9,7 @@ sidebar_position: 16
 
 Veridot resolves runtime configuration from environment variables at class loading time. Every variable has a sensible default that works for development and single-node deployments. Override them for production tuning.
 
-:::info Resolution order
+:::info[Resolution order]
 Veridot checks `System.getenv(key)` first, then falls back to `System.getProperty(key)`. This means you can configure via environment variables **or** JVM system properties (`-DVDOT_...=value`).
 :::
 

@@ -37,9 +37,6 @@ graph TB
     L2 -->|"miss"| P
     P -->|"HTTP/2"| TAD
 
-    style L1 fill:#22c55e,color:#fff,stroke:#16a34a
-    style L2 fill:#3b82f6,color:#fff,stroke:#2563eb
-    style TAD fill:#475569,color:#fff,stroke:#334155
 ```
 
 ### L1: In-Memory Cache
@@ -108,13 +105,6 @@ flowchart TD
     G --> RET2["✅ Return TrustIdentity"]
     H --> RET3["✅ Return stale key"]
 
-    style RET1 fill:#22c55e,color:#fff
-    style RET2 fill:#22c55e,color:#fff
-    style RET3 fill:#eab308,color:#000
-    style STALE1 fill:#eab308,color:#000
-    style ERR1 fill:#ef4444,color:#fff
-    style ERR2 fill:#ef4444,color:#fff
-    style ERR3 fill:#ef4444,color:#fff
 ```
 
 ### Resolution Code Walkthrough
@@ -225,7 +215,7 @@ public void initialize() throws TrustRootInitializationException {
 }
 ```
 
-:::tip Warm vs Cold Start
+:::tip[Warm vs Cold Start]
 - **Warm start**: The local RocksDB already has valid keys from a previous run. Initialization is instantaneous (~10ms). The service can verify tokens immediately, even if TAD is down.
 - **Cold start**: First deployment or after data loss. Requires a successful TAD sync before the service can operate.
 :::
@@ -329,15 +319,15 @@ private CachedKeyEntry promoteToL1(TrustEntry entry) {
 }
 ```
 
-:::info Version Monotonicity
+:::info[Version Monotonicity]
 The `compute()` call ensures that an older key version can never overwrite a newer one in L1. This prevents race conditions during concurrent async refreshes.
 :::
 
-## Performance: Why L1/L2 Eliminates KMS as a SPoF
+## Performance: Why L1/L2 Eliminates External Dependencies as a SPoF
 
 | Scenario | Without CachingTrustRoot | With CachingTrustRoot |
 |----------|:------------------------:|:---------------------:|
-| Key resolution | Network call to KMS/TAD per verify | ~100ns L1 hit |
+| Key resolution | Network call to TAD per verify (without cache) | ~100ns L1 hit |
 | TAD cluster down | ❌ All verification fails | ✅ Serves from L1/L2 for hours |
 | 100K verifications/sec | 100K network calls/sec | 0 network calls (all L1) |
 | JVM restart + TAD down | ❌ Cannot start | ✅ Warm start from L2 |
@@ -375,7 +365,7 @@ trustRoot.initialize();
 
 ### Tuning Strategies
 
-:::tip High-Throughput Microservice (> 50K req/s)
+:::tip[High-Throughput Microservice (> 50K req/s)]
 ```java
 .l1MaxSize(50_000)           // More keys in memory
 .refreshThreshold(Duration.ofMinutes(30))  // More aggressive refresh
@@ -383,7 +373,7 @@ trustRoot.initialize();
 ```
 :::
 
-:::tip Edge / IoT Service (unreliable network)
+:::tip[Edge / IoT Service (unreliable network)]
 ```java
 .l1MaxSize(1_000)            // Fewer keys, less memory
 .staleWindow(Duration.ofHours(1))  // Very long grace period
@@ -391,7 +381,7 @@ trustRoot.initialize();
 ```
 :::
 
-:::warning Memory Sizing
+:::warning[Memory Sizing]
 Each L1 entry consumes approximately 2 KB (PublicKey + metadata). With `l1MaxSize=10,000`, the L1 cache uses ~20 MB of heap. Plan your JVM heap accordingly.
 :::
 

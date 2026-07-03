@@ -9,7 +9,7 @@ sidebar_position: 14
 
 This page provides the complete reference of all Veridot Protocol V4 error codes. Every rejection by a conforming processor MUST be logged with the corresponding error code and the EntryId involved.
 
-:::info Specification reference
+:::info[Specification reference]
 This page corresponds to **Appendix B** of the Veridot Protocol V4 specification.
 :::
 
@@ -75,7 +75,7 @@ These errors relate to [fence token](./entry-types.md#fence-0x05) ordering and s
 |---|---|---|---|
 | `V4401` | `TRANSPORT_UNAVAILABLE` | Broker read or write failure. Treated as **rejection** per [§8.3](./liveness.md#default-deny-semantics) / §14.4 for verification outcomes. MUST be logged separately from definitive rejections per §13.4. | §13.4, §14.4 |
 
-:::warning Transport ≠ pass
+:::warning[Transport ≠ pass]
 A transport error MUST NOT receive different treatment from a definitive rejection in the verification outcome. The processor fails **closed**: broker unavailability = session not valid.
 :::
 

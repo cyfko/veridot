@@ -167,7 +167,7 @@ sequenceDiagram
 7. **JWT signature verification** — verify the application token using the ephemeral `pk`
 8. **Business validation** — application-level rules (JWT `exp`, claims, permissions)
 
-:::warning Fail-closed semantics
+:::warning[Fail-closed semantics]
 Every step independently produces rejection on failure. Missing data, expired attestations, broker unavailability, and TrustRoot resolution failures all result in the same outcome: **rejection**. There is no fallback to a permissive mode.
 :::
 
@@ -212,10 +212,6 @@ graph LR
     DB --> Core
     Trust --> Core
 
-    style Core fill:#e8f5e9,stroke:#2e7d32
-    style Kafka fill:#fff3e0,stroke:#ef6c00
-    style DB fill:#e3f2fd,stroke:#1565c0
-    style Trust fill:#f3e5f5,stroke:#7b1fa2
 ```
 
 | Module | Maven Artifact | Purpose |
@@ -239,7 +235,7 @@ These principles are enforced structurally in the code, not by convention:
 ## Next Steps
 
 - [Security Model](./security-model.md) — threat model, fail-closed semantics, residual risks
-- [Trust Hierarchy](./trust-hierarchy.md) — KMS root keys, capabilities, delegation chains
+- [Trust Hierarchy](./trust-hierarchy.md) — Root trust hierarchy, capabilities, delegation chains
 - [Distributed Consistency](./distributed-consistency.md) — monotonic versions, fencing, reconciliation
 - [Protocol Evolution](./protocol-evolution.md) — V1 through V4 timeline and rationale
 - [Performance](./performance.md) — latency characteristics and tuning guidance

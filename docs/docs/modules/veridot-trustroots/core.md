@@ -33,9 +33,6 @@ graph LR
         Sync --> L1
     end
 
-    style L1 fill:#c8e6c9,stroke:#4caf50
-    style L2 fill:#fff9c4,stroke:#f9a825
-    style Provider fill:#e3f2fd,stroke:#2196f3
 ```
 
 ### Cache Tiers
@@ -45,7 +42,7 @@ graph LR
 | **L1** | `ConcurrentHashMap` (in-memory) | `CachedKeyEntry` with pre-decoded `java.security.PublicKey` | Lock-free `get()` — zero allocation on hit |
 | **L2** | RocksDB (local disk) | JSON-serialized `TrustEntry` with composite key `<subject>0x00<version>` | Single RocksDB point lookup |
 
-:::info CachedKeyEntry vs TrustEntry
+:::info[CachedKeyEntry vs TrustEntry]
 L1 stores `CachedKeyEntry` records which contain the already-decoded `PublicKey` object. This avoids the cost of Base64 decoding + `KeyFactory.generatePublic()` on every token verification. The promotion from L2 → L1 performs this decode exactly once.
 :::
 
@@ -80,7 +77,7 @@ trustRoot.initialize(); // Bootstrap caches + start background sync
 | `fullSyncInterval` | `Duration` | `6 hours` | How often the background daemon runs incremental sync via `fetchModifiedSince()` |
 | `resolveWaitTimeout` | `Duration` | `5 seconds` | Max time `resolve()` will block waiting for initialization to complete |
 
-:::warning l2Directory vs l2Cache
+:::warning[l2Directory vs l2Cache]
 You must specify **exactly one** of `l2Directory` (uses the built-in `RocksDbL2Cache`) or `l2Cache` (your own implementation). If both are set, the custom `l2Cache` takes precedence.
 :::
 
@@ -127,7 +124,7 @@ During `initialize()`, the engine follows this sequence:
 5. **If sync succeeds** → `INITIALIZED` (cold start)
 6. **If sync fails** → `FAILED` + throw `TrustRootInitializationException`
 
-:::tip Warm Start Resilience
+:::tip[Warm Start Resilience]
 If your L2 RocksDB cache directory is persistent (e.g., mounted volume), the engine will **boot successfully even if the TAD cluster is temporarily down** — as long as the L2 cache contains at least one valid or stale key.
 :::
 
@@ -154,12 +151,6 @@ flowchart TD
     Promote1 --> Return2["✅ Return TrustIdentity"]
     Promote2 --> Return3["✅ Return TrustIdentity"]
 
-    style Return1 fill:#c8e6c9,stroke:#4caf50
-    style Return2 fill:#c8e6c9,stroke:#4caf50
-    style Return3 fill:#c8e6c9,stroke:#4caf50
-    style Refresh1 fill:#fff9c4,stroke:#f9a825
-    style Throw1 fill:#ffcdd2,stroke:#e53935
-    style Throw2 fill:#ffcdd2,stroke:#e53935
 ```
 
 ### Key Validity Windows
@@ -187,7 +178,7 @@ When a key enters the stale window (or its remaining validity drops below `refre
 4. Writes the updated entry to L2 cache
 5. Promotes the new key to L1 (atomically replacing older version)
 
-:::note Non-Blocking
+:::note[Non-Blocking]
 `refreshAsync()` runs entirely off the critical path. The caller receives the stale key immediately and never blocks on network I/O.
 :::
 
@@ -215,7 +206,7 @@ Key behaviors:
 .l1MaxSize(5_000)  // If you verify tokens from ~5000 different services
 ```
 
-:::danger L1 Overflow
+:::danger[L1 Overflow]
 If L1 reaches `l1MaxSize` and a new subject needs to be inserted, an `IllegalStateException` is thrown. Size your L1 to accommodate all distinct subjects you expect to verify. If this is unpredictable, increase the limit generously — each entry is ~200 bytes.
 :::
 
@@ -242,7 +233,7 @@ The stale window provides **resilience against TAD outages**:
 .staleWindow(Duration.ofMinutes(30))
 ```
 
-:::warning Security vs. Availability Trade-off
+:::warning[Security vs. Availability Trade-off]
 A larger stale window increases availability during TAD outages but also increases the window during which a compromised key could still be accepted after revocation. Choose based on your threat model.
 :::
 

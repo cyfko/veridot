@@ -20,7 +20,7 @@ Every microservice architecture eventually faces the same problem: how do you ve
 | **Centralized IdP call** | ✅ | ✅ | ❌ | Every verification is a network round-trip — latency and single point of failure |
 | **Veridot** | ✅ | ✅ | ✅ | All three, simultaneously |
 
-:::info The Core Insight
+:::info[The Core Insight]
 The trilemma exists because traditional systems conflate *key distribution* with *token validation*. Veridot separates them: cryptographic metadata flows through a broker asynchronously, while verification happens locally from a RocksDB cache — no network call, no shared secret, no compromise.
 :::
 
@@ -96,7 +96,7 @@ Veridot is designed for architectures where:
 - **Low latency** is critical and you cannot afford network calls on every request
 - **Zero-trust** principles demand that no two services share the same secret
 
-:::tip Common Use Cases
+:::tip[Common Use Cases]
 - API gateway token verification across a microservice mesh
 - User session management with real-time logout across all devices
 - Service-to-service authentication in Kubernetes clusters
