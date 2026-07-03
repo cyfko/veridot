@@ -80,9 +80,18 @@ PublicKeyTrustRoot trustRoot = issuer -> switch (issuer) {
 
 ## Option B: DelegatedTrustRoot
 
-You delegate signature verification to an external KMS or HSM. The `DelegatedTrustRoot` interface adds a `verifySignature()` method that Veridot calls instead of performing local cryptographic verification.
+`DelegatedTrustRoot` allows integrating signature verification with external Key Management Services (KMS) or Hardware Security Modules (HSMs). The `DelegatedTrustRoot` interface delegates the cryptographic signature verification to an external API rather than performing it locally.
 
-**Best for:** Vault Transit, AWS KMS, Google Cloud KMS, Azure Key Vault, or any HSM-backed key management.
+:::caution Architectural Trade-offs & Protocol Conflicts
+Using cloud KMS providers (such as AWS KMS, Google Cloud KMS, or Azure Key Vault) directly on the verification path introduces severe conflicts with Veridot's core principles:
+1. **Offline Verification Violation**: Verifying signatures via a cloud KMS API requires a synchronous network call per issuer, introducing 1–10ms latency and turning the KMS provider into a runtime SPoF.
+2. **Key Custody Violation**: Protocol V4 requires that **the long-term private key must never leave the issuer's boundary**. Cloud KMS systems generate and retain private keys within the cloud provider's boundary, meaning the issuer service does not have custody of its own root key.
+
+Therefore, `DelegatedTrustRoot` should only be used if:
+- Verification results are cached locally.
+- Enterprise security compliance mandates that all cryptographic operations must occur inside a certified HSM.
+- You use it in conjunction with a local cache layer (like `CachingTrustRoot`).
+:::
 
 ```java
 DelegatedTrustRoot trustRoot = new DelegatedTrustRoot() {
@@ -96,7 +105,7 @@ DelegatedTrustRoot trustRoot = new DelegatedTrustRoot() {
     @Override
     public boolean verifySignature(String issuer, byte[] data,
                                     byte[] signature, Algorithm sigAlg) {
-        // Delegate the actual verification to your KMS
+        // Delegate the actual verification to your KMS/HSM
         return vaultClient.verify(issuer, data, signature,
             sigAlg.getJcaSignatureAlg());
     }
@@ -105,8 +114,8 @@ DelegatedTrustRoot trustRoot = new DelegatedTrustRoot() {
 
 ### Hot Path Isolation
 
-:::tip
-KMS is **NOT** on the verification hot path. Veridot calls `resolve()` once per issuer and caches the result. The ephemeral key verification (step 8 of the pipeline) uses the locally-held ephemeral public key from the `KEY_EPOCH` entry — it does not call your KMS. Only the envelope's long-term signature check (step 4) may use `verifySignature()`.
+:::tip Caching is Mandatory for DelegatedTrustRoot
+KMS/HSM APIs must **NOT** be on the token verification hot path. Veridot calls `resolve()` once per issuer and caches the result. The ephemeral key verification (step 8 of the pipeline) uses the locally-held ephemeral public key from the `KEY_EPOCH` entry — it does not call your KMS. Only the envelope's long-term signature check (step 4) may use `verifySignature()`. However, to achieve true sub-millisecond offline verification, you must wrap your `DelegatedTrustRoot` in a `CachingTrustRoot`.
 :::
 
 ```mermaid
