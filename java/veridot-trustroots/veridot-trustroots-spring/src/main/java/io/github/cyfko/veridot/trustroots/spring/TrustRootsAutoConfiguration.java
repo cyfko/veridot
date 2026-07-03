@@ -13,11 +13,30 @@ import org.springframework.context.annotation.Bean;
 import java.nio.file.Paths;
 import java.util.Collections;
 
+/**
+ * Auto-configuration Spring Boot pour enregistrer automatiquement le moteur de validation de clés Veridot
+ * dans le contexte de l'application cliente.
+ * <p>
+ * S'active uniquement si la classe {@link TrustRoot} est présente dans le classpath.
+ * Déclare de manière conditionnelle les Beans {@link TrustRootProvider} et {@link TrustRoot}.
+ */
 @AutoConfiguration
 @ConditionalOnClass(TrustRoot.class)
 @EnableConfigurationProperties(TrustRootsProperties.class)
 public class TrustRootsAutoConfiguration {
 
+    /**
+     * Constructeur par défaut.
+     */
+    public TrustRootsAutoConfiguration() {
+    }
+
+    /**
+     * Enregistre le fournisseur d'API distant TAD.
+     *
+     * @param properties Propriétés de configuration injectées.
+     * @return L'instance {@link TrustRootProvider} du client TAD.
+     */
     @Bean
     @ConditionalOnMissingBean(TrustRootProvider.class)
     public TrustRootProvider trustRootProvider(TrustRootsProperties properties) {
@@ -31,6 +50,13 @@ public class TrustRootsAutoConfiguration {
         throw new IllegalArgumentException("Unsupported veridot provider type: " + properties.getProviderType());
     }
 
+    /**
+     * Enregistre et initialise le moteur de cache de validation de clés de confiance {@link TrustRoot} (CachingTrustRoot).
+     *
+     * @param properties Propriétés de configuration.
+     * @param provider Fournisseur d'API TAD injecté.
+     * @return L'instance {@link TrustRoot} initialisée.
+     */
     @Bean(initMethod = "initialize", destroyMethod = "close")
     @ConditionalOnMissingBean(TrustRoot.class)
     public TrustRoot trustRoot(TrustRootsProperties properties, TrustRootProvider provider) {

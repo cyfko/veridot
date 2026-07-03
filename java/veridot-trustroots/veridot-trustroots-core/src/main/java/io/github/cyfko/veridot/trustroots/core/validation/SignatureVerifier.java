@@ -9,14 +9,25 @@ import java.util.Base64;
 import java.util.HexFormat;
 
 /**
- * Vérifie l'authenticité d'une TrustEntry en contrôlant sa issuerSignature.
+ * Composant de sécurité chargé de valider l'authenticité d'une {@link TrustEntry}.
+ * Il décode la clé publique et vérifie la signature de l'émetteur (issuerSignature) par rapport à sa charge utile canonique.
  */
 public final class SignatureVerifier {
 
+    /** Décodeur partagé pour le format Base64 URL-safe. */
     private static final Base64.Decoder BASE64_URL_DECODER = Base64.getUrlDecoder();
 
     /**
-     * Vérifie la issuerSignature de l'entrée.
+     * Constructeur par défaut.
+     */
+    public SignatureVerifier() {
+    }
+
+    /**
+     * Vérifie la signature cryptographique (issuerSignature) de la {@link TrustEntry}.
+     *
+     * @param entry L'entrée de confiance à valider.
+     * @throws InvalidSignatureException si la signature est incorrecte, ou si la clé publique n'est pas décodable.
      */
     public void verify(TrustEntry entry) throws InvalidSignatureException {
         try {
@@ -41,6 +52,13 @@ public final class SignatureVerifier {
         }
     }
 
+    /**
+     * Reconstruit l'objet {@link PublicKey} Java à partir de la représentation Base64 et des spécifications X509.
+     *
+     * @param entry L'entrée contenant la clé encodée.
+     * @return La clé publique décodée.
+     * @throws InvalidSignatureException si la clé ne peut pas être analysée.
+     */
     private PublicKey reconstructPublicKey(TrustEntry entry) throws InvalidSignatureException {
         try {
             byte[] keyBytes = BASE64_URL_DECODER.decode(entry.publicKeyEncoded());
@@ -53,7 +71,10 @@ public final class SignatureVerifier {
     }
 
     /**
-     * Calcule le fingerprint SHA-256 de la clé publique (hex lowercase).
+     * Calcule l'empreinte SHA-256 (fingerprint) d'une clé publique au format hexadécimal minuscules.
+     *
+     * @param publicKeyEncoded Clé publique brute encodée en Base64 URL-safe.
+     * @return L'empreinte hexadécimale SHA-256 sous forme de String.
      */
     public static String computeFingerprint(String publicKeyEncoded) {
         try {

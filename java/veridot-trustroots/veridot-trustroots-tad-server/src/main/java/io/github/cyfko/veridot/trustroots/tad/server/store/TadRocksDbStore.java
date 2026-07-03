@@ -14,22 +14,48 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Stockage persistant du serveur TAD basé sur RocksDB.
+ * Stockage d'état persistant persistant RocksDB pour le serveur TAD.
+ * <p>
+ * Ce composant gère la persistance de l'autorité de confiance répliquée. Il utilise trois familles de colonnes (Column Families)
+ * pour séparer logiquement les métadonnées, l'index de version et les entrées de confiance JSON indexées par clés composites.
+ * Contrairement au cache L2 client, les écritures sur le serveur TAD sont synchrones (`setSync(true)`) pour garantir la durabilité
+ * requise par le consensus distribué Raft.
  */
 public class TadRocksDbStore implements AutoCloseable {
     static {
         RocksDB.loadLibrary();
     }
 
+    /** Instance RocksDB sous-jacente. */
     private final RocksDB db;
+    
+    /** Options globales de RocksDB. */
     private final DBOptions dbOptions;
+    
+    /** Liste des handles pour chaque famille de colonnes (Column Families). */
     private final List<ColumnFamilyHandle> cfHandles = new ArrayList<>();
+    
+    /** Handle de la famille de colonnes par défaut. */
     private ColumnFamilyHandle defaultHandle;
+    
+    /** Handle de la famille de colonnes {@code entries} contenant les JSON sérialisés. */
     private ColumnFamilyHandle entriesHandle;
+    
+    /** Handle de la famille de colonnes {@code subjects} contenant l'index des versions actives. */
     private ColumnFamilyHandle subjectsHandle;
+    
+    /** Handle de la famille de colonnes {@code meta} contenant les métadonnées globales. */
     private ColumnFamilyHandle metaHandle;
+    
+    /** Mapper Jackson configuré pour la sérialisation/désérialisation JSON. */
     private final ObjectMapper objectMapper;
 
+    /**
+     * Initialise le stockage persistant RocksDB dans le répertoire spécifié.
+     * Crée le répertoire et les familles de colonnes si absents.
+     *
+     * @param path Chemin absolu vers le dossier de stockage de RocksDB.
+     */
     public TadRocksDbStore(String path) {
         this.objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
         
@@ -95,6 +121,9 @@ public class TadRocksDbStore implements AutoCloseable {
         }
     }
 
+    /**
+     * Convertit un long en tableau de 8 octets Big-Endian.
+     */
     private byte[] toBigEndian8(long val) {
         return new byte[] {
             (byte) (val >>> 56),
@@ -108,6 +137,9 @@ public class TadRocksDbStore implements AutoCloseable {
         };
     }
 
+    /**
+     * Reconstitue un long à partir d'un tableau de 8 octets Big-Endian.
+     */
     private long fromBigEndian8(byte[] bytes) {
         return ((long) (bytes[0] & 0xFF) << 56) |
                ((long) (bytes[1] & 0xFF) << 48) |
@@ -119,16 +151,26 @@ public class TadRocksDbStore implements AutoCloseable {
                ((long) (bytes[7] & 0xFF) & 0xFF);
     }
 
+    /**
+     * Construit une clé composite unique pour la table {@code entries} :
+     * {@code <subject_bytes> + 0x00 + <version_bytes_8>}.
+     */
     private byte[] toCompositeKey(String subject, long version) {
         byte[] subjBytes = subject.getBytes(StandardCharsets.UTF_8);
         byte[] composite = new byte[subjBytes.length + 1 + 8];
         System.arraycopy(subjBytes, 0, composite, 0, subjBytes.length);
-        composite[subjBytes.length] = 0; // null separator
+        composite[subjBytes.length] = 0; // Separator byte
         byte[] verBytes = toBigEndian8(version);
         System.arraycopy(verBytes, 0, composite, subjBytes.length + 1, 8);
         return composite;
     }
 
+    /**
+     * Récupère la version de clé active la plus récente pour un sujet donné.
+     *
+     * @param subject Identifiant du sujet.
+     * @return Un {@link Optional} contenant la {@link TrustEntry} active si trouvée, sinon {@link Optional#empty()}.
+     */
     public Optional<TrustEntry> get(String subject) {
         try {
             byte[] key = subject.getBytes(StandardCharsets.UTF_8);
@@ -143,6 +185,13 @@ public class TadRocksDbStore implements AutoCloseable {
         }
     }
 
+    /**
+     * Récupère une version spécifique d'une clé pour un sujet donné.
+     *
+     * @param subject Identifiant du sujet.
+     * @param version Version de clé recherchée.
+     * @return Un {@link Optional} contenant la {@link TrustEntry} si trouvée, sinon {@link Optional#empty()}.
+     */
     public Optional<TrustEntry> get(String subject, long version) {
         try {
             byte[] compositeKey = toCompositeKey(subject, version);
@@ -156,6 +205,11 @@ public class TadRocksDbStore implements AutoCloseable {
         }
     }
 
+    /**
+     * Persiste une {@link TrustEntry} de manière synchrone et durable.
+     *
+     * @param entry L'entrée à stocker.
+     */
     public void put(TrustEntry entry) {
         try (WriteBatch batch = new WriteBatch()) {
             byte[] subjKey = entry.subject().getBytes(StandardCharsets.UTF_8);
@@ -171,12 +225,19 @@ public class TadRocksDbStore implements AutoCloseable {
                 batch.put(subjectsHandle, subjKey, toBigEndian8(entry.version()));
             }
 
-            db.write(new WriteOptions().setSync(true), batch); // Synchronous write for server consensus
+            // Écriture synchrone obligatoire pour garantir la persistance physique lors du consensus Raft
+            db.write(new WriteOptions().setSync(true), batch);
         } catch (RocksDBException | IOException e) {
             throw new RuntimeException("Failed to write to RocksDB Store", e);
         }
     }
 
+    /**
+     * Récupère le numéro de version de clé le plus élevé stocké pour un sujet donné.
+     *
+     * @param subject Identifiant du sujet.
+     * @return Le numéro de version ou 0 si le sujet n'existe pas.
+     */
     public long getLatestVersion(String subject) {
         try {
             byte[] key = subject.getBytes(StandardCharsets.UTF_8);
@@ -190,9 +251,15 @@ public class TadRocksDbStore implements AutoCloseable {
         }
     }
 
+    /**
+     * Parcourt l'ensemble des entrées et filtre celles qui ont été publiées après la date spécifiée.
+     * Utilisé pour la synchronisation différentielle.
+     *
+     * @param since Instant de référence.
+     * @return Liste des {@link TrustEntry} modifiées ou ajoutées.
+     */
     public List<TrustEntry> getModifiedSince(Instant since) {
         List<TrustEntry> list = new ArrayList<>();
-        // Scan entries and filter by publishedAt
         try (RocksIterator iterator = db.newIterator(entriesHandle)) {
             iterator.seekToFirst();
             while (iterator.isValid()) {
@@ -204,7 +271,7 @@ public class TadRocksDbStore implements AutoCloseable {
                 iterator.next();
             }
         } catch (IOException e) {
-            // Log error
+            // Silence
         }
         return list;
     }

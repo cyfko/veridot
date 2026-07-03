@@ -20,14 +20,32 @@ import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 /**
- * Implémentation du provider TrustRootProvider pour interroger le TAD (Trust Authority Directory).
+ * Implémentation cliente de {@link TrustRootProvider} interrogeant un cluster d'autorités TAD (Trust Authority Directory).
+ * <p>
+ * Implémente une stratégie de tolérance aux pannes réseau en bouclant sur la liste des adresses du cluster
+ * (failover) jusqu'à obtenir une réponse valide ou épuiser les nœuds disponibles.
  */
 public class TadTrustRootProvider implements TrustRootProvider {
+    
+    /** Liste des adresses de base HTTP/HTTPS des nœuds du cluster TAD. */
     private final List<String> clusterUrls;
+    
+    /** Client HTTP Java 11 natif, réutilisé pour toutes les requêtes (thread-safe). */
     private final HttpClient httpClient;
+    
+    /** Mapper Jackson configuré pour la désérialisation JSON. */
     private final ObjectMapper objectMapper;
+    
+    /** Timeout de connexion et de lecture pour chaque requête unitaire. */
     private final Duration requestTimeout;
 
+    /**
+     * Instancie le client TAD avec les configurations de cluster et de sécurité requises.
+     *
+     * @param clusterUrls Adresses de base des nœuds du cluster (ex: "http://127.0.0.1:8443").
+     * @param sslContext Contexte SSL JCA pour activer la sécurité TLS/HTTPS. Optionnel.
+     * @param requestTimeout Délai d'expiration de requête. Optionnel (5s par défaut).
+     */
     public TadTrustRootProvider(List<String> clusterUrls, SSLContext sslContext, Duration requestTimeout) {
         this.clusterUrls = new ArrayList<>(Objects.requireNonNull(clusterUrls, "clusterUrls"));
         if (this.clusterUrls.isEmpty()) {
