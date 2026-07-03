@@ -40,9 +40,6 @@ graph TB
     V1 -- "GET /v1/trust-entries/{subject}" --> F1
     V2 -- "GET /v1/trust-entries?modifiedSince=..." --> F2
 
-    style L fill:#2563eb,color:#fff,stroke:#1e40af
-    style F1 fill:#475569,color:#fff,stroke:#334155
-    style F2 fill:#475569,color:#fff,stroke:#334155
 ```
 
 :::info[Key Insight]

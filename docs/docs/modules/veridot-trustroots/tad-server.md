@@ -36,10 +36,6 @@ graph TB
     Client["TAD Client<br/>(TadTrustRootProvider)"] -->|HTTP/2| REST
     Publisher["Signer Service<br/>(TadPublisherClient)"] -->|HTTP/2| REST
 
-    style REST fill:#e3f2fd,stroke:#2196f3
-    style Raft fill:#fff3e0,stroke:#ff9800
-    style SM fill:#fce4ec,stroke:#e91e63
-    style Store fill:#fff9c4,stroke:#f9a825
 ```
 
 ### Component Responsibilities

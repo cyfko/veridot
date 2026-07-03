@@ -26,10 +26,6 @@ graph LR
     TR -->|"No matching key"| Verifier
     Verifier -->|"❌ REJECT V4101"| Verifier
 
-    style Attacker fill:#ffcdd2,stroke:#c62828
-    style Broker fill:#fff3e0,stroke:#ef6c00
-    style Verifier fill:#e8f5e9,stroke:#2e7d32
-    style TR fill:#f3e5f5,stroke:#7b1fa2
 ```
 
 A processor with write access to the broker but **without** the long-term private key material corresponding to a TrustRoot-resolvable `issuer` is structurally incapable of producing an entry that a conforming verifier will accept as a new, valid state for any EntryId it does not already control (Protocol V4 §14.4).

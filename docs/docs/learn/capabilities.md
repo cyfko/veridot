@@ -29,8 +29,6 @@ graph LR
     TR["TrustRoot"] -->|"resolves"| ADMIN["admin-service<br/>(root identity)"]
     ADMIN -.- NOTE["✅ Authorized for any scope<br/>No CAPABILITY entry needed"]
 
-    style TR fill:#3498db,color:#fff
-    style ADMIN fill:#2ecc71,color:#fff
 ```
 
 :::tip[Root identity ≠ root access to your application]
@@ -88,10 +86,6 @@ graph TD
     ADMIN -->|"CAPABILITY<br/>scope: group:orders:*<br/>maxDelegationDepth: 1"| ORDER["order-service"]
     ORDER -->|"CAPABILITY<br/>scope: group:orders:eu:*<br/>maxDelegationDepth: 0"| WORKER["order-worker"]
 
-    style TR fill:#3498db,color:#fff
-    style ADMIN fill:#2ecc71,color:#fff
-    style ORDER fill:#2ecc71,color:#fff
-    style WORKER fill:#2ecc71,color:#fff
 ```
 
 Here's how the delegation math works:
@@ -115,11 +109,6 @@ graph TD
     ORDER -->|"grants<br/>maxDelegationDepth: 0"| WORKER["order-worker<br/>✅ authorized, cannot sub-delegate"]
     WORKER -.-x|"❌ depth exceeded"| SUB["sub-worker"]
 
-    style TR fill:#3498db,color:#fff
-    style ADMIN fill:#2ecc71,color:#fff
-    style ORDER fill:#2ecc71,color:#fff
-    style WORKER fill:#2ecc71,color:#fff
-    style SUB fill:#e74c3c,color:#fff
 ```
 
 ## What Happens Without a Capability
@@ -185,11 +174,6 @@ flowchart TD
     ROOT -->|No| V4104["❌ V4104<br/>DELEGATION_DEPTH_EXCEEDED"]
     ROOT -->|Yes| OK["✅ Authorized"]
 
-    style V4102 fill:#e74c3c,color:#fff
-    style V4103 fill:#e74c3c,color:#fff
-    style V4102b fill:#e74c3c,color:#fff
-    style V4104 fill:#e74c3c,color:#fff
-    style OK fill:#27ae60,color:#fff
 ```
 
 ## Summary

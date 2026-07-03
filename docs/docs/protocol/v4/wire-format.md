@@ -134,9 +134,6 @@ graph LR
     K[sigAlg] ~~~ L[sigLen] ~~~ M[signature]
     J --> K
 
-    style K fill:#f96,stroke:#333,color:#000
-    style L fill:#f96,stroke:#333,color:#000
-    style M fill:#f96,stroke:#333,color:#000
 ```
 
 ## Identifier Constraints

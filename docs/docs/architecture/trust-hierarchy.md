@@ -30,13 +30,6 @@ graph TD
     KE -->|"Distributes"| EPH
     EPH -->|"Signs application payload"| JWT
 
-    style KMS fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
-    style TR fill:#f3e5f5,stroke:#7b1fa2
-    style CAP fill:#fff3e0,stroke:#ef6c00
-    style SID fill:#e3f2fd,stroke:#1565c0
-    style KE fill:#e8f5e9,stroke:#2e7d32
-    style EPH fill:#e8f5e9,stroke:#2e7d32
-    style JWT fill:#e8f5e9,stroke:#2e7d32
 ```
 
 ### Layer Responsibilities
@@ -112,8 +105,6 @@ graph LR
     SvcPay -->|"Signs"| CapC
     CapC -.->|"❌ Rejected: depth 3 > maxDelegationDepth 2"| SvcNotif
 
-    style Root fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
-    style SvcNotif fill:#ffcdd2,stroke:#c62828
 ```
 
 **Delegation depth rules:**
@@ -238,9 +229,6 @@ graph TD
     KE -->|"Check session status"| LV
     LV -->|"All checks pass"| ACCEPT
 
-    style JWT fill:#fff3e0,stroke:#ef6c00
-    style ACCEPT fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
-    style TR fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
 ```
 
 ## Next Steps

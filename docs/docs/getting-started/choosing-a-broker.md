@@ -29,10 +29,6 @@ graph TD
     F -- "Yes" --> G["✅ veridot-databases"]
     F -- "No" --> H["Use veridot-databases<br/>with embedded H2"]
 
-    style C fill:#4CAF50,color:#fff
-    style G fill:#2196F3,color:#fff
-    style E fill:#4CAF50,color:#fff
-    style H fill:#2196F3,color:#fff
 ```
 
 ## Comparison

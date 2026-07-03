@@ -23,8 +23,6 @@ graph LR
 
     E1 --> E2 --> E3 --> E4 --> E5
 
-    style E3 fill:#ffcdd2,stroke:#c62828
-    style E4 fill:#ffcdd2,stroke:#c62828
 ```
 
 **Rules:**

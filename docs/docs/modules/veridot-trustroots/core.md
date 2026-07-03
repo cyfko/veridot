@@ -33,9 +33,6 @@ graph LR
         Sync --> L1
     end
 
-    style L1 fill:#c8e6c9,stroke:#4caf50
-    style L2 fill:#fff9c4,stroke:#f9a825
-    style Provider fill:#e3f2fd,stroke:#2196f3
 ```
 
 ### Cache Tiers
@@ -154,12 +151,6 @@ flowchart TD
     Promote1 --> Return2["✅ Return TrustIdentity"]
     Promote2 --> Return3["✅ Return TrustIdentity"]
 
-    style Return1 fill:#c8e6c9,stroke:#4caf50
-    style Return2 fill:#c8e6c9,stroke:#4caf50
-    style Return3 fill:#c8e6c9,stroke:#4caf50
-    style Refresh1 fill:#fff9c4,stroke:#f9a825
-    style Throw1 fill:#ffcdd2,stroke:#e53935
-    style Throw2 fill:#ffcdd2,stroke:#e53935
 ```
 
 ### Key Validity Windows

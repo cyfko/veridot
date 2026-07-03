@@ -33,10 +33,6 @@ graph TB
     E -- "Async propagation" --> G
     G -- "< 1ms read" --> H
 
-    style A fill:#4CAF50,color:#fff
-    style F fill:#2196F3,color:#fff
-    style E fill:#FF9800,color:#fff
-    style G fill:#9C27B0,color:#fff
 ```
 
 ## The Dual-Layer Cryptography
@@ -69,11 +65,6 @@ graph LR
     KE --> |"contains"| EPK["Ephemeral Public Key"]
     EPK --> |"verifies"| JWT["JWT Token"]
 
-    style TR fill:#E91E63,color:#fff
-    style LT fill:#FF5722,color:#fff
-    style KE fill:#FF9800,color:#fff
-    style LV fill:#4CAF50,color:#fff
-    style JWT fill:#2196F3,color:#fff
 ```
 
 :::info[Why Two Layers?]

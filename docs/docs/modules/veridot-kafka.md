@@ -74,7 +74,6 @@ graph LR
     V2 --> LC3
     LC3 -->|miss| DB3
 
-    style T fill:#f59e0b,color:#000,stroke:#d97706
 ```
 
 :::info[Key Design Principle]
@@ -164,7 +163,6 @@ flowchart TD
     J -->|"No"| K["commitSync()"]
     K --> A
 
-    style H fill:#ef4444,color:#fff
 ```
 
 :::warning[Envelope Validation (Security Hardening)]

@@ -39,10 +39,6 @@ graph TD
     B -.-|"❌ RSA JWT"| C
     C -.-|"❌ IdP"| A
 
-    style T fill:#e91e63,color:#fff,stroke:#c2185b
-    style A fill:#2196f3,color:#fff,stroke:#1565c0
-    style B fill:#4caf50,color:#fff,stroke:#2e7d32
-    style C fill:#ff9800,color:#fff,stroke:#e65100
 ```
 
 Let's make this concrete.
@@ -65,9 +61,6 @@ graph LR
     AS -->|"revoke"| OS
     AS -->|"revoke"| SS
 
-    style OS fill:#4caf50,color:#fff
-    style SS fill:#2196f3,color:#fff
-    style AS fill:#ff5722,color:#fff
 ```
 
 A customer places an order. Here's what happens:
@@ -213,11 +206,6 @@ graph TB
         AS2["admin-service"] -->|"verify"| IdP2
     end
 
-    style IdP1 fill:#4caf50,color:#fff
-    style IdP2 fill:#f44336,color:#fff
-    style OS2 fill:#ffcdd2,stroke:#c62828
-    style SS2 fill:#ffcdd2,stroke:#c62828
-    style AS2 fill:#ffcdd2,stroke:#c62828
 ```
 
 Even with replicas and load balancers, the network round-trip adds latency to *every single verification*. At ShopFlow's scale, those milliseconds add up — and the dependency on network availability never goes away.

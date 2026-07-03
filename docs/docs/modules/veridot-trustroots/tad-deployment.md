@@ -38,9 +38,6 @@ graph TB
     Client["Verifier Services<br/>(TadTrustRootProvider)"] --> LB
     Publisher["Signer Services<br/>(TadPublisherClient)"] --> LB
 
-    style N1 fill:#c8e6c9,stroke:#4caf50
-    style N2 fill:#e3f2fd,stroke:#2196f3
-    style N3 fill:#e3f2fd,stroke:#2196f3
 ```
 
 :::info[Why 3 Nodes?]

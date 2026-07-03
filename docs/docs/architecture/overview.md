@@ -212,10 +212,6 @@ graph LR
     DB --> Core
     Trust --> Core
 
-    style Core fill:#e8f5e9,stroke:#2e7d32
-    style Kafka fill:#fff3e0,stroke:#ef6c00
-    style DB fill:#e3f2fd,stroke:#1565c0
-    style Trust fill:#f3e5f5,stroke:#7b1fa2
 ```
 
 | Module | Maven Artifact | Purpose |

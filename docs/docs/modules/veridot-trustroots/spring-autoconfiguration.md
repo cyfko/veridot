@@ -40,8 +40,6 @@ flowchart LR
 
     YourService["Your @Service"] -->|"Inject TrustRoot"| TrustRoot
 
-    style AutoConfig fill:#e3f2fd,stroke:#2196f3
-    style TrustRoot fill:#c8e6c9,stroke:#4caf50
 ```
 
 ## TrustRootsAutoConfiguration

@@ -70,7 +70,6 @@ graph LR
     V -->|"1. cache hit?"| LC2
     LC2 -->|"2. miss → SELECT"| DB
 
-    style DB fill:#3b82f6,color:#fff,stroke:#2563eb
 ```
 
 Unlike `KafkaBroker`, `DatabaseBroker` does **not** have a background consumer loop. All services point to the **same database** (or synchronized replicas), and consistency is achieved through the database's own ACID guarantees.

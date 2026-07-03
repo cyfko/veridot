@@ -77,8 +77,6 @@ flowchart TD
 
     REJECT["Session REJECTED ✗"]
 
-    style VALID fill:#27ae60,color:#fff
-    style REJECT fill:#e74c3c,color:#fff
 ```
 
 :::warning[All failures are equal]
@@ -170,7 +168,6 @@ flowchart LR
     ROOT -->|Yes| STATUS
     ROOT -->|No| REJECT["REJECT\nV4102"]
 
-    style REJECT fill:#e74c3c,color:#fff
 ```
 
 ## Related Error Codes

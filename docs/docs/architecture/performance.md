@@ -27,9 +27,6 @@ graph LR
         Verify --> OK["✅ VerifiedData"]
     end
 
-    style Cache fill:#fff3e0,stroke:#ef6c00
-    style Live fill:#fff3e0,stroke:#ef6c00
-    style OK fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
 ```
 
 ### Latency Breakdown

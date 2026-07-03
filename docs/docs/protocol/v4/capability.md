@@ -105,11 +105,6 @@ graph TD
     CAP2 -->|"depth 2"| CAP3["CAPABILITY\nsubjectSid: service-C\nmaxDelegationDepth: 0"]
     CAP3 -.->|"❌ depth 3 exceeds limit"| CAP4["CAPABILITY\nsubjectSid: service-D"]
 
-    style TR fill:#3498db,color:#fff
-    style CAP1 fill:#2ecc71,color:#fff
-    style CAP2 fill:#2ecc71,color:#fff
-    style CAP3 fill:#2ecc71,color:#fff
-    style CAP4 fill:#e74c3c,color:#fff
 ```
 
 | Identity | Issued by | Depth | Bounded by |

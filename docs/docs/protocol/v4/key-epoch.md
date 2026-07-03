@@ -113,13 +113,6 @@ flowchart TD
     S8 --> S9["9. Business validation\napplication rules\n(JWT exp, claims, etc.)"]
     S9 --> ACCEPT[ACCEPT]
 
-    style R1 fill:#e74c3c,color:#fff
-    style R2 fill:#e74c3c,color:#fff
-    style R3 fill:#e74c3c,color:#fff
-    style R4 fill:#e74c3c,color:#fff
-    style R5 fill:#e74c3c,color:#fff
-    style R6 fill:#e74c3c,color:#fff
-    style ACCEPT fill:#27ae60,color:#fff
 ```
 
 ### Step Details

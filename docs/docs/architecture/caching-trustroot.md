@@ -37,9 +37,6 @@ graph TB
     L2 -->|"miss"| P
     P -->|"HTTP/2"| TAD
 
-    style L1 fill:#22c55e,color:#fff,stroke:#16a34a
-    style L2 fill:#3b82f6,color:#fff,stroke:#2563eb
-    style TAD fill:#475569,color:#fff,stroke:#334155
 ```
 
 ### L1: In-Memory Cache
@@ -108,13 +105,6 @@ flowchart TD
     G --> RET2["✅ Return TrustIdentity"]
     H --> RET3["✅ Return stale key"]
 
-    style RET1 fill:#22c55e,color:#fff
-    style RET2 fill:#22c55e,color:#fff
-    style RET3 fill:#eab308,color:#000
-    style STALE1 fill:#eab308,color:#000
-    style ERR1 fill:#ef4444,color:#fff
-    style ERR2 fill:#ef4444,color:#fff
-    style ERR3 fill:#ef4444,color:#fff
 ```
 
 ### Resolution Code Walkthrough

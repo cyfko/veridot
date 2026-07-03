@@ -43,12 +43,6 @@ graph TB
     EK -->|"signs"| JWT
     LT -->|"vouches for"| EK
 
-    style LT fill:#e91e63,color:#fff,stroke:#c2185b
-    style TR fill:#9c27b0,color:#fff,stroke:#7b1fa2
-    style EK fill:#ff9800,color:#fff,stroke:#e65100
-    style KRS fill:#ff5722,color:#fff,stroke:#d84315
-    style ENV fill:#2196f3,color:#fff,stroke:#1565c0
-    style JWT fill:#4caf50,color:#fff,stroke:#2e7d32
 ```
 
 ### Level 1: Long-Term Keys
@@ -124,9 +118,6 @@ graph LR
     K -->|"async<br/>background sync"| DB
     V -->|"local read<br/>no network"| DB
 
-    style V fill:#2196f3,color:#fff
-    style DB fill:#9c27b0,color:#fff
-    style K fill:#ff9800,color:#fff
 ```
 
 The key properties:
@@ -177,12 +168,6 @@ graph TD
     IsFresh -->|"No"| Reject4["❌ REJECT<br/>Stale attestation"]
     IsFresh -->|"Yes"| Accept["✅ ACCEPT<br/>Session is live"]
 
-    style Reject1 fill:#f44336,color:#fff
-    style Reject2 fill:#f44336,color:#fff
-    style Reject3 fill:#f44336,color:#fff
-    style Reject4 fill:#f44336,color:#fff
-    style Accept fill:#4caf50,color:#fff
-    style Start fill:#2196f3,color:#fff
 ```
 
 The signing service maintains liveness by publishing fresh `LIVENESS(ACTIVE)` attestations on a periodic renewal loop. If the signer crashes, the attestations stop — and verifiers automatically start rejecting after the freshness window expires.
@@ -305,12 +290,6 @@ graph LR
         V3["Local RocksDB cache<br/>✅ No network call"]
     end
 
-    style T1 fill:#ffcdd2,stroke:#c62828
-    style T2 fill:#ffcdd2,stroke:#c62828
-    style T3 fill:#ffcdd2,stroke:#c62828
-    style V1 fill:#c8e6c9,stroke:#2e7d32
-    style V2 fill:#c8e6c9,stroke:#2e7d32
-    style V3 fill:#c8e6c9,stroke:#2e7d32
 ```
 
 The trick isn't inventing new cryptography. It's **restructuring the information flow**: trust is established out-of-band (TrustRoot/TAD), tokens are signed with ephemeral keys (forward secrecy), metadata propagates asynchronously (broker), and verification happens locally (RocksDB). Each concern flows through an independent path.
@@ -358,14 +337,6 @@ graph TB
     BRK -->|"async sync"| CACHE
     CACHE -->|"< 1ms read"| VER
 
-    style TAD fill:#9c27b0,color:#fff
-    style TR fill:#7b1fa2,color:#fff
-    style SIG fill:#4caf50,color:#fff
-    style KRS fill:#ff5722,color:#fff
-    style LTK fill:#e91e63,color:#fff
-    style BRK fill:#ff9800,color:#fff
-    style VER fill:#2196f3,color:#fff
-    style CACHE fill:#1565c0,color:#fff
 ```
 
 Two independent paths:

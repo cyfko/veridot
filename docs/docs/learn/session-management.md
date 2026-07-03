@@ -41,8 +41,6 @@ flowchart TD
 
     REJECT["❌ Session REJECTED<br/>(V4202)"]
 
-    style VALID fill:#27ae60,color:#fff
-    style REJECT fill:#e74c3c,color:#fff
 ```
 
 :::danger[All failures are equal]
@@ -211,8 +209,6 @@ flowchart LR
     NEW["🖥️ New device<br/>(6th login)"] -->|"exceeds max=5"| EVICT
     EVICT["CapacityManager<br/>policy: FIFO"] -->|"evicts oldest"| S1
 
-    style S1 fill:#e74c3c,color:#fff
-    style NEW fill:#3498db,color:#fff
 ```
 
 1. Customer logs in on a 6th device
