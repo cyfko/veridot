@@ -22,12 +22,26 @@ Veridot uses a 2-level key hierarchy. Each level serves a distinct purpose, and 
 
 ```mermaid
 graph TB
-    TR["TrustRoot / TAD<br/>(out-of-band distribution)"] -->|"resolves issuer →<br/>public key"| LT
-    LT["Long-Term Key Pair<br/>(Ed25519 / RSA)"] -->|"signs"| ENV["Protocol Envelopes<br/>(KEY_EPOCH, LIVENESS, CONFIG)"]
-    LT -->|"vouches for"| EK
+    subgraph "Level 1 — Long-Term Keys"
+        LT["Long-Term Key Pair<br/>(Ed25519 / RSA)"]
+        TR["TrustRoot / TAD<br/>(out-of-band distribution)"]
+    end
 
-    KRS["KeyRotationService<br/>(periodic rotation)"] -->|"generates"| EK["Ephemeral Key Pair<br/>(Ed25519, auto-generated)"]
-    EK -->|"signs"| JWT["JWT Tokens<br/>(the actual bearer token)"]
+    subgraph "Level 2 — Ephemeral Keys"
+        EK["Ephemeral Key Pair<br/>(Ed25519, auto-generated)"]
+        KRS["KeyRotationService<br/>(periodic rotation)"]
+    end
+
+    subgraph "What They Sign"
+        ENV["Protocol Envelopes<br/>(KEY_EPOCH, LIVENESS, CONFIG)"]
+        JWT["JWT Tokens<br/>(the actual bearer token)"]
+    end
+
+    TR -->|"resolves issuer →<br/>public key"| LT
+    LT -->|"signs"| ENV
+    KRS -->|"generates"| EK
+    EK -->|"signs"| JWT
+    LT -->|"vouches for"| EK
 
 ```
 
