@@ -21,7 +21,7 @@ This page covers how to add Veridot to your Java project, manage module versions
 | **Apache Kafka** | 3.x+ | Required only if using `veridot-kafka` |
 | **JDBC Database** | See [supported DBs](./choosing-a-broker.md#supported-databases) | Required only if using `veridot-databases` |
 
-:::danger Java 25 is Required
+:::danger[Java 25 is Required]
 Veridot uses Java 25+ features (sealed interfaces, records, pattern matching). It will **not compile or run** on earlier JDK versions. Verify your Java version:
 
 ```bash
@@ -358,7 +358,7 @@ Veridot keeps its dependency footprint minimal:
 | `veridot-kafka` | Apache Kafka Client, RocksDB JNI |
 | `veridot-databases` | None (uses `javax.sql.DataSource` — bring your own JDBC driver) |
 
-:::tip Dependency Conflicts
+:::tip[Dependency Conflicts]
 If your project already uses Jackson or Kafka Client, Veridot uses standard versions that are compatible with most modern projects. Use Maven's `<dependencyManagement>` or Gradle's `platform()` to enforce your preferred versions if conflicts arise.
 :::
 

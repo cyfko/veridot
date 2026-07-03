@@ -82,7 +82,7 @@ PublicKeyTrustRoot trustRoot = issuer -> switch (issuer) {
 
 `DelegatedTrustRoot` allows integrating signature verification with external Key Management Services (KMS) or Hardware Security Modules (HSMs). The `DelegatedTrustRoot` interface delegates the cryptographic signature verification to an external API rather than performing it locally.
 
-:::caution Architectural Trade-offs & Protocol Conflicts
+:::caution[Architectural Trade-offs & Protocol Conflicts]
 Using cloud KMS providers (such as AWS KMS, Google Cloud KMS, or Azure Key Vault) directly on the verification path introduces severe conflicts with Veridot's core principles:
 1. **Offline Verification Violation**: Verifying signatures via a cloud KMS API requires a synchronous network call per issuer, introducing 1–10ms latency and turning the KMS provider into a runtime SPoF.
 2. **Key Custody Violation**: Protocol V4 requires that **the long-term private key must never leave the issuer's boundary**. Cloud KMS systems generate and retain private keys within the cloud provider's boundary, meaning the issuer service does not have custody of its own root key.
@@ -114,7 +114,7 @@ DelegatedTrustRoot trustRoot = new DelegatedTrustRoot() {
 
 ### Hot Path Isolation
 
-:::tip Caching is Mandatory for DelegatedTrustRoot
+:::tip[Caching is Mandatory for DelegatedTrustRoot]
 KMS/HSM APIs must **NOT** be on the token verification hot path. Veridot calls `resolve()` once per issuer and caches the result. The ephemeral key verification (step 8 of the pipeline) uses the locally-held ephemeral public key from the `KEY_EPOCH` entry — it does not call your KMS. Only the envelope's long-term signature check (step 4) may use `verifySignature()`. However, to achieve true sub-millisecond offline verification, you must wrap your `DelegatedTrustRoot` in a `CachingTrustRoot`.
 :::
 
@@ -172,7 +172,7 @@ CachingTrustRoot trustRoot = CachingTrustRoot.builder()
 
 ## Security Requirements
 
-:::danger Never fall back to accepting unverified announcements
+:::danger[Never fall back to accepting unverified announcements]
 If TrustRoot resolution fails (network error, KMS timeout, unknown issuer), Veridot **MUST fail closed** — it rejects the pending verification. Your `TrustRoot` implementation must **never** return a synthetic or default identity to "keep things working." This would allow any party with broker write access to forge entries.
 
 ```java

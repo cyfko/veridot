@@ -99,7 +99,7 @@ sequenceDiagram
 
 It's fast. Revocation is doable (you can rotate the shared key). But there's a fatal flaw.
 
-:::danger The shared secret is a single point of compromise
+:::danger[The shared secret is a single point of compromise]
 
 Imagine `shipping-service` is compromised. An attacker gains read access to its environment variables or config files.
 
@@ -132,7 +132,7 @@ Now you switch to asymmetric cryptography. `order-service` holds a private key a
 
 This solves the shared secret problem. But a new one appears.
 
-:::warning You can't un-ring a bell
+:::warning[You can't un-ring a bell]
 
 A ShopFlow employee is fired at 2:00 PM. Their session JWT was issued at 1:30 PM with a 1-hour TTL. It's 2:15 PM.
 
@@ -188,7 +188,7 @@ sequenceDiagram
 
 No shared secret. Instant revocation. But now your entire system depends on one service being available.
 
-:::danger The auth server is a single point of failure
+:::danger[The auth server is a single point of failure]
 
 It's Black Friday. ShopFlow is processing 10,000 orders per minute. The IdP is under extreme load. At 11:47 AM, the auth server goes down for 3 minutes.
 
@@ -242,7 +242,7 @@ The trilemma exists because **traditional systems conflate key distribution with
 - Have no real-time state (RSA JWT → no revocation), or
 - Call home for every decision (IdP → availability dependency)
 
-:::info The insight
+:::info[The insight]
 
 What if there was a way to distribute cryptographic material *asynchronously* — so verifiers always have what they need locally — while still receiving revocation signals in near-real-time?
 
@@ -255,7 +255,7 @@ That's the separation that breaks the trilemma.
 
 ## What Comes Next
 
-:::tip The way out
+:::tip[The way out]
 
 What if you could have all three — no shared secrets, instant revocation, and no network calls on the verification path?
 

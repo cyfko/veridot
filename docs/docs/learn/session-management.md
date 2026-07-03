@@ -45,7 +45,7 @@ flowchart TD
     style REJECT fill:#e74c3c,color:#fff
 ```
 
-:::danger All failures are equal
+:::danger[All failures are equal]
 A missing attestation, an expired attestation, and a failed signature all produce the **same outcome**: rejection. The system fails closed — there's no "maybe valid" state.
 :::
 
@@ -147,7 +147,7 @@ sequenceDiagram
     P->>P: Discard (1 ≤ 2), state remains REVOKED ✅
 ```
 
-:::warning Revocation is permanent
+:::warning[Revocation is permanent]
 By protocol design, there is no "un-revoke" operation. If you need to restore access after revocation, you must create a **new session** — which gets a new session key, new key epoch, and a fresh `ACTIVE` attestation.
 :::
 
@@ -269,7 +269,7 @@ ShopFlow's global default is `max=10` sessions. But enterprise customer "MegaCor
 3. When MegaCorp's 11th session is created, the group config takes precedence: `max=100` → allowed
 4. When a regular customer's 11th session is created, the global config applies: `max=10` → FIFO eviction kicks in
 
-:::tip Config is protocol-level
+:::tip[Config is protocol-level]
 CONFIG entries are published via `EntryPublisher` and stored on the broker like any other protocol entry. They're signed, versioned, and subject to capability authorization — `admin-service` needs a valid CAPABILITY to publish CONFIG entries for the target scope.
 :::
 
@@ -323,7 +323,7 @@ sequenceDiagram
 
 ---
 
-:::info What's next?
+:::info[What's next?]
 You now know how to sign, verify, revoke, control permissions, and manage sessions. Let's deploy all of this to production with Spring Boot and Kafka.
 
 **[Chapter 7: Going to Production →](./production)**

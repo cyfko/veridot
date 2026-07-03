@@ -31,7 +31,7 @@ revoker.revoke("user-123", null);
 
 This iterates over all active sessions in the group and publishes a `LIVENESS(REVOKED)` entry for each one.
 
-:::tip Use cases for group-wide revocation
+:::tip[Use cases for group-wide revocation]
 - Password change / credential rotation
 - Account compromise detection
 - User-initiated "sign out everywhere"

@@ -104,7 +104,7 @@ Rotates the key for an existing subject. The `subject` in the path must match `e
 
 Read operations are served directly from the local RocksDB store — they do **not** go through Raft and can be served by any node (leader or follower).
 
-:::info Eventual Consistency on Reads
+:::info[Eventual Consistency on Reads]
 Read queries to follower nodes may return slightly stale data if the follower's log hasn't caught up with the leader. For the TAD use case, this is acceptable because the [CachingTrustRoot](./core.md) tolerates stale keys via its stale window mechanism.
 :::
 
@@ -184,7 +184,7 @@ sequenceDiagram
     Leader-->>Client: 201 Created
 ```
 
-:::tip Automatic Redirect Handling
+:::tip[Automatic Redirect Handling]
 The `TadTrustRootProvider` and `TadPublisherClient` are configured with `HttpClient.Redirect.NORMAL`, so they automatically follow 307 redirects. You don't need to handle this manually.
 :::
 
@@ -284,7 +284,7 @@ public class TadServerApplication {
 }
 ```
 
-:::note Lifecycle Management
+:::note[Lifecycle Management]
 - `RaftServerEngine`: `start()` is called on bean creation, `stop()` on context shutdown
 - `TadRocksDbStore`: `close()` is called on context shutdown to release RocksDB resources
 :::

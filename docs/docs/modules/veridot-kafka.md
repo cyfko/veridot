@@ -77,7 +77,7 @@ graph LR
     style T fill:#f59e0b,color:#000,stroke:#d97706
 ```
 
-:::info Key Design Principle
+:::info[Key Design Principle]
 **Writes go to Kafka** (asynchronous fan-out). **Reads come from local RocksDB** (no network). This means `get()` is always a local operation — verification never waits for Kafka.
 :::
 
@@ -167,7 +167,7 @@ flowchart TD
     style H fill:#ef4444,color:#fff
 ```
 
-:::warning Envelope Validation (Security Hardening)
+:::warning[Envelope Validation (Security Hardening)]
 Every Kafka record is **validated via `Envelope.parse()`** before being written to RocksDB. Non-conforming records are rejected with a warning log. This prevents a compromised Kafka producer from injecting malformed data into the local store.
 :::
 
@@ -275,7 +275,7 @@ public byte[] load() {
 }
 ```
 
-:::tip Security Note
+:::tip[Security Note]
 The `0xFF` prefix is not just cosmetic — it's a **critical security hardening** measure (§13.3.1). Since all protocol storage keys are validated UTF-8 strings, and `0xFF` is an invalid UTF-8 start byte, a malicious client can never craft a protocol key that collides with the watermark key.
 :::
 
@@ -348,7 +348,7 @@ kafka-acls.sh --add --allow-principal User:veridot-verifier \
   --bootstrap-server kafka:9092
 ```
 
-:::tip Topic Retention
+:::tip[Topic Retention]
 Set Kafka topic retention to at least the maximum key TTL. A **7-day retention** is sufficient for default settings (24h key rotation).
 :::
 
@@ -372,7 +372,7 @@ Shutdown sequence:
 
 ## Kubernetes Deployment Notes
 
-:::info RocksDB Storage in K8s
+:::info[RocksDB Storage in K8s]
 - Mount RocksDB on an **`emptyDir`** or ephemeral volume — persistence across pod restarts is **not required**
 - The Kafka consumer **rehydrates** all state from the topic on startup
 - Each pod has its **own RocksDB directory** — no shared storage needed

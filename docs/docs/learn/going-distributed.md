@@ -424,7 +424,7 @@ Here's the recommended production architecture:
 
 ---
 
-:::tip What's next?
+:::tip[What's next?]
 Two services now communicate securely without shared secrets and without a single point of failure. But what if you want to add `admin-service` — a third service that can only sign tokens for certain scopes?
 
 That's the domain of **capabilities** — fine-grained authorization embedded in the protocol itself.

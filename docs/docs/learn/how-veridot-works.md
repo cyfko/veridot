@@ -62,7 +62,7 @@ It does two things:
 
 In production, long-term public keys are distributed via the **TAD** (Trust Authority Directory) — a Raft-replicated cluster that Veridot provides. The TAD is the root of trust: if a public key isn't in the TAD, no envelope signed by its private counterpart will be accepted.
 
-:::info The long-term private key never touches the broker
+:::info[The long-term private key never touches the broker]
 The long-term private key never appears in a JWT. It never travels through Kafka or SQL. It exists only in the signing service's secure environment. The broker only ever sees *envelopes signed by* the long-term key — never the key itself.
 :::
 
@@ -98,7 +98,7 @@ The broker carries Protocol V4 envelopes — binary-encoded, signed structures t
 
 The broker can be **Kafka** (recommended for high-throughput systems) or a **SQL database** (simpler to operate, uses JDBC polling). Either way, the broker never interprets the envelopes — it stores and relays bytes.
 
-:::warning The broker is untrusted
+:::warning[The broker is untrusted]
 An attacker with full write access to the broker **cannot** forge a valid entry. Every envelope is signed by the long-term key, and every verifier validates that signature against the TrustRoot before accepting anything. The broker is transport, not authority.
 :::
 
@@ -135,7 +135,7 @@ The key properties:
 - **Async population** — a background thread continuously consumes from the broker and writes to the local cache. This happens independently of any verification request.
 - **No hot-path network dependency** — the verification path (`token → local cache → result`) never touches the network. The broker sync path runs in the background, on its own schedule.
 
-:::tip What happens if the broker goes down?
+:::tip[What happens if the broker goes down?]
 Verification continues using the local cache. As long as the cached `LIVENESS(ACTIVE)` attestations are still fresh (within their validity window), tokens continue to verify successfully. The system degrades gracefully — and when the broker recovers, the background sync catches up automatically.
 :::
 
@@ -315,7 +315,7 @@ graph LR
 
 The trick isn't inventing new cryptography. It's **restructuring the information flow**: trust is established out-of-band (TrustRoot/TAD), tokens are signed with ephemeral keys (forward secrecy), metadata propagates asynchronously (broker), and verification happens locally (RocksDB). Each concern flows through an independent path.
 
-:::info The separation principle
+:::info[The separation principle]
 
 **Key distribution** (TrustRoot/TAD → long-term public key → verifier) is completely independent of **token verification** (local RocksDB → KEY_EPOCH + LIVENESS → accept/reject).
 
@@ -379,7 +379,7 @@ Neither path depends on the other being available in real-time. That's the archi
 
 ## What's Next
 
-:::tip Build it yourself
+:::tip[Build it yourself]
 
 You understand the architecture. You understand the dual-key hierarchy, the broker as metadata transport, the local cache, and the positive liveness protocol.
 

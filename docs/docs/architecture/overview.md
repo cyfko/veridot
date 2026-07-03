@@ -167,7 +167,7 @@ sequenceDiagram
 7. **JWT signature verification** — verify the application token using the ephemeral `pk`
 8. **Business validation** — application-level rules (JWT `exp`, claims, permissions)
 
-:::warning Fail-closed semantics
+:::warning[Fail-closed semantics]
 Every step independently produces rejection on failure. Missing data, expired attestations, broker unavailability, and TrustRoot resolution failures all result in the same outcome: **rejection**. There is no fallback to a permissive mode.
 :::
 

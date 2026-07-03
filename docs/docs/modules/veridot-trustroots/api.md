@@ -150,7 +150,7 @@ public enum KeyAlgorithm {
 | `RSA_2048` | `RSA-2048` | `SHA256withRSA` | `RSA` |
 | `RSA_4096` | `RSA-4096` | `SHA256withRSA` | `RSA` |
 
-:::tip Recommended Algorithm
+:::tip[Recommended Algorithm]
 Use **Ed25519** for new deployments. It provides constant-time operations (no timing side-channels), compact 32-byte keys, and the fastest signature verification among all supported algorithms.
 :::
 
@@ -191,7 +191,7 @@ classDiagram
 | `InvalidSignatureException` | **Unchecked** (`RuntimeException`) | A `TrustEntry` fails cryptographic signature verification |
 | `TrustRootInitializationException` | **Checked** (`Exception`) | The `CachingTrustRoot` engine cannot initialize (TAD unreachable AND L2 cache empty) |
 
-:::danger Catch TrustRootInitializationException
+:::danger[Catch TrustRootInitializationException]
 Since this is a **checked exception**, your initialization code must handle it explicitly. If initialization fails, the engine transitions to the `FAILED` state and all subsequent `resolve()` calls will throw `VeridotException`.
 :::
 
@@ -261,6 +261,6 @@ public class VaultTrustRootProvider implements TrustRootProvider {
 }
 ```
 
-:::note Wire it up
+:::note[Wire it up]
 Once implemented, pass your custom provider to `CachingTrustRoot.builder().provider(myProvider)` — see [CachingTrustRoot Deep-Dive](./core.md) for details.
 :::

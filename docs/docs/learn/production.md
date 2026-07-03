@@ -50,7 +50,7 @@ Behind the scenes, the starter auto-creates two beans:
 
 One starter, everything wired automatically.
 
-:::tip Custom providers
+:::tip[Custom providers]
 The starter uses `@ConditionalOnMissingBean`. If you define your own `TrustRootProvider` bean, the auto-configured one backs off — useful for testing or custom trust resolution logic.
 :::
 
@@ -96,7 +96,7 @@ Best for **database-centric stacks** where Kafka would be over-engineered. Verif
 | **Best fit**            | Event-driven microservices             | Monolith or small service count      |
 | **ShopFlow choice**     | ✅ Recommended                         | Good for admin-only internal tools   |
 
-:::note Recommendation
+:::note[Recommendation]
 For most production deployments, **Kafka + RocksDB** is the recommended choice. It gives you sub-second propagation, horizontal scalability, and decoupled verifier nodes.
 :::
 
@@ -294,6 +294,6 @@ You've built ShopFlow from problem to production. Here's where to go for deeper 
 - **[Distribution Modes Guide](/docs/guides/distribution-modes)** — detailed configuration for DIRECT, INDIRECT, and PRIVATE
 - **[Environment Variables](/docs/guides/environment-variables)** — complete reference for all configuration options
 
-:::tip 12 Use Cases
+:::tip[12 Use Cases]
 Veridot isn't just for e-commerce. The architecture applies to IoT device attestation, multi-tenant SaaS, financial transaction signing, and more. Check the [Guides](/docs/guides/core-concepts) section for patterns across different domains.
 :::

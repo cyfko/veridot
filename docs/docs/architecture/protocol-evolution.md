@@ -68,7 +68,7 @@ The project began as "DVerify" — a simple Kafka-based key distribution mechani
 
 **Theme: Broker is no longer trusted**
 
-:::danger Security vulnerability fixed
+:::danger[Security vulnerability fixed]
 V2 had a critical flaw: any node with write access to the Kafka topic could inject a fraudulent key announcement and obtain valid verification results from any consumer. V3 closed this by introducing the `TrustAnchor` and mandatory envelope signing.
 :::
 

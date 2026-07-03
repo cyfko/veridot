@@ -77,7 +77,7 @@ KeyPairGenerator kpg = KeyPairGenerator.getInstance("Ed25519");
 KeyPair longTermKeyPair = kpg.generateKeyPair();
 ```
 
-:::note Why Ed25519?
+:::note[Why Ed25519?]
 Ed25519 is Veridot's recommended algorithm: constant-time, no nonce reuse risk, and compact 32-byte keys. The protocol also supports ECDSA P-256/P-384 and RSA 2048/4096.
 :::
 
@@ -122,7 +122,7 @@ kafkaProps.setProperty("veridot.embedded.db", "/tmp/shopflow-veridot-db");
 var broker = new KafkaBroker(kafkaProps);
 ```
 
-:::tip Using SQL instead?
+:::tip[Using SQL instead?]
 Replace `KafkaBroker` with the SQL broker from `veridot-databases`. The API is identical — only the transport layer changes. See [Choosing a Broker](../getting-started/choosing-a-broker.md) for guidance.
 :::
 
@@ -244,7 +244,7 @@ try {
 
 The verification fails at step 6 — the liveness check detects `REVOKED` status and rejects the token.
 
-:::info Revoking all sessions
+:::info[Revoking all sessions]
 Pass `null` as the sequence ID to revoke **all** sessions for a group — useful when a security breach requires invalidating every active token for an order:
 
 ```java
@@ -365,7 +365,7 @@ public class ShopFlowQuickstart {
 
 ---
 
-:::tip What's next?
+:::tip[What's next?]
 Your example works perfectly — but signer and verifier share the same JVM and the same `longTermKeyPair` variable. In production, `shipping-service` runs on a different server. How does it obtain `order-service`'s public key?
 
 That's exactly what the **Trust Authority Directory (TAD)** solves.

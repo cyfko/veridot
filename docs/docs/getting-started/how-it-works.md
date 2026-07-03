@@ -76,7 +76,7 @@ graph LR
     style JWT fill:#2196F3,color:#fff
 ```
 
-:::info Why Two Layers?
+:::info[Why Two Layers?]
 The long-term key proves *who* the signer is. The ephemeral key proves *what* was signed. This separation means that verifiers trust the ephemeral key only because the long-term key vouched for it — and trust in the long-term key is established entirely out-of-band via the `TrustRoot`, never through the broker.
 :::
 
@@ -133,7 +133,7 @@ VerifiedData<String> result = verifier.verify(token, s -> s);
 | 8 | **JWT cryptographic validation** — verify JWT signature using the ephemeral public key | `BrokerExtractionException` |
 | 9 | **Deserialization** — extract and deserialize the payload | `DataDeserializationException` |
 
-:::warning Default-Deny Semantics
+:::warning[Default-Deny Semantics]
 Every step must independently pass. Missing data, expired attestations, signature failures, and broker unavailability all produce the **same result: rejection**. There is no fallback, no grace period, and no "soft fail" mode.
 :::
 

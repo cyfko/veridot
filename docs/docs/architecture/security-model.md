@@ -65,7 +65,7 @@ try {
 }
 ```
 
-:::danger No fallback
+:::danger[No fallback]
 A processor MUST NOT fall back to accepting entries without trust resolution. `TrustRoot` unavailability produces the same outcome as a definitive rejection: the token is not accepted.
 :::
 
@@ -106,7 +106,7 @@ if (alg != Algorithm.ED25519) {
 }
 ```
 
-:::tip Best practice
+:::tip[Best practice]
 Use `Algorithm.ED25519` for both long-term (envelope) and ephemeral (JWT) keys. It provides:
 - Constant-time verification (immune to timing attacks)
 - Small key sizes (32 bytes public key)

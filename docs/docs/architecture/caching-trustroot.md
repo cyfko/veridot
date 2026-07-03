@@ -225,7 +225,7 @@ public void initialize() throws TrustRootInitializationException {
 }
 ```
 
-:::tip Warm vs Cold Start
+:::tip[Warm vs Cold Start]
 - **Warm start**: The local RocksDB already has valid keys from a previous run. Initialization is instantaneous (~10ms). The service can verify tokens immediately, even if TAD is down.
 - **Cold start**: First deployment or after data loss. Requires a successful TAD sync before the service can operate.
 :::
@@ -329,7 +329,7 @@ private CachedKeyEntry promoteToL1(TrustEntry entry) {
 }
 ```
 
-:::info Version Monotonicity
+:::info[Version Monotonicity]
 The `compute()` call ensures that an older key version can never overwrite a newer one in L1. This prevents race conditions during concurrent async refreshes.
 :::
 
@@ -375,7 +375,7 @@ trustRoot.initialize();
 
 ### Tuning Strategies
 
-:::tip High-Throughput Microservice (> 50K req/s)
+:::tip[High-Throughput Microservice (> 50K req/s)]
 ```java
 .l1MaxSize(50_000)           // More keys in memory
 .refreshThreshold(Duration.ofMinutes(30))  // More aggressive refresh
@@ -383,7 +383,7 @@ trustRoot.initialize();
 ```
 :::
 
-:::tip Edge / IoT Service (unreliable network)
+:::tip[Edge / IoT Service (unreliable network)]
 ```java
 .l1MaxSize(1_000)            // Fewer keys, less memory
 .staleWindow(Duration.ofHours(1))  // Very long grace period
@@ -391,7 +391,7 @@ trustRoot.initialize();
 ```
 :::
 
-:::warning Memory Sizing
+:::warning[Memory Sizing]
 Each L1 entry consumes approximately 2 KB (PublicKey + metadata). With `l1MaxSize=10,000`, the L1 cache uses ~20 MB of heap. Plan your JVM heap accordingly.
 :::
 

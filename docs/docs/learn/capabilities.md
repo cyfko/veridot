@@ -33,7 +33,7 @@ graph LR
     style ADMIN fill:#2ecc71,color:#fff
 ```
 
-:::tip Root identity ≠ root access to your application
+:::tip[Root identity ≠ root access to your application]
 A root identity can publish protocol entries (keys, liveness, config, capabilities) for any scope. It does **not** grant application-level superuser powers — it's scoped to the Veridot protocol layer.
 :::
 
@@ -52,7 +52,7 @@ CAPABILITY {
 
 This entry is signed by `admin-service`'s long-term key, published via the broker, and stored like any other protocol entry. When `shipping-service` later calls `verify()` on a token signed by `order-service`, the verifier resolves the capability chain to confirm authorization.
 
-:::danger No default grants
+:::danger[No default grants]
 There is **no** default-authorized scope and **no** fallback. If `order-service` doesn't have a valid `CAPABILITY` entry for a scope, any token it signs for that scope will be **rejected**. Absence = rejection.
 :::
 
@@ -74,7 +74,7 @@ In ShopFlow, you'd grant narrow capabilities:
 | `payment-service` | `group:payments:*` | Can sign for any payment group |
 | `shipping-service` | *(no capability needed — it only verifies, never signs)* | Verifiers don't need capabilities |
 
-:::info Verifiers don't need capabilities
+:::info[Verifiers don't need capabilities]
 Capabilities control **who can publish entries** (sign tokens, issue liveness, etc.). A service that only **verifies** tokens doesn't need a capability — it just needs access to the TrustRoot and the broker.
 :::
 
@@ -143,7 +143,7 @@ sequenceDiagram
 
 The verification **fails** at the capability check — `CapabilityVerifier.assertAuthorized()` is called during `verify()`, and without a valid capability, it throws `V4102`. The token is cryptographically valid but **unauthorized**.
 
-:::warning Authorization is checked during verification
+:::warning[Authorization is checked during verification]
 The signer can always *create* a signed token — the signing key doesn't know about capabilities. It's the **verifier** that enforces capabilities by walking the delegation chain during `verify()`. This means unauthorized tokens are rejected at verification time, not signing time.
 :::
 
@@ -163,7 +163,7 @@ Timeline:
 
 This applies transitively: if `admin-service`'s capability grant to `order-service` expires, then `order-worker`'s delegated capability also becomes invalid — even if `order-worker`'s own `validUntil` hasn't been reached yet. The entire chain must be valid at verification time.
 
-:::tip Rotate before expiry
+:::tip[Rotate before expiry]
 Plan capability renewals before expiration. Once a capability expires, every token signed under it will be rejected with `V4103` until a fresh capability is published.
 :::
 
@@ -205,7 +205,7 @@ flowchart TD
 
 ---
 
-:::info What's next?
+:::info[What's next?]
 Capabilities control **who** can sign. But what about the sessions themselves? What happens when a user opens 100 tabs, or an employee is fired mid-session? How do you prove a session is *still* valid — not just that it *was* valid when it was created?
 
 **[Chapter 6: Living Sessions — Liveness, Revocation & Quotas →](./session-management)**
