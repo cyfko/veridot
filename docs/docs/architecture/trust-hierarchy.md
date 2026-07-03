@@ -72,11 +72,12 @@ The `TrustRoot` is a `sealed interface` with exactly two permitted implementatio
 
 | Implementation | Use Case |
 |---|---|
-| `PublicKeyTrustRoot` | Resolves `issuer → PublicKey` locally (trust store, Vault KV, PEM file). Veridot verifies signatures in-process. |
-| `DelegatedTrustRoot` | Delegates signature verification to an external KMS/HSM (Vault Transit, AWS KMS, GCP KMS). The long-term private key never leaves the KMS boundary. |
+| `PublicKeyTrustRoot` | Resolves `issuer → PublicKey` locally (trust store, TAD Local Cache, PEM file). Veridot verifies signatures in-process. This is the **recommended production option** when paired with TAD. |
+| `DelegatedTrustRoot` | Delegates signature verification to an external KMS/HSM (e.g., Vault Transit). The signature is verified outside of the JVM process. |
 
-:::warning
-Never store long-term private keys in plain-text PEM files on local disks in production. Use `DelegatedTrustRoot` to sign envelopes using cloud KMS providers.
+:::warning Key Security & Operational Guidance
+1. **Never store long-term private keys in plain-text PEM files** on local disks in production. Use secure environment variables, vault agents, or local HSM-backed endpoints for signers.
+2. **Avoid direct Cloud KMS calls in DelegatedTrustRoot**: Direct synchronous calls to external cloud KMS APIs (such as AWS KMS or Azure Key Vault) on the verification path violate Protocol V4's offline-verification invariant and add runtime network dependencies. For distributed deployments, configure signers with local custody of their long-term private keys and distribute public keys via the **TAD (Trust Authority Directory)** cluster.
 :::
 
 ## Capability Delegation

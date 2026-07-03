@@ -49,6 +49,39 @@ graph TB
 **Writes go to the leader**, which replicates the entry to a majority of nodes before acknowledging. **Reads can be served by any node** (including followers), since the local RocksDB store on each node is updated via the deterministic Raft state machine.
 :::
 
+## Rationale: Why TAD over Alternatives?
+
+The design of the Trust Authority Directory (TAD) was chosen after evaluating several traditional key distribution and verification methods. Each alternative introduces architectural flaws or violates core constraints of the Veridot protocol:
+
+### 1. Why not Cloud KMS (AWS KMS, Google Cloud KMS, Azure Key Vault)?
+* **Violation of Key Custody Invariant**: Protocol V4 dictates that **the long-term private key must never leave the issuer's custody**. Cloud KMS systems generate and manage private keys internally. Under KMS custody, the issuer service does not own the key, but delegates cryptographic operations to the cloud, violating this trust boundaries principle.
+* **Network Latency and SPoF**: Querying a cloud KMS synchronously on the token verification path introduces 1–10ms network latency and turns the cloud provider into a single point of failure (SPoF), violating the offline-verification requirement.
+
+### 2. Why not Relational Databases (PostgreSQL, MySQL)?
+* **No Cryptographic Write Guarantees**: Databases are passive storage engines. They cannot natively validate the authenticity (`issuerSignature`) of public keys upon write. If database credentials or the database instance is compromised, an attacker can substitute public keys. In contrast, TAD validates signatures cryptographically before appending entries.
+* **Performance and Connections Overhead**: Querying SQL databases synchronously on cache misses is extremely slow compared to TAD's lightweight, in-memory/RocksDB lookup.
+
+### 3. Why not Redis / Hazelcast?
+* **Shared Network Cache vs. Local Cache**: Redis is a shared network hop. If Redis fails, all verifier instances fail. This does not allow true offline verification. Veridot's TAD is decoupled from the hot path using local RocksDB persistent caches on the verifier side.
+* **No Validation of Signatures**: Redis does not verify the signature of entries, exposing the cache to poisoning if the Redis network is breached.
+
+### 4. Why not Shared File Systems (NFS)?
+* **NFS Read Latency & Concurrency**: Read operations on shared mounts are slow and non-deterministic. NFS offers no native transactional concurrency control for key rotation updates.
+* **Security Vuln**: Any process with write access to the NFS mount can substitute public keys, violating the protocol's integrity requirement.
+
+### 5. Why not HTTP JWKS per service?
+* **Heavy Network Coupling**: Every verifier must know the URL of every publisher service. In a system with thousands of microservices, this creates a complex, fragile grid of network dependencies.
+
+### Summary Comparison Matrix
+
+| Criteria | TAD (Consensus) | Cloud KMS / HSM | Relational DB | Redis / Cache | Shared FS (NFS) | HTTP JWKS |
+|---|---|---|---|---|---|---|
+| **Protocol V4 Compatible** | ✅ Yes | ❌ No (Key custody) | ✅ Yes | ⚠️ Partial | ⚠️ Partial | ✅ Yes |
+| **Offline Verification** | ✅ Yes (with cache) | ❌ No | ✅ Yes (with cache) | ⚠️ Partial | ✅ Yes (with cache) | ✅ Yes (with cache) |
+| **Tamper Resistance** | ✅ High (`issuerSignature`) | ✅ High | ❌ Low (Credential leak) | ❌ Low | ❌ Low | ⚠️ Medium (TLS only) |
+| **No Network on Hot Path** | ✅ Yes | ❌ No (Direct call) | ✅ Yes | ❌ No (Network hop) | ⚠️ Partial | ✅ Yes |
+| **Zero SPoF** | ✅ Yes (Raft cluster) | ✅ Yes | ⚠️ Requires Replica | ✅ Yes | ❌ No | ❌ No |
+
 ## Component Breakdown
 
 TAD is structured as five Maven sub-modules under `veridot-trustroots`:
