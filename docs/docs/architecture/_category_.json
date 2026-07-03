@@ -1,0 +1,8 @@
+{
+  "label": "Architecture",
+  "position": 3,
+  "link": {
+    "type": "generated-index",
+    "description": "System architecture, security model, trust hierarchy, consistency guarantees, protocol evolution, and performance characteristics of the Veridot distributed token verification protocol."
+  }
+}
