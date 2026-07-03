@@ -18,7 +18,7 @@ graph LR
     Attacker["Attacker with<br/>broker write access"]
     Broker["Broker<br/>(Kafka / SQL)"]
     Verifier["Verifier<br/>Processor"]
-    TR["TrustRoot<br/>(KMS / HSM)"]
+    TR["TrustRoot<br/>(TAD / CachingTrustRoot)"]
 
     Attacker -->|"Injects forged<br/>KEY_EPOCH"| Broker
     Broker -->|"Delivers bytes"| Verifier
@@ -54,7 +54,7 @@ Veridot enforces fail-closed behavior in every failure scenario. There is no con
 ### TrustRoot Unavailable → Reject
 
 ```java
-// When KMS/HSM is unreachable, resolve() throws VeridotException
+// When TAD/TrustRoot is unreachable, resolve() throws VeridotException
 // The processor MUST reject — never fall back to accepting unverified entries
 try {
     TrustIdentity identity = trustRoot.resolve(envelope.issuer());
@@ -173,7 +173,7 @@ This protocol protects the integrity and ordering of state as distributed throug
 
 | Residual Risk | Explanation | Recommended Mitigation |
 |---|---|---|
-| **Compromise of a TrustRoot-resolvable private key** | Key custody is outside the protocol's scope. If an attacker obtains the long-term private key, they can produce valid entries. | Use HSM/KMS; never store keys in plaintext PEM files in production. Implement key rotation procedures. |
+| **Compromise of a TrustRoot-resolvable private key** | Key custody is outside the protocol's scope. If an attacker obtains the long-term private key, they can produce valid entries. | Use secure key storage (HSM, vault agents, or environment variables); never store keys in plaintext PEM files in production. Distribute public keys via the TAD cluster. Implement key rotation procedures. |
 | **Fencing authority unavailability** | If the fencing authority for a scope is unreachable, capacity-affecting mutations stall. This is a deliberate consistency-over-availability trade-off. | Deploy redundant fencing authorities; monitor for `FENCE_TOKEN_STALE` errors. |
 | **Resource exhaustion from unbounded entry volume** | The protocol does not define rate limits or storage quotas. | Apply rate limiting and storage quotas at the transport layer (Kafka quotas, SQL connection limits). |
 | **Clock drift beyond tolerance** | The protocol uses a fixed 5-minute clock drift tolerance for temporal validation. Services with greater drift will see spurious rejections. | Use NTP synchronization; monitor `V4203` errors for clock drift symptoms. |

@@ -121,7 +121,7 @@ KMS/HSM APIs must **NOT** be on the token verification hot path. Veridot calls `
 ```mermaid
 sequenceDiagram
     participant V as Verifier
-    participant TR as TrustRoot (KMS)
+    participant TR as TrustRoot (TAD / Cache)
     participant B as Broker
 
     V->>B: Get KEY_EPOCH entry

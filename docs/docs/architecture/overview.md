@@ -239,7 +239,7 @@ These principles are enforced structurally in the code, not by convention:
 ## Next Steps
 
 - [Security Model](./security-model.md) — threat model, fail-closed semantics, residual risks
-- [Trust Hierarchy](./trust-hierarchy.md) — KMS root keys, capabilities, delegation chains
+- [Trust Hierarchy](./trust-hierarchy.md) — Root trust hierarchy, capabilities, delegation chains
 - [Distributed Consistency](./distributed-consistency.md) — monotonic versions, fencing, reconciliation
 - [Protocol Evolution](./protocol-evolution.md) — V1 through V4 timeline and rationale
 - [Performance](./performance.md) — latency characteristics and tuning guidance

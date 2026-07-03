@@ -21,6 +21,10 @@ We introduce the `TrustAnchor` sealed interface to establish an out-of-band root
 - Verifiers resolve the issuer's long-term public key through the `TrustAnchor` (which connects to a secure KMS/HSM or local directory).
 - If the signature cannot be validated using the resolved public key, the entry is rejected.
 
+:::note Historical Context
+This ADR was written before the Trust Authority Directory (TAD) was designed. In the current architecture, the recommended production backend for TrustRoot is the TAD cluster with `CachingTrustRoot`. See [TAD Architecture](../tad-architecture.md).
+:::
+
 ## Consequences
 
 - Compressing or compromising the broker no longer allows forging tokens.

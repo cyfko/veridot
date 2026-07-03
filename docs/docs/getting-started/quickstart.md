@@ -76,7 +76,7 @@ import io.github.cyfko.veridot.core.TrustIdentity;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 
-// Generate a long-term Ed25519 key pair (in production, load from KMS/vault)
+// Generate a long-term Ed25519 key pair (for quickstart only — see production note below)
 KeyPairGenerator kpg = KeyPairGenerator.getInstance("Ed25519");
 KeyPair longTermKeyPair = kpg.generateKeyPair();
 
@@ -91,8 +91,10 @@ PublicKeyTrustRoot trustRoot = issuer -> {
 };
 ```
 
-:::warning Production Keys
-**Do NOT generate keys in-process for production.** Load your long-term private key from a KMS (AWS KMS, HashiCorp Vault, Azure Key Vault) or a hardware security module. The example above is for development only.
+:::warning Single-JVM Limitation
+This example works because the signer and verifier share the **same JVM** and the same `longTermKeyPair` variable. In a real distributed deployment, the verifier service runs in a **different JVM** and needs a way to obtain the signer's long-term public key — it cannot access a local variable from another process.
+
+This is exactly the problem the **Trust Authority Directory (TAD)** solves: it distributes long-term public keys across services via a Raft-replicated cluster. In production, replace the lambda above with a `CachingTrustRoot` connected to a `TadTrustRootProvider`. See the [TrustRoot Setup Guide](../guides/trustroot-setup.md) and [veridot-trustroots module](../modules/veridot-trustroots) for details.
 :::
 
 ## Step 4: Create GenericSignerVerifier
@@ -235,7 +237,7 @@ public class VeridotQuickstart {
 
         try (var broker = new KafkaBroker(kafkaProps)) {
 
-            // 2. Generate long-term key pair (use KMS in production!)
+            // 2. Generate long-term key pair (single-JVM quickstart only)
             KeyPairGenerator kpg = KeyPairGenerator.getInstance("Ed25519");
             KeyPair longTermKeyPair = kpg.generateKeyPair();
             String issuerId = "auth-service-1";

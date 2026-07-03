@@ -333,11 +333,11 @@ private CachedKeyEntry promoteToL1(TrustEntry entry) {
 The `compute()` call ensures that an older key version can never overwrite a newer one in L1. This prevents race conditions during concurrent async refreshes.
 :::
 
-## Performance: Why L1/L2 Eliminates KMS as a SPoF
+## Performance: Why L1/L2 Eliminates External Dependencies as a SPoF
 
 | Scenario | Without CachingTrustRoot | With CachingTrustRoot |
 |----------|:------------------------:|:---------------------:|
-| Key resolution | Network call to KMS/TAD per verify | ~100ns L1 hit |
+| Key resolution | Network call to TAD per verify (without cache) | ~100ns L1 hit |
 | TAD cluster down | ❌ All verification fails | ✅ Serves from L1/L2 for hours |
 | 100K verifications/sec | 100K network calls/sec | 0 network calls (all L1) |
 | JVM restart + TAD down | ❌ Cannot start | ✅ Warm start from L2 |
