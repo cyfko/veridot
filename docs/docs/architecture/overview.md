@@ -9,7 +9,78 @@ sidebar_position: 1
 
 Veridot is a distributed token verification protocol that solves the authentication trilemma: **sub-millisecond verification**, **instant revocation**, and **zero shared secrets** between services. This page describes the system architecture, its internal components, and how data flows through the signing and verification hot paths.
 
-## System Diagram
+## Global Event-Driven & Trust Architecture
+
+In a production event-driven microservices environment, Veridot separates business payload delivery, cryptographic metadata propagation, and long-term trust resolution into three distinct, decoupled paths:
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│                                   TAD Cluster                                    │
+│                                                                                  │
+│      ┌───────────┐           ┌───────────┐           ┌───────────┐               │
+│      │   TAD-1   │◄─────────►│   TAD-2   │◄─────────►│   TAD-3   │  (Raft)       │
+│      └─────┬─────┘           └─────┬─────┘           └─────┬─────┘               │
+│            │                       │                       │                     │
+│            └───────────────┬───────┴───────────────────────┘                     │
+│                            ▼                                                     │
+│                    Distributed Store                                             │
+│               (clés publiques + métadonnées)                                     │
+└────────────────────────────▲───────────────────────────────┬─────────────────────┘
+                             │                               │
+    mTLS Publication (HTTPS) │                               │ HTTPS/2 Resolution
+                             │                               │ (Cache Miss Path)
+              ┌──────────────┴───────────────┐               │
+              │  Publisher (Orders Service)  │               │
+              │                              │               │
+              │   ┌──────────────────────┐   │               │
+              │   │   🔐 LTK Private     │   │               │
+              │   └──────────────────────┘   │               │
+              │   ┌──────────────────────┐   │               │
+              │   │   🔑 Ephemeral Key   │   │               │
+              │   └──────────┬───────────┘   │               │
+              │              │ sign          │               │
+              │              ▼               │               │
+              │   ┌──────────────────────┐   │               │
+              │   │   Application Logic  │   │               │
+              │   └──────┬────────┬──────┘   │               │
+              └──────────┼────────┼──────────┘               │
+                         │        │                          ▼
+          Business Event │        │ Async metadata     ┌─────┴─────────────────────┐
+        (OrderCreated +  │        │ (KEY_EPOCH,        │ Verifier (Shipping Svc)   │
+             JWT Token)  │        │  LIVENESS, etc.)   │                           │
+                         │        │                    │   ┌───────────────────┐   │
+                         ▼        ▼                    │   │ TadTrustRootProv  │◄──┘
+              ┌──────────────────────────┐             │   └─────────┬─────────┘   │
+              │   Message Broker (Kafka) │             │             │             │
+              │                          │             │   ┌─────────▼─────────┐   │
+              │  ┌────────────────────┐  │             │   │ CachingTrustRoot  │   │
+              │  │  orders-topic      │  │             │   │   (L1/L2 Cache)   │   │
+              │  └─────────┬──────────┘  │             │   └─────────┬─────────┘   │
+              │            │             │             │             │ resolve     │
+              │  ┌─────────┼──────────┐  │             │   ┌─────────▼─────────┐   │
+              │  │  veridot-topic     │  │             │   │ Veridot Verifier  │   │
+              │  └─────────┼──────────┘  │             │   └─────────▲─────────┘   │
+              └────────────┼─────────────┘             │             │               │
+                           │                           │   ┌─────────┴─────────┐   │
+                           │                           │   │  Local RocksDB    │   │
+            Consume Event  │                           │   └─────────▲─────────┘   │
+                           │                           │             │ async sync  │
+                           │                           │             │ from topic  │
+                           └───────────────────────────┼─────────────┘             │
+                                                       │                           │
+                                                       │   ┌───────────────────┐   │
+                                                       │   │ Application Logic │   │
+                                                       │   └───────────────────┘   │
+                                                       └───────────────────────────┘
+```
+
+### Key Architectural Characteristics:
+
+1. **Separated Kafka Topics**: The message broker manages two logically isolated topics. The business topic (e.g., `orders-topic`) carries the application events along with the JWT. The Veridot metadata topic (e.g., `veridot-entries-topic`) is used exclusively for propagating canonical binary envelopes containing ephemeral public keys and liveness updates.
+2. **Decoupled Async Flows**: Signers generate an **ephemeral Ed25519 key pair** per session. They sign the JWT with the private key and immediately publish the public key metadata to the Veridot topic. The verifier service processes incoming business events and validates the token locally against its RocksDB instance, which is synchronized asynchronously by a background thread polling the Veridot topic.
+3. **Out-of-Band Trust Root**: Ephemeral keys are verified by resolving the publisher's long-term public key (LTK) from the **Trust Authority Directory (TAD)** cluster, which maintains consistent records across multiple nodes using Raft consensus. To protect the critical verification path from network latency, the verifier uses `CachingTrustRoot` (L1 memory cache and L2 RocksDB persistent cache). The TAD is only queried on cache misses or during background revalidation cycles.
+
+## Component System Diagram
 
 The following diagram shows a complete Veridot deployment with two services communicating through a broker:
 
