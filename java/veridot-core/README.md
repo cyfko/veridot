@@ -126,58 +126,58 @@ Every key announcement carries a long-term signature (typically Ed25519 or RSA-P
 
 `TrustRoot` resolves a signer ID to a `TrustIdentity` record which encapsulates both the signer's public key and its root status (`isRoot`). This unified resolution avoids custom bypasses and ensures security by default.
 
-### Option A — `PublicKeyTrustRoot` (you load the public key, Veridot verifies)
+### Option A — `PublicKeyTrustRoot` (Recommended with TAD)
 
-Best for: public keys stored in files, Vault KV, ConfigMaps, or any key-value store.
-
-> [!WARNING]
-> **NOT FOR PRODUCTION**: Loading long-term trust root public keys directly from local files is not recommended for production environments. Consider using a KMS or a secure configuration provider.
+Resolves `signerId` to a `PublicKey` directly. In production, this should be paired with the **Trust Authority Directory (TAD)** consensus cluster and `CachingTrustRoot` (provided in the `veridot-trustroots` package) to enable high-availability, offline-first resolution.
 
 ```java
 TrustRoot trust = new PublicKeyTrustRoot() {
     @Override
     public TrustIdentity resolve(String signerId) {
-        try {
-            // Load the long-term public key for this signerId from your trust store.
-            byte[] pem = Files.readAllBytes(Paths.get("/etc/veridot/trust/" + signerId + ".pub.pem"));
-            PublicKey key = parsePemPublicKey(pem);
-            boolean isRoot = "root-signer-id".equals(signerId); // Define system trust anchors
-            return new TrustIdentity(key, isRoot);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
+        // Resolve public key (e.g. from local CachingTrustRoot or TAD cluster client)
+        PublicKey key = trustProvider.getKey(signerId);
+        boolean isRoot = "root-signer-id".equals(signerId);
+        return new TrustIdentity(key, isRoot);
     }
 };
 ```
 
-### Option B — `DelegatedTrustRoot` (you delegate verification to a KMS)
+### Option B — `DelegatedTrustRoot` (Delegate to HSM/KMS)
 
-Best for: Vault Transit Engine, AWS KMS, Google Cloud KMS, Azure Key Vault, HSMs.
-The long-term private key never leaves the KMS.
+Delegates cryptographic signature verification to an external service (such as Vault Transit Engine or a secure HSM).
+
+:::warning Cloud KMS & Protocol Conflicts
+Using cloud KMS providers (such as AWS KMS, Google Cloud KMS, or Azure Key Vault) directly for verification introduces architectural trade-offs:
+1. **Offline Verification Violation**: Querying external cloud KMS APIs synchronously on the verification path adds 1–10ms latency and creates a runtime SPoF.
+2. **Key Custody Violation**: Protocol V4 requires that **the long-term private key must never leave the issuer's boundary**. Cloud KMS systems generate and manage private keys inside the cloud provider's boundary, violating this custody principle unless used purely as a public-key directory.
+
+For distributed production deployments, it is highly recommended to use local keys for signing and distribute public keys using the **TAD cluster**.
+:::
 
 ```java
 DelegatedTrustRoot trust = new DelegatedTrustRoot() {
     @Override
     public TrustIdentity resolve(String signerId) {
-        // If your KMS also manages key resolution, return the key and root status
-        return new TrustIdentity(mockPublicKey, "root-signer-id".equals(signerId));
+        // Retrieve public key for capability validation
+        PublicKey key = vaultTransit.getPublicKey(signerId);
+        return new TrustIdentity(key, "root-signer-id".equals(signerId));
     }
 
     @Override
     public boolean verifySignature(String issuer, byte[] data, byte[] signature, Algorithm sigAlg) {
-        // Your KMS verifies the signature. Return true if valid, false otherwise.
-        return vaultTransit.verify(issuer, data, signature, sigAlg);
+        // Delegate verification to HSM/KMS
+        return vaultTransit.verify(issuer, data, signature, sigAlg.getJcaSignatureAlg());
     }
 };
 ```
 
 ### KMS / TrustRoot High Availability (Not a SPoF)
 
-Veridot is designed so that the KMS or the central `TrustRoot` provider is **completely decoupled from the request-processing hot path**, eliminating it as a Single Point of Failure (SPoF):
+Veridot is designed so that the TAD cluster or the central `TrustRoot` provider is **completely decoupled from the request-processing hot path**, eliminating it as a Single Point of Failure (SPoF):
 
 - **Hot path isolation**: When verifying tokens (JWTs), edge verifiers only use the **ephemeral public keys** cached locally in memory or RocksDB. The verifier does NOT query the KMS or TrustRoot on each request.
-- **Control plane only**: The TrustRoot/KMS is only queried when a new ephemeral key is rotated (e.g. once every 24 hours per signer) or when a new capability is presented.
-- **Resilience to downtime**: If the KMS/TrustRoot goes down, the verifiers continue to verify incoming tokens using the cached ephemeral keys without any interruption or latency increase. Only key rotation or capability changes will be delayed until the KMS recovers.
+- **Control plane only**: The TrustRoot/TAD is only queried when a new ephemeral key is rotated (e.g. once every 24 hours per signer) or when a new capability is presented.
+- **Resilience to downtime**: If the TAD cluster goes down, the verifiers continue to verify incoming tokens using the cached ephemeral keys without any interruption or latency increase. Only key rotation or capability changes will be delayed until TAD recovers.
 
 ---
 
