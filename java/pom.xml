@@ -33,6 +33,7 @@
         <module>veridot-core</module>
         <module>veridot-kafka</module>
         <module>veridot-databases</module>
+        <module>veridot-trustroots</module>
         <module>veridot-tests</module>
     </modules>
 
