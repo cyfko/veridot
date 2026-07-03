@@ -1,0 +1,8 @@
+{
+  "label": "🔐 TrustRoots Ecosystem",
+  "position": 4,
+  "link": {
+    "type": "generated-index",
+    "description": "Production-grade distributed trust key management for Veridot microservices."
+  }
+}

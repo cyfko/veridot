@@ -1,4 +1,0 @@
-User-agent: *
-Allow: /
-
-Sitemap: https://cyfko.github.io/veridot/sitemap.xml
