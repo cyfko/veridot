@@ -163,22 +163,32 @@ It's Black Friday. ShopFlow is processing 10,000 orders per minute. The IdP is u
 The auth server isn't just another microservice — it's a **centralized chokepoint** that every request must pass through.
 :::
 
-```mermaid
-graph TB
-    subgraph "Normal Operation"
-        direction LR
-        OS1["order-service"] -->|"verify"| IdP1["Auth Server ✅"]
-        SS1["shipping-service"] -->|"verify"| IdP1
-        AS1["admin-service"] -->|"verify"| IdP1
-    end
+```
+  ┌─ Normal Operation ──────────────────────────────────────┐
+  │                                                         │
+  │  ┌────────────────┐                                     │
+  │  │ order-service   │──verify──▶┌──────────────────────┐ │
+  │  └────────────────┘            │                      │ │
+  │  ┌────────────────┐            │  Auth Server  ✅     │ │
+  │  │shipping-service │──verify──▶│                      │ │
+  │  └────────────────┘            │                      │ │
+  │  ┌────────────────┐            └──────────────────────┘ │
+  │  │ admin-service   │──verify──▶        ▲                │
+  │  └────────────────┘                    │                │
+  └─────────────────────────────────────────────────────────┘
 
-    subgraph "Auth Server Down"
-        direction LR
-        OS2["order-service"] -->|"verify"| IdP2["Auth Server 💀"]
-        SS2["shipping-service"] -->|"verify"| IdP2
-        AS2["admin-service"] -->|"verify"| IdP2
-    end
-
+  ┌─ Auth Server Down ──────────────────────────────────────┐
+  │                                                         │
+  │  ┌────────────────┐                                     │
+  │  │ order-service   │──verify──▶┌──────────────────────┐ │
+  │  └────────────────┘            │                      │ │
+  │  ┌────────────────┐            │  Auth Server  💀     │ │
+  │  │shipping-service │──verify──▶│                      │ │
+  │  └────────────────┘            │                      │ │
+  │  ┌────────────────┐            └──────────────────────┘ │
+  │  │ admin-service   │──verify──▶        ▲                │
+  │  └────────────────┘                    │                │
+  └─────────────────────────────────────────────────────────┘
 ```
 
 Even with replicas and load balancers, the network round-trip adds latency to *every single verification*. At ShopFlow's scale, those milliseconds add up — and the dependency on network availability never goes away.

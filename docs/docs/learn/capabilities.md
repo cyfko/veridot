@@ -24,11 +24,16 @@ Every capability chain starts with a **root identity** — an identity whose lon
 
 In ShopFlow, `admin-service` is registered in the TrustRoot. That makes it a root identity:
 
-```mermaid
-graph LR
-    TR["TrustRoot"] -->|"resolves"| ADMIN["admin-service<br/>(root identity)"]
-    ADMIN -.- NOTE["✅ Authorized for any scope<br/>No CAPABILITY entry needed"]
-
+```
+┌───────────┐  resolves   ┌─────────────────────┐
+│ TrustRoot ├────────────▶│    admin-service    │
+└───────────┘             │   (root identity)   │
+                          └──────────┬──────────┘
+                                     │
+                          ┌──────────┴──────────────────┐
+                          │ ✅ Authorized for any scope │
+                          │ No CAPABILITY entry needed  │
+                          └─────────────────────────────┘
 ```
 
 :::tip[Root identity ≠ root access to your application]
@@ -80,12 +85,30 @@ Capabilities control **who can publish entries** (sign tokens, issue liveness, e
 
 Sometimes a service needs to delegate part of its authority to a sub-service. In ShopFlow, `order-service` runs a dedicated `order-worker` for EU orders. Rather than having `admin-service` directly grant every sub-service, `order-service` can **delegate**:
 
-```mermaid
-graph TD
-    TR["TrustRoot"] -->|"resolves"| ADMIN["admin-service<br/>(root identity)"]
-    ADMIN -->|"CAPABILITY<br/>scope: group:orders:*<br/>maxDelegationDepth: 1"| ORDER["order-service"]
-    ORDER -->|"CAPABILITY<br/>scope: group:orders:eu:*<br/>maxDelegationDepth: 0"| WORKER["order-worker"]
-
+```
+        ┌───────────┐
+        │ TrustRoot │
+        └─────┬─────┘
+              │ resolves
+              ▼
+     ┌──────────────────┐
+     │  admin-service   │
+     │  (root identity) │
+     └────────┬─────────┘
+              │ CAPABILITY
+              │ scope: group:orders:*
+              │ maxDelegationDepth: 1
+              ▼
+     ┌──────────────────┐
+     │  order-service   │
+     └────────┬─────────┘
+              │ CAPABILITY
+              │ scope: group:orders:eu:*
+              │ maxDelegationDepth: 0
+              ▼
+     ┌──────────────────┐
+     │  order-worker    │
+     └──────────────────┘
 ```
 
 Here's how the delegation math works:
@@ -102,13 +125,34 @@ No! With `maxDelegationDepth: 0`, `order-worker` **cannot further delegate** to 
 
 Let's correct the ShopFlow example. `admin-service` grants `order-service` with `maxDelegationDepth: 1`, meaning `order-service` can sub-delegate one hop. `order-service` then grants `order-worker` with `maxDelegationDepth: 0`, meaning `order-worker` can operate but cannot sub-delegate further:
 
-```mermaid
-graph TD
-    TR["TrustRoot"] -->|"resolves"| ADMIN["admin-service<br/>(root identity)"]
-    ADMIN -->|"grants<br/>maxDelegationDepth: 1"| ORDER["order-service<br/>✅ can sub-delegate 1 hop"]
-    ORDER -->|"grants<br/>maxDelegationDepth: 0"| WORKER["order-worker<br/>✅ authorized, cannot sub-delegate"]
-    WORKER -.-x|"❌ depth exceeded"| SUB["sub-worker"]
-
+```
+        ┌───────────┐
+        │ TrustRoot │
+        └─────┬─────┘
+              │ resolves
+              ▼
+     ┌────────────────────┐
+     │   admin-service    │
+     │   (root identity)  │
+     └─────────┬──────────┘
+               │ grants
+               │ maxDelegationDepth: 1
+               ▼
+     ┌─────────────────────────────────┐
+     │ order-service                   │
+     │ ✅ can sub-delegate 1 hop       │
+     └────────────────┬────────────────┘
+                      │ grants
+                      │ maxDelegationDepth: 0
+                      ▼
+     ┌──────────────────────────────────────┐
+     │ order-worker                         │
+     │ ✅ authorized, cannot sub-delegate   │
+     └────────────────┬─────────────────────┘
+                      ╳ ❌ depth exceeded
+               ┌──────────────┐
+               │  sub-worker  │
+               └──────────────┘
 ```
 
 ## What Happens Without a Capability
@@ -160,20 +204,43 @@ Plan capability renewals before expiration. Once a capability expires, every tok
 
 When `shipping-service` calls `verify()` on a token signed by `order-worker`, here's what happens inside `CapabilityVerifier`:
 
-```mermaid
-flowchart TD
-    START["verify(token)"] --> RESOLVE["Resolve order-worker's CAPABILITY"]
-    RESOLVE --> EXISTS{{"CAPABILITY exists<br/>for order-worker?"}}
-    EXISTS -->|No| V4102["❌ V4102<br/>CAPABILITY_NOT_FOUND"]
-    EXISTS -->|Yes| EXPIRED{{"now < validUntil?"}}
-    EXPIRED -->|No| V4103["❌ V4103<br/>CAPABILITY_EXPIRED"]
-    EXPIRED -->|Yes| SCOPE{{"scopePatterns cover<br/>target scope?"}}
-    SCOPE -->|No| V4102b["❌ V4102<br/>CAPABILITY_NOT_FOUND"]
-    SCOPE -->|Yes| CHAIN["Walk chain → order-service → admin-service"]
-    CHAIN --> ROOT{{"Chain terminates at<br/>root identity?"}}
-    ROOT -->|No| V4104["❌ V4104<br/>DELEGATION_DEPTH_EXCEEDED"]
-    ROOT -->|Yes| OK["✅ Authorized"]
-
+```
+┌──────────────────┐
+│  verify(token)   │
+└────────┬─────────┘
+         ▼
+┌──────────────────────────────────┐
+│ Resolve order-worker's CAPABILITY│
+└────────┬─────────────────────────┘
+         ▼
+    ┌──────────────────────┐
+    │ CAPABILITY exists    │──── No ──▶ ❌ V4102 CAPABILITY_NOT_FOUND
+    │ for order-worker?    │
+    └──────────┬───────────┘
+          Yes  │
+               ▼
+    ┌──────────────────────┐
+    │  now < validUntil?   │──── No ──▶ ❌ V4103 CAPABILITY_EXPIRED
+    └──────────┬───────────┘
+          Yes  │
+               ▼
+    ┌──────────────────────┐
+    │ scopePatterns cover  │──── No ──▶ ❌ V4102 CAPABILITY_NOT_FOUND
+    │ target scope?        │
+    └──────────┬───────────┘
+          Yes  │
+               ▼
+┌───────────────────────────────────────────┐
+│ Walk chain → order-service → admin-service│
+└────────┬──────────────────────────────────┘
+         ▼
+    ┌──────────────────────┐
+    │ Chain terminates at  │──── No ──▶ ❌ V4104 DELEGATION_DEPTH_EXCEEDED
+    │ root identity?       │
+    └──────────┬───────────┘
+          Yes  │
+               ▼
+        ✅ Authorized
 ```
 
 ## Summary
