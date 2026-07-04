@@ -24,23 +24,6 @@ Every microservice authentication strategy forces you to choose two out of three
 
 This isn't a bug in any particular library. It's a structural constraint. Pick any row: one column is always ❌.
 
-```mermaid
-graph TD
-    T["The Authentication Trilemma"]
-    A["No shared secret"]
-    B["Instant revocation"]
-    C["No network call"]
-
-    T --- A
-    T --- B
-    T --- C
-
-    A -.-|"❌ HMAC"| B
-    B -.-|"❌ RSA JWT"| C
-    C -.-|"❌ IdP"| A
-
-```
-
 Let's make this concrete.
 
 ---
@@ -49,19 +32,9 @@ Let's make this concrete.
 
 ShopFlow is an e-commerce platform built on event-driven microservices. Three services are central to the authentication story:
 
-```mermaid
-graph LR
-    subgraph "ShopFlow"
-        OS["order-service<br/>Creates orders, signs tokens"]
-        SS["shipping-service<br/>Processes shipments, verifies tokens"]
-        AS["admin-service<br/>Manages permissions, revokes sessions"]
-    end
-
-    OS -->|"JWT"| SS
-    AS -->|"revoke"| OS
-    AS -->|"revoke"| SS
-
-```
+- **`order-service`** — creates orders, signs tokens
+- **`shipping-service`** — processes shipments, verifies tokens
+- **`admin-service`** — manages permissions, revokes sessions
 
 A customer places an order. Here's what happens:
 
