@@ -20,29 +20,28 @@ Veridot doesn't invent new cryptography. It restructures *how* cryptographic mat
 
 Veridot uses a 2-level key hierarchy. Each level serves a distinct purpose, and the two never cross paths:
 
-```mermaid
-graph TB
-    subgraph "Level 1 — Long-Term Keys"
-        LT["Long-Term Key Pair<br/>(Ed25519 / RSA)"]
-        TR["TrustRoot / TAD<br/>(out-of-band distribution)"]
-    end
+```
+  Level 1 — Long-Term Keys            Level 2 — Ephemeral Keys
+  ─────────────────────────            ─────────────────────────
 
-    subgraph "Level 2 — Ephemeral Keys"
-        EK["Ephemeral Key Pair<br/>(Ed25519, auto-generated)"]
-        KRS["KeyRotationService<br/>(periodic rotation)"]
-    end
-
-    subgraph "What They Sign"
-        ENV["Protocol Envelopes<br/>(KEY_EPOCH, LIVENESS, CONFIG)"]
-        JWT["JWT Tokens<br/>(the actual bearer token)"]
-    end
-
-    TR -->|"resolves issuer →<br/>public key"| LT
-    LT -->|"signs"| ENV
-    KRS -->|"generates"| EK
-    EK -->|"signs"| JWT
-    LT -->|"vouches for"| EK
-
+  ┌──────────────────────┐            ┌──────────────────────┐
+  │   TrustRoot / TAD    │            │  KeyRotationService  │
+  │ (out-of-band distrib)│            │ (periodic rotation)  │
+  └──────────┬───────────┘            └──────────┬───────────┘
+             │ resolves issuer                   │ generates
+             │ → public key                      │
+             ▼                                   ▼
+  ┌──────────────────────┐  vouches   ┌──────────────────────┐
+  │  Long-Term Key Pair  │──────────▶ │  Ephemeral Key Pair  │
+  │  (Ed25519 / RSA)     │    for     │  (Ed25519, auto-gen) │
+  └──────────┬───────────┘            └──────────┬───────────┘
+             │ signs                             │ signs
+             ▼                                   ▼
+  ┌──────────────────────┐            ┌──────────────────────┐
+  │  Protocol Envelopes  │            │     JWT Tokens       │
+  │ (KEY_EPOCH, LIVENESS │            │ (the actual bearer   │
+  │  CONFIG, CAPABILITY) │            │  token)              │
+  └──────────────────────┘            └──────────────────────┘
 ```
 
 ### Level 1: Long-Term Keys
@@ -104,20 +103,23 @@ This is where the "no network call" property comes from.
 
 Every verifier node maintains a **local RocksDB cache** of the envelopes it has consumed from the broker. When a `verify()` call arrives, the verifier reads the `KEY_EPOCH` and `LIVENESS` entries **from local disk** — no network round-trip, no call to an auth server, no dependency on any remote service.
 
-```mermaid
-graph LR
-    subgraph "Verifier Node"
-        V["verify(token)"]
-        DB["Local RocksDB<br/>< 1ms reads"]
-    end
-
-    subgraph "Broker"
-        K["Kafka / SQL"]
-    end
-
-    K -->|"async<br/>background sync"| DB
-    V -->|"local read<br/>no network"| DB
-
+```
+  ┌─────────────────────────────────────────────────────┐
+  │                   Verifier Node                     │
+  │                                                     │
+  │  ┌────────────────┐   local read    ┌─────────────┐ │
+  │  │ verify(token)  │───(no network)─▶│ Local       │ │
+  │  └────────────────┘                 │ RocksDB     │ │
+  │                                     │ (< 1ms)     │ │
+  │                                     └──────┬──────┘ │
+  └────────────────────────────────────────────┼────────┘
+                                               │
+                                    async background sync
+                                               │
+                                    ┌──────────┴──────────┐
+                                    │    Kafka / SQL      │
+                                    │      (Broker)       │
+                                    └─────────────────────┘
 ```
 
 The key properties:
@@ -156,18 +158,41 @@ A session is valid **if and only if**:
 
 **Any failure at any step — including "no entry found" — produces rejection.** There is no distinction between "revoked," "expired," and "missing." Silence is rejection.
 
-```mermaid
-graph TD
-    Start["verify() called"] --> HasLiveness{"LIVENESS<br/>entry exists?"}
-    HasLiveness -->|"No"| Reject1["❌ REJECT<br/>No proof of life"]
-    HasLiveness -->|"Yes"| SigValid{"Signature<br/>valid?"}
-    SigValid -->|"No"| Reject2["❌ REJECT<br/>Invalid attestation"]
-    SigValid -->|"Yes"| IsActive{"Status =<br/>ACTIVE?"}
-    IsActive -->|"No (REVOKED)"| Reject3["❌ REJECT<br/>Session revoked"]
-    IsActive -->|"Yes"| IsFresh{"now <<br/>validUntil?"}
-    IsFresh -->|"No"| Reject4["❌ REJECT<br/>Stale attestation"]
-    IsFresh -->|"Yes"| Accept["✅ ACCEPT<br/>Session is live"]
-
+```
+                  ┌──────────────────┐
+                  │  verify() called │
+                  └────────┬─────────┘
+                           ▼
+                 ┌───────────────────┐
+                 │ LIVENESS entry    │
+                 │    exists?        │
+                 └──┬────────────┬───┘
+              No    │            │  Yes
+       ┌────────────┘            └──────────┐
+       ▼                                    ▼
+ ┌─────────────┐                  ┌───────────────────┐
+ │ ❌ REJECT   │                  │ Signature valid?  │
+ │ No proof    │                  └─┬─────────────┬───┘
+ │ of life     │               No   │             │  Yes
+ └─────────────┘        ┌───────────┘             └──────────┐
+                        ▼                                    ▼
+                  ┌─────────────┐                  ┌───────────────────┐
+                  │ ❌ REJECT   │                  │ Status = ACTIVE?  │
+                  │ Invalid     │                  └──┬─────────────┬──┘
+                  │ attestation │           No(REV)   │             │  Yes
+                  └─────────────┘        ┌────────────┘             └────────┐
+                                         ▼                                   ▼
+                                   ┌─────────────┐                ┌──────────────────┐
+                                   │ ❌ REJECT   │                │ now < validUntil?│
+                                   │ Session     │                └──┬────────────┬──┘
+                                   │ revoked     │             No    │            │  Yes
+                                   └─────────────┘      ┌────────────┘            └─────────┐
+                                                        ▼                                   ▼
+                                                   ┌─────────────┐                ┌─────────────┐
+                                                   │ ❌ REJECT   │                │ ✅ ACCEPT   │
+                                                   │ Stale       │                │ Session     │
+                                                   │ attestation │                │ is live     │
+                                                   └─────────────┘                └─────────────┘
 ```
 
 The signing service maintains liveness by publishing fresh `LIVENESS(ACTIVE)` attestations on a periodic renewal loop. If the signer crashes, the attestations stop — and verifiers automatically start rejecting after the freshness window expires.
@@ -274,22 +299,19 @@ Let's revisit the three properties:
 | **No network call on verify** | The local RocksDB cache contains all the cryptographic material needed. Verification is a local disk read. The broker sync runs in the background, independently. |
 | **Instant revocation** | `LIVENESS(REVOKED)` propagates through the broker and lands in the local cache within seconds. No token TTL to wait out. No revocation list to poll. |
 
-```mermaid
-graph LR
-    subgraph "Traditional Systems"
-        direction TB
-        T1["HMAC<br/>❌ Shared secret"]
-        T2["RSA JWT<br/>❌ No revocation"]
-        T3["IdP<br/>❌ Network call"]
-    end
-
-    subgraph "Veridot"
-        direction TB
-        V1["Asymmetric keys<br/>✅ No shared secret"]
-        V2["LIVENESS protocol<br/>✅ Instant revocation"]
-        V3["Local RocksDB cache<br/>✅ No network call"]
-    end
-
+```
+  ┌───────────────────────┐          ┌────────────────────────────┐
+  │   Traditional Systems │          │          Veridot           │
+  ├───────────────────────┤          ├────────────────────────────┤
+  │ HMAC                  │          │ Asymmetric keys            │
+  │   ❌ Shared secret    │          │   ✅ No shared secret      │
+  │                       │          │                            │
+  │ RSA JWT               │          │ LIVENESS protocol          │
+  │   ❌ No revocation    │          │   ✅ Instant revocation    │
+  │                       │          │                            │
+  │ IdP                   │          │ Local RocksDB cache        │
+  │   ❌ Network call     │          │   ✅ No network call       │
+  └───────────────────────┘          └────────────────────────────┘
 ```
 
 The trick isn't inventing new cryptography. It's **restructuring the information flow**: trust is established out-of-band (TrustRoot/TAD), tokens are signed with ephemeral keys (forward secrecy), metadata propagates asynchronously (broker), and verification happens locally (RocksDB). Each concern flows through an independent path.
@@ -307,36 +329,55 @@ The broker connects them asynchronously, but neither depends on the other synchr
 
 Here's the full architecture with all components and their relationships:
 
-```mermaid
-graph TB
-    subgraph "Trust Layer (out-of-band)"
-        TAD["TAD Cluster<br/>(Raft-replicated)"]
-        TR["CachingTrustRoot<br/>(L1 memory + L2 RocksDB)"]
-    end
-
-    subgraph "Signing Service"
-        SIG["GenericSignerVerifier"]
-        KRS["KeyRotationService"]
-        LTK["Long-Term Private Key"]
-    end
-
-    subgraph "Broker Layer"
-        BRK["Kafka / SQL"]
-    end
-
-    subgraph "Verifying Service"
-        VER["GenericSignerVerifier"]
-        CACHE["Local RocksDB Cache"]
-    end
-
-    TAD -->|"issuer → public key"| TR
-    TR -->|"trust resolution"| VER
-    LTK -->|"signs envelopes"| SIG
-    KRS -->|"ephemeral keys"| SIG
-    SIG -->|"KEY_EPOCH +<br/>LIVENESS"| BRK
-    BRK -->|"async sync"| CACHE
-    CACHE -->|"< 1ms read"| VER
-
+```
+  ┌──────────────────────────────────┐
+  │    Trust Layer (out-of-band)     │
+  │                                  │
+  │  ┌──────────────┐                │
+  │  │ TAD Cluster  │                │
+  │  │ (Raft-repl.) │                │
+  │  └──────┬───────┘                │
+  │         │ issuer → public key    │
+  │         ▼                        │
+  │  ┌──────────────────────┐        │
+  │  │ CachingTrustRoot     │        │
+  │  │ (L1 mem + L2 RocksDB)│        │
+  │  └──────────┬───────────┘        │
+  └─────────────┼────────────────────┘
+                │ trust resolution
+                │
+  ┌─────────────┼───────────────────────────────────────────────┐
+  │             │                  Verifying Service            │
+  │             ▼                                               │
+  │  ┌───────────────────────┐  < 1ms read  ┌─────────────────┐ │
+  │  │ GenericSignerVerifier │◀─────────────│ Local RocksDB   │ │
+  │  └───────────────────────┘              │ Cache           │ │
+  │                                         └────────┬────────┘ │
+  └──────────────────────────────────────────────────┼──────────┘
+                                                     │
+                                          async sync │
+                                                     │
+  ┌──────────────────────────────────────────────────┼───────────┐
+  │                   Broker Layer                   │           │
+  │                                                  │           │
+  │                  ┌───────────┐                   │           │
+  │                  │ Kafka/SQL │◀──────────────────┘           │
+  │                  └─────┬─────┘                               │
+  └────────────────────────┼─────────────────────────────────────┘
+                           │ KEY_EPOCH + LIVENESS
+                           │
+  ┌────────────────────────┼────────────────────────────────────┐
+  │                Signing Service                              │
+  │                        │                                    │
+  │               ┌────────┴──────────┐                         │
+  │               │GenericSignerVerif.│                         │
+  │               └──┬─────────────┬──┘                         │
+  │    signs envel.  │             │  ephemeral keys            │
+  │               ┌──┴──────┐  ┌───┴───────────────┐            │
+  │               │Long-Term│  │KeyRotationService │            │
+  │               │Priv. Key│  └───────────────────┘            │
+  │               └─────────┘                                   │
+  └─────────────────────────────────────────────────────────────┘
 ```
 
 Two independent paths:

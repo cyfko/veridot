@@ -47,30 +47,38 @@ You need a **live, replicated key directory** that handles all of this automatic
 
 The **Trust Authority Directory (TAD)** is a small cluster (typically 3 or 5 nodes) that stores and replicates long-term public keys using the Raft consensus protocol. It is part of the `veridot-trustroots` module family.
 
-```mermaid
-graph LR
-    subgraph "order-service (signer)"
-        A["TadPublisherClient"]
-    end
-
-    subgraph "TAD Cluster (Raft)"
-        T1["Node 1"]
-        T2["Node 2 (Leader)"]
-        T3["Node 3"]
-        T2 <-->|"Raft replication"| T1
-        T2 <-->|"Raft replication"| T3
-    end
-
-    subgraph "shipping-service (verifier)"
-        P["TadTrustRootProvider"]
-        C["CachingTrustRoot"]
-        V["GenericSignerVerifier"]
-        P --> C
-        C --> V
-    end
-
-    A -->|"POST /v1/trust-entries"| T2
-    T1 -->|"GET /v1/trust-entries/{subject}"| P
+```
+  order-service (signer)
+  ───────────────────────
+  ┌─────────────────────┐
+  │ TadPublisherClient  │
+  └─────────┬───────────┘
+            │ POST /v1/trust-entries
+            ▼
+  ┌──────────────────────────────────────────┐
+  │            TAD Cluster (Raft)            │
+  │                                          │
+  │   ┌────────┐  ┌────────────┐  ┌────────┐ │
+  │   │ Node 1 │◀─│ Node 2     │─▶│ Node 3 │ │
+  │   │        │  │ (Leader)   │  │        │ │
+  │   └────────┘  └────────────┘  └────────┘ │
+  │            Raft replication              │
+  └────────────────────┬─────────────────────┘
+                       │ GET /v1/trust-entries/{subject}
+                       ▼
+  shipping-service (verifier)
+  ───────────────────────────
+  ┌──────────────────────┐
+  │ TadTrustRootProvider │
+  └──────────┬───────────┘
+             ▼
+  ┌──────────────────────┐
+  │   CachingTrustRoot   │
+  └──────────┬───────────┘
+             ▼
+  ┌──────────────────────┐
+  │ GenericSignerVerifier│
+  └──────────────────────┘
 ```
 
 **Writes** (publishing a new key) go through Raft consensus — the leader replicates to a quorum before acknowledging. **Reads** are served locally from any node.
@@ -316,21 +324,35 @@ Here's what happens when `shipping-service` calls `verify()`:
 
 This is where the architecture shines. The TAD is **only on the control plane** — it distributes keys, but verification never calls it synchronously:
 
-```mermaid
-graph TB
-    subgraph "Control Plane (async)"
-        TAD["TAD Cluster"]
-    end
-
-    subgraph "Data Plane (hot path)"
-        L1["L1 Memory Cache<br/>~100ns"]
-        L2["L2 RocksDB Cache<br/>~10μs"]
-        V["verify()"]
-    end
-
-    TAD -.->|"periodic sync<br/>(every 6h)"| L2
-    L2 -->|"promote on miss"| L1
-    L1 -->|"resolve()"| V
+```
+┌──────────────────────────────┐
+│    Control Plane (async)     │
+│                              │
+│      ┌──────────────┐        │
+│      │  TAD Cluster │        │
+│      └──────┬───────┘        │
+└─────────────┼────────────────┘
+              │ periodic sync
+              │ (every 6h)
+              ▼
+┌──────────────────────────────┐
+│    Data Plane (hot path)     │
+│                              │
+│  ┌────────────────────────┐  │
+│  │ L2 RocksDB Cache ~10μs │  │
+│  └───────────┬────────────┘  │
+│              │ promote       │
+│              │ on miss       │
+│              ▼               │
+│  ┌────────────────────────┐  │
+│  │ L1 Memory Cache ~100ns │  │
+│  └───────────┬────────────┘  │
+│              │ resolve()     │
+│              ▼               │
+│      ┌────────────┐          │
+│      │  verify()  │          │
+│      └────────────┘          │
+└──────────────────────────────┘
 ```
 
 If the entire TAD cluster is down:

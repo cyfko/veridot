@@ -27,20 +27,35 @@ A `LIVENESS` entry is a signed attestation of a session's status. For a session 
 
 If **any** condition fails — including the entry simply not existing — the session is rejected. No attestation, no entry, broker down? **Rejected.**
 
-```mermaid
-flowchart TD
-    START["Verify session<br/>(scope, key)"] --> C1{{"LIVENESS entry<br/>exists?"}}
-    C1 -->|No| REJECT
-    C1 -->|Yes| C2{{"Signature &<br/>trust valid?"}}
-    C2 -->|No| REJECT
-    C2 -->|Yes| C3{{"status =<br/>ACTIVE?"}}
-    C3 -->|No| REJECT
-    C3 -->|Yes| C4{{"now <<br/>validUntil?"}}
-    C4 -->|No| REJECT
-    C4 -->|Yes| VALID["✅ Session VALID"]
-
-    REJECT["❌ Session REJECTED<br/>(V4202)"]
-
+```
+┌──────────────────────────┐
+│    Verify session        │
+│    (scope, key)          │
+└────────────┬─────────────┘
+             ▼
+    ┌──────────────────┐
+    │ LIVENESS entry   │──── No ──▶ ❌ Session REJECTED (V4202)
+    │ exists?          │
+    └────────┬─────────┘
+        Yes  │
+             ▼
+    ┌──────────────────┐
+    │ Signature &      │──── No ──▶ ❌ Session REJECTED (V4202)
+    │ trust valid?     │
+    └────────┬─────────┘
+        Yes  │
+             ▼
+    ┌──────────────────┐
+    │ status = ACTIVE? │──── No ──▶ ❌ Session REJECTED (V4202)
+    └────────┬─────────┘
+        Yes  │
+             ▼
+    ┌──────────────────┐
+    │ now < validUntil?│──── No ──▶ ❌ Session REJECTED (V4202)
+    └────────┬─────────┘
+        Yes  │
+             ▼
+      ✅ Session VALID
 ```
 
 :::danger[All failures are equal]
@@ -196,19 +211,25 @@ CONFIG(group:customer-789) {
 }
 ```
 
-```mermaid
-flowchart LR
-    subgraph "Active sessions (5/5)"
-        S1["📱 Phone<br/>oldest"]
-        S2["💻 Laptop"]
-        S3["📺 TV"]
-        S4["🖥️ Desktop"]
-        S5["📱 Tablet"]
-    end
+```
+  Active sessions (5/5)
+  ┌───────────────────────────────────────────────────┐
+  │ 📱 Phone  💻 Laptop  📺 TV  🖥️ Desktop  📱 Tablet │
+  │ (oldest)                                          │
+  └───────────────────────────────────────────────────┘
 
-    NEW["🖥️ New device<br/>(6th login)"] -->|"exceeds max=5"| EVICT
-    EVICT["CapacityManager<br/>policy: FIFO"] -->|"evicts oldest"| S1
-
+  6th login attempt:
+  ┌────────────────┐       ┌────────────────────┐
+  │ 🖥️ New device  │──────▶│  CapacityManager   │
+  │ (6th login)    │       │  policy: FIFO      │
+  └────────────────┘       └────────┬───────────┘
+                                    │ exceeds max=5
+                                    │ evicts oldest (Phone)
+                                    ▼
+                           ┌────────────────────┐
+                           │ LIVENESS(REVOKED)  │
+                           │ for Phone session  │
+                           └────────────────────┘
 ```
 
 1. Customer logs in on a 6th device
