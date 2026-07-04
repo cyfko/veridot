@@ -185,13 +185,17 @@ The signer can always *create* a signed token — the signing key doesn't know a
 Every capability has a `validUntil` timestamp. When it expires, **all operations that depend on it fail**:
 
 ```
-Timeline:
-─────────────────────────────────────────────────────────►
-  │                                              │
-  capability granted                     validUntil
-  ├──── order-service authorized ────────┤
-                                         ├── V4103 ──►
-                                         (CAPABILITY_EXPIRED)
+  time ──────────────────────────────────────────────────────────▶
+
+       capability                                  validUntil
+       granted                                     reached
+         │                                            │
+         │◀──── order-service authorized ────────────▶│
+         │         ✅ sign/verify OK                  │
+         │                                            │
+         │                                            │◀── V4103 ──▶
+         │                                            │ CAPABILITY_EXPIRED
+         │                                            │ ❌ all operations fail
 ```
 
 This applies transitively: if `admin-service`'s capability grant to `order-service` expires, then `order-worker`'s delegated capability also becomes invalid — even if `order-worker`'s own `validUntil` hasn't been reached yet. The entire chain must be valid at verification time.

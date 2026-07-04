@@ -62,7 +62,7 @@ The **Trust Authority Directory (TAD)** is a small cluster (typically 3 or 5 nod
   │   │ Node 1 │◀─│ Node 2     │─▶│ Node 3 │ │
   │   │        │  │ (Leader)   │  │        │ │
   │   └────────┘  └────────────┘  └────────┘ │
-  │            Raft replication               │
+  │            Raft replication              │
   └────────────────────┬─────────────────────┘
                        │ GET /v1/trust-entries/{subject}
                        ▼
@@ -77,7 +77,7 @@ The **Trust Authority Directory (TAD)** is a small cluster (typically 3 or 5 nod
   └──────────┬───────────┘
              ▼
   ┌──────────────────────┐
-  │ GenericSignerVerifier │
+  │ GenericSignerVerifier│
   └──────────────────────┘
 ```
 
@@ -329,7 +329,7 @@ This is where the architecture shines. The TAD is **only on the control plane** 
 │    Control Plane (async)     │
 │                              │
 │      ┌──────────────┐        │
-│      │  TAD Cluster  │       │
+│      │  TAD Cluster │        │
 │      └──────┬───────┘        │
 └─────────────┼────────────────┘
               │ periodic sync
