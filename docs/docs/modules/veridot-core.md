@@ -92,8 +92,22 @@ The central orchestrator that implements four core interfaces:
 | `TokenRevoker` | Revoke sessions (single or group-wide) |
 | `TokenTracker` | Check if a session is currently active |
 
-### Constructor
+### Constructors
 
+Veridot provides several public constructors depending on your needs.
+
+**1. Recommended Constructor (Simple V4)**
+```java
+public GenericSignerVerifier(
+    Broker broker,              // Storage backend (Kafka or Database)
+    TrustRoot trustRoot,        // Public key resolver
+    String issuerId,            // Unique signer identifier
+    PrivateKey longTermKey,     // Long-term signing key
+    Algorithm envelopeSigAlg    // Envelope signature algorithm
+)
+```
+
+**2. Full Constructor**
 ```java
 public GenericSignerVerifier(
     Broker broker,              // Storage backend (Kafka or Database)

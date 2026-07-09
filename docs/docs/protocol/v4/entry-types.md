@@ -88,7 +88,7 @@ Tags `0xF0`–`0xFF` within **any** entry type are reserved for future extension
 
 Distributes the ephemeral public key, algorithm, and temporal validity window needed to verify a signed object. Each session has its own key epoch.
 
-**Payload fields**: `alg`, `epochId`, `pk`, `validFrom`, `validUntil`, `site`
+**Payload fields**: `alg`, `epochId`, `pk`, `validFrom`, `validUntil`, `site`, `token`
 
 → Full details: [Key Epoch](./key-epoch.md)
 
@@ -113,6 +113,7 @@ Hierarchical configuration applying at group, site, or global scope level. Singl
 | `0x03` | `dttl` | u64 | OPTIONAL | — | Default key-epoch validity duration (ms) |
 | `0x04` | `name` | string | OPTIONAL | — | Descriptive name |
 | `0x05` | `description` | string | OPTIONAL | — | Description |
+| `0x06` | `validity` | u64 | OPTIONAL | — | Default validity duration for issued tokens (ms) |
 
 **Hierarchy**: `group:<groupId>` (highest) → `site:<siteId>` → `global` (lowest)
 

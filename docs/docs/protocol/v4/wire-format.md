@@ -172,7 +172,7 @@ A scope not matching this grammar MUST be rejected with error [`V4006`](./error-
 | `sigAlg` value | Algorithm | `COMPACT_SIG` flag (bit 0) |
 |:---:|---|:---:|
 | `0x01` | RSA-SHA256 | `0` |
-| `0x02` | ECDSA-SHA256 | — |
+| `0x02` | ECDSA-SHA256 | `0` |
 | `0x03` | RSA-PSS | `0` |
 | `0x04` | Ed25519 | `1` |
 

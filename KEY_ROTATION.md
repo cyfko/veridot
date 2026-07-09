@@ -71,7 +71,7 @@ If a root key or a delegated signer's long-term key is compromised:
 ## 4. Operational Best Practices
 
 > [!IMPORTANT]
-> **Use KMS Integrations**: Never store long-term private keys in plain-text PEM files on local disks in production. Implement `DelegatedTrustRoot` to sign envelopes using cloud KMS providers (Vault, AWS KMS, GCP KMS, Azure Key Vault).
+> **Use KMS Integrations**: Never store long-term private keys in plain-text PEM files on local disks in production. Implement `DelegatedTrustRoot` to delegate signature verification on verifiers to cloud KMS providers (Vault, AWS KMS, GCP KMS, Azure Key Vault), ensuring verifier instances never need local custody of public/private key pairs.
 
 * **Version Monotonicity**: Always increment the version field on any re-signed envelope. Veridot verifiers will reject any incoming entry with a version lower than the currently cached watermark (`STALE_VERSION` error).
 * **Monitoring & Alerts**: Set up alerts for `STALE_VERSION` and `TRUST_RESOLUTION_FAILED` errors on verifiers, as these are strong indicators of compromised keys or configuration misalignment.
