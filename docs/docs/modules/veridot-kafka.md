@@ -312,7 +312,7 @@ Broker broker = KafkaBroker.of();
 |----------|-------------|---------|
 | `VDOT_KAFKA_BOOSTRAP_SERVERS` | Kafka bootstrap servers | `localhost:9092` |
 | `VDOT_TOKEN_VERIFIER_TOPIC` | Kafka topic name | `token-verifier` |
-| `VDOT_EMBEDDED_DATABASE_PATH` | RocksDB directory | temp dir |
+| `VDOT_EMBEDDED_DATABASE_PATH` | RocksDB directory | `veridot_db_data` |
 | `VDOT_KEYS_ROTATION_MINUTES` | Key rotation interval | `1440` (24h) |
 
 ### Kafka Properties Reference

@@ -47,6 +47,7 @@ The `payload` of a `KEY_EPOCH` entry is a [TLV sequence](./entry-types.md#tlv-pa
 | `0x04` | `validFrom` | i64 | REQUIRED | Epoch validity start, milliseconds since epoch |
 | `0x05` | `validUntil` | i64 | REQUIRED | Epoch validity end, milliseconds since epoch |
 | `0x06` | `site` | string | OPTIONAL | Site identifier for configuration inheritance; valid only when `scope` starts with `group:` |
+| `0x07` | `token` | string | OPTIONAL | The complete signed JWT, only present when distribution mode is INDIRECT |
 
 ### Algorithm Values
 

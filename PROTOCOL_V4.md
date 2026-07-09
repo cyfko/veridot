@@ -356,6 +356,7 @@ following fields (encoding per §4.1):
 | `0x04` | `validFrom` | i64 | REQUIRED | Epoch validity start, milliseconds since epoch |
 | `0x05` | `validUntil` | i64 | REQUIRED | Epoch validity end, milliseconds since epoch |
 | `0x06` | `site` | string | OPTIONAL | Site identifier for configuration inheritance (§7.2); valid only when `scope` starts with `group:` |
+| `0x07` | `token` | string | OPTIONAL | The complete signed JWT, only present when distribution mode is INDIRECT |
 
 Unknown `FieldTag` values within a `KEY_EPOCH` payload MUST be ignored by a
 conforming processor (forward compatibility per §4.1); unknown entry types
@@ -520,6 +521,7 @@ conflict-resolution rule.
 | `0x03` | `dttl` | u64 | OPTIONAL | — | Default key-epoch validity duration, milliseconds |
 | `0x04` | `name` | string | OPTIONAL | — | Descriptive name |
 | `0x05` | `description` | string | OPTIONAL | — | Description |
+| `0x06` | `validity` | u64 | OPTIONAL | — | Default validity duration for issued tokens, milliseconds |
 
 ### 7.4 Authorization Requirement
 
@@ -1119,6 +1121,7 @@ identifier-char := %x21-FF                   ; excludes NUL and C0 controls,
 | `V4301` | `FENCE_TOKEN_STALE` | `fenceCounter` not strictly greater than the recorded watermark for the scope |
 | `V4302` | `CAPACITY_EXCEEDED` | `max` reached under `pol = REJECT` |
 | `V4401` | `TRANSPORT_UNAVAILABLE` | Broker read or write failure; treated as rejection per §8.3/§14.4, logged separately per §13.4 |
+| `V4402` | `RECONCILIATION_STALE` | Reconciliation staleness limit exceeded |
 
 ## Appendix C. Normative References
 

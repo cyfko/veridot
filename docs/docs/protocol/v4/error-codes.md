@@ -21,7 +21,7 @@ This page corresponds to **Appendix B** of the Veridot Protocol V4 specification
 | `V4101`–`V4104` | Trust & authorization errors | TrustRoot resolution, signature, and capability failures |
 | `V4201`–`V4205` | State & validation errors | Version ordering, liveness, temporal, and cryptographic issues |
 | `V4301`–`V4302` | Capacity errors | Fence token and session capacity violations |
-| `V4401` | Transport errors | Broker communication failures |
+| `V4401`–`V4402` | Transport & Staleness errors | Broker communication and reconciliation staleness failures |
 
 ## Envelope Errors
 
@@ -74,6 +74,7 @@ These errors relate to [fence token](./entry-types.md#fence-0x05) ordering and s
 | Code | Name | Description | Specification |
 |---|---|---|---|
 | `V4401` | `TRANSPORT_UNAVAILABLE` | Broker read or write failure. Treated as **rejection** per [§8.3](./liveness.md#default-deny-semantics) / §14.4 for verification outcomes. MUST be logged separately from definitive rejections per §13.4. | §13.4, §14.4 |
+| `V4402` | `RECONCILIATION_STALE` | Reconciliation staleness limit exceeded. If the last successful reconciliation was more than `VDOT_RECONCILIATION_MAX_STALENESS_MINUTES` ago, verification is rejected. | §11.4 |
 
 :::warning[Transport ≠ pass]
 A transport error MUST NOT receive different treatment from a definitive rejection in the verification outcome. The processor fails **closed**: broker unavailability = session not valid.
@@ -102,6 +103,7 @@ A transport error MUST NOT receive different treatment from a definitive rejecti
 | `V4301` | `FENCE_TOKEN_STALE` |
 | `V4302` | `CAPACITY_EXCEEDED` |
 | `V4401` | `TRANSPORT_UNAVAILABLE` |
+| `V4402` | `RECONCILIATION_STALE` |
 
 ## See Also
 

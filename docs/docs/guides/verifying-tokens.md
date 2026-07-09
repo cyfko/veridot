@@ -9,6 +9,10 @@ sidebar_position: 4
 
 Veridot's verification pipeline performs 9 sequential checks before returning deserialized data. Every step independently produces rejection on failure — no step can be skipped or reordered.
 
+:::note[Note on step numbering]
+The step numbers in this guide reflect the Java client library's implementation pipeline, which includes API-level format resolution and explicit monotonicity checks. They differ slightly in numbering from the raw protocol specification (§5.4 of [PROTOCOL_V4.md](../../../PROTOCOL_V4.md)), although all cryptographic, capability, and liveness validations are identical.
+:::
+
 ## The 9-Step Verification Pipeline
 
 ```mermaid

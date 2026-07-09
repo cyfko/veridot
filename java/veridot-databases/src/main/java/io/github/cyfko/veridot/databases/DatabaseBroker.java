@@ -18,7 +18,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
 
 /**
- * SQL Database implementation of the Broker interface for Protocol V4 (§12.2).
+ * SQL Database implementation of the Broker interface for Protocol V4 (§13.2, §13.3).
  */
 public class DatabaseBroker implements Broker, WatermarkStore {
 
