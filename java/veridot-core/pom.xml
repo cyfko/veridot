@@ -81,9 +81,11 @@
                 <configuration>
                     <environmentVariables>
                         <VDOT_ALLOWED_SIG_ALGS>ED25519,RSA_PSS,ECDSA_SHA256,RSA_SHA256</VDOT_ALLOWED_SIG_ALGS>
+                        <VDOT_CLOCK_DRIFT_TOLERANCE_SECONDS>0</VDOT_CLOCK_DRIFT_TOLERANCE_SECONDS>
                     </environmentVariables>
                     <systemPropertyVariables>
                         <VDOT_ALLOWED_SIG_ALGS>ED25519,RSA_PSS,ECDSA_SHA256,RSA_SHA256</VDOT_ALLOWED_SIG_ALGS>
+                        <VDOT_CLOCK_DRIFT_TOLERANCE_SECONDS>0</VDOT_CLOCK_DRIFT_TOLERANCE_SECONDS>
                     </systemPropertyVariables>
                 </configuration>
             </plugin>
