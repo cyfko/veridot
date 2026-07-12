@@ -41,23 +41,35 @@ class CachingTrustRootTest {
         long version = 1;
         Instant notBefore = Instant.now().minus(Duration.ofHours(1));
         Instant notAfter = Instant.now().plus(Duration.ofHours(24));
-        
-        String canonicalPayload = subject + "\n"
-                + publicKeyEncoded + "\n"
-                + KeyAlgorithm.ED25519.identifier() + "\n"
-                + notBefore.toString() + "\n"
-                + notAfter.toString() + "\n"
-                + version;
+        String fingerprint = SignatureVerifier.computeFingerprint(publicKeyEncoded);
+
+        // Construct a temporary entry to retrieve the exact V5 canonical payload
+        TrustEntry tempEntry = new TrustEntry(
+            2,
+            subject,
+            publicKeyEncoded,
+            KeyAlgorithm.ED25519,
+            notBefore,
+            notAfter,
+            version,
+            fingerprint,
+            "", // empty signature placeholder
+            Instant.now(),
+            false,
+            false,
+            "none",
+            null,
+            null,
+            Collections.emptyMap()
+        );
         
         Signature sig = Signature.getInstance("EdDSA");
         sig.initSign(keyPair.getPrivate());
-        sig.update(canonicalPayload.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        sig.update(tempEntry.canonicalPayload());
         signatureStr = Base64.getUrlEncoder().withoutPadding().encodeToString(sig.sign());
 
-        String fingerprint = SignatureVerifier.computeFingerprint(publicKeyEncoded);
-
         validEntry = new TrustEntry(
-            1,
+            2,
             subject,
             publicKeyEncoded,
             KeyAlgorithm.ED25519,
@@ -68,6 +80,10 @@ class CachingTrustRootTest {
             signatureStr,
             Instant.now(),
             false,
+            false,
+            "none",
+            null,
+            null,
             Collections.emptyMap()
         );
     }

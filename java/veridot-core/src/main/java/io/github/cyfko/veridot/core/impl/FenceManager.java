@@ -6,6 +6,7 @@ import io.github.cyfko.veridot.core.exceptions.VeridotException;
 
 import io.github.cyfko.veridot.core.Algorithm;
 import java.security.PrivateKey;
+import java.util.OptionalLong;
 
 /**
  * Manages FENCE tokens and coordinates capacity-affecting mutations (§9).
@@ -34,7 +35,7 @@ final class FenceManager {
         try {
             bytes = broker.get(fenceEntryId.storageKey());
         } catch (Exception e) {
-            throw new VeridotException(ErrorCode.TRANSPORT_UNAVAILABLE, loggable, "Broker unavailable when fetching FENCE", e);
+            throw new VeridotException(ErrorCode.BROKER_UNREACHABLE, loggable, "Broker unavailable when fetching FENCE", e);
         }
 
         if (bytes != null) {
@@ -59,7 +60,7 @@ final class FenceManager {
         nextVersion = Math.max(nextVersion, nextCounter);
         nextCounter = nextVersion;
 
-        FencePayload newPayload = new FencePayload(nextCounter, grantedTo, validUntilMillis);
+        FencePayload newPayload = new FencePayload(nextCounter, grantedTo, validUntilMillis, OptionalLong.empty());
         byte[] payloadBytes = newPayload.encode();
 
         // 2. Publish FENCE entry
@@ -67,7 +68,7 @@ final class FenceManager {
             publisher.publish(EntryType.FENCE, scope, "", nextVersion, payloadBytes, signingKey, sigAlg, issuerId, broker)
                      .join();
         } catch (Exception e) {
-            throw new VeridotException(ErrorCode.TRANSPORT_UNAVAILABLE, loggable, "Failed to publish FENCE grant to broker", e);
+            throw new VeridotException(ErrorCode.BROKER_UNREACHABLE, loggable, "Failed to publish FENCE grant to broker", e);
         }
 
         // 3. Update local watermark
@@ -86,7 +87,7 @@ final class FenceManager {
         // 1. Verify against local watermark
         long currentWatermark = watermark.current(fenceEntryId);
         if (fenceCounter < currentWatermark) {
-            throw new VeridotException(ErrorCode.FENCE_TOKEN_STALE, fenceEntryId.loggable(), 
+            throw new VeridotException(ErrorCode.FENCE_SUPERSEDED, fenceEntryId.loggable(), 
                 "Fence counter " + fenceCounter + " is stale compared to local watermark " + currentWatermark);
         }
 
@@ -107,7 +108,7 @@ final class FenceManager {
                 if (fenceCounter < currentPayload.fenceCounter()) {
                     // Update local watermark to prevent future redundant broker calls
                     watermark.accept(fenceEntryId, Math.max(envelope.version, currentPayload.fenceCounter()));
-                    throw new VeridotException(ErrorCode.FENCE_TOKEN_STALE, fenceEntryId.loggable(), 
+                    throw new VeridotException(ErrorCode.FENCE_SUPERSEDED, fenceEntryId.loggable(), 
                         "Fence counter " + fenceCounter + " is stale. Latest broker fence is " + currentPayload.fenceCounter());
                 }
             } catch (VeridotException e) {

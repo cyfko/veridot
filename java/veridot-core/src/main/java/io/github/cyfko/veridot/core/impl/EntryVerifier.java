@@ -2,6 +2,7 @@ package io.github.cyfko.veridot.core.impl;
 
 import io.github.cyfko.veridot.core.Broker;
 import io.github.cyfko.veridot.core.TrustRoot;
+import io.github.cyfko.veridot.core.TrustIdentity;
 import io.github.cyfko.veridot.core.exceptions.VeridotException;
 
 import io.github.cyfko.veridot.core.Algorithm;
@@ -9,7 +10,12 @@ import java.security.PublicKey;
 import java.security.Signature;
 
 /**
- * Executes the 9-step Verification Process for signed objects (§5.4).
+ * Entry verification logic for Protocol V5 (§5.4).
+ *
+ * <p>V5 eliminates {@code verifyKeyEpoch()} — identity resolution is now done
+ * via {@code kid} header → TrustRoot in GenericSignerVerifier. This class
+ * retains the envelope-level verification methods and adds native SIGNED_DATA
+ * verification.
  */
 final class EntryVerifier {
 
@@ -17,21 +23,22 @@ final class EntryVerifier {
     private final SignatureVerifier signatureVerifier = new SignatureVerifier();
 
     /**
-     * Executes steps 1 through 7 of the verification process (§5.4).
+     * Verifies a SIGNED_DATA entry from the broker (§4.9, §8.2).
      *
-     * @return the verified KeyEpochPayload containing the ephemeral key material
+     * <p>Steps: retrieve → parse → verify envelope signature → capability → watermark → temporal.
+     *
+     * @return the verified {@link SignedDataPayload}
      */
-    public KeyEpochPayload verifyKeyEpoch(
-            EntryId keyEpochId,
+    public SignedDataPayload verifySignedData(
+            EntryId entryId,
             Broker broker,
             TrustRoot trustRoot,
             VersionWatermark watermark,
             CapabilityVerifier capabilityVerifier,
-            LivenessChecker livenessChecker,
             long nowMillis) {
         try {
-            KeyEpochPayload payload = verifyKeyEpochInternal(
-                keyEpochId, broker, trustRoot, watermark, capabilityVerifier, livenessChecker, nowMillis
+            SignedDataPayload payload = verifySignedDataInternal(
+                entryId, broker, trustRoot, watermark, capabilityVerifier, nowMillis
             );
             io.github.cyfko.veridot.core.VeridotMetrics.ENVELOPE_ACCEPTED.increment();
             return payload;
@@ -41,131 +48,78 @@ final class EntryVerifier {
         }
     }
 
-    private KeyEpochPayload verifyKeyEpochInternal(
-            EntryId keyEpochId,
+    private SignedDataPayload verifySignedDataInternal(
+            EntryId entryId,
             Broker broker,
             TrustRoot trustRoot,
             VersionWatermark watermark,
             CapabilityVerifier capabilityVerifier,
-            LivenessChecker livenessChecker,
             long nowMillis) {
 
-        if (keyEpochId == null) {
-            throw new IllegalArgumentException("keyEpochId cannot be null");
+        if (entryId == null) {
+            throw new IllegalArgumentException("entryId cannot be null");
         }
-        if (keyEpochId.entryType() != EntryType.KEY_EPOCH) {
-            throw new IllegalArgumentException("Expected EntryType.KEY_EPOCH, got " + keyEpochId.entryType());
+        if (entryId.entryType() != EntryType.SIGNED_DATA) {
+            throw new IllegalArgumentException("Expected EntryType.SIGNED_DATA, got " + entryId.entryType());
         }
 
-        String loggable = keyEpochId.loggable();
+        String loggable = entryId.loggable();
 
-        // Step 2: Retrieve from broker
+        // Step 1: Retrieve from broker
         byte[] bytes;
         try {
-            bytes = broker.get(keyEpochId.storageKey());
+            bytes = broker.get(entryId.storageKey());
         } catch (Exception e) {
-            throw new VeridotException(ErrorCode.TRANSPORT_UNAVAILABLE, loggable, "Broker unavailable", e);
+            throw new VeridotException(ErrorCode.BROKER_UNREACHABLE, loggable, "Broker unavailable", e);
         }
 
         if (bytes == null) {
-            throw new VeridotException(ErrorCode.LIVENESS_NOT_ESTABLISHED, loggable, "KEY_EPOCH entry absent from broker");
+            throw new VeridotException(ErrorCode.ENTRY_NOT_FOUND, loggable, "SIGNED_DATA entry absent from broker");
         }
 
-        // Step 3: Structural validation & Payload TLV parsing (V-10 duplicate check before signature)
+        // Step 2: Structural validation
         Envelope envelope = Envelope.parse(bytes);
-        KeyEpochPayload payload = KeyEpochPayload.decode(envelope.payload);
+        SignedDataPayload payload = SignedDataPayload.decode(envelope.payload);
 
-        // Step 4: Trust validation
+        // Step 3: Trust validation (envelope signature)
         signatureVerifier.verify(envelope, trustRoot);
 
-        // Log a warning if clock drift exceeds 50% of the configured tolerance
+        // Clock drift warning
         long driftMillis = Math.abs(nowMillis - envelope.timestamp);
         long toleranceMillis = Config.MAX_CLOCK_DRIFT_SECONDS * 1000L;
         if (driftMillis > toleranceMillis / 2) {
-            logger.warning("Clock drift detected for entry " + keyEpochId.loggable() + ": " + (driftMillis / 1000.0) + " seconds (exceeds 50% of tolerance: " + Config.MAX_CLOCK_DRIFT_SECONDS + "s)");
+            logger.warning("Clock drift detected for entry " + loggable + ": "
+                + (driftMillis / 1000.0) + " seconds (exceeds 50% of tolerance: "
+                + Config.MAX_CLOCK_DRIFT_SECONDS + "s)");
         }
 
-        // Step 5: Capability validation
-        // First resolve if we have siteId in the KeyEpoch payload. We need to parse payload for siteId.
-        capabilityVerifier.assertAuthorized(envelope.issuer, envelope.scope, payload.site(), broker, trustRoot);
+        // Step 4: Capability validation
+        capabilityVerifier.assertAuthorized(envelope.issuer, envelope.scope, broker, trustRoot);
 
-        // Verify version watermark monotone (§11.1)
-        // CRITICAL SECURITY HARDENING (V4201): Protocol V4 §11.1 explicitly dictates that version 0
-        // is unconditionally invalid to prevent initial-state replay/rollback attacks (where watermark is 0
-        // and 0 < 0 is false, allowing version 0 to pass relative monotone checks).
+        // Step 5: Version watermark monotone (§11.1)
         if (envelope.version == 0) {
-            throw new VeridotException(ErrorCode.STALE_VERSION, loggable,
-                "Entry version 0 is unconditionally rejected (§11.1 V4201)");
+            throw new VeridotException(ErrorCode.VERSION_REJECTED, loggable,
+                "Entry version 0 is unconditionally rejected (§11.1)");
         }
-        long currentWatermark = watermark.current(keyEpochId);
+        long currentWatermark = watermark.current(entryId);
         if (envelope.version < currentWatermark) {
-            throw new VeridotException(ErrorCode.STALE_VERSION, loggable, 
-                "KEY_EPOCH version " + envelope.version + " is stale. Watermark is " + currentWatermark);
+            throw new VeridotException(ErrorCode.VERSION_REJECTED, loggable,
+                "SIGNED_DATA version " + envelope.version + " is stale. Watermark is " + currentWatermark);
         }
 
-        // Step 6: Temporal validation (§5.3)
-        // 1. now >= validFrom - Config.MAX_CLOCK_DRIFT_SECONDS * 1000L
-        if (nowMillis < payload.validFrom() - Config.MAX_CLOCK_DRIFT_SECONDS * 1000L) {
-            throw new VeridotException(ErrorCode.KEY_EPOCH_EXPIRED, loggable, 
-                "KEY_EPOCH not valid yet (now=" + nowMillis + ", validFrom=" + payload.validFrom() + ")");
-        }
-        // 2. now < validUntil
-        if (nowMillis >= payload.validUntil()) {
-            throw new VeridotException(ErrorCode.KEY_EPOCH_EXPIRED, loggable, 
-                "KEY_EPOCH expired (now=" + nowMillis + ", validUntil=" + payload.validUntil() + ")");
-        }
-
-        // Step 7: Liveness validation
-        // LIVENESS entry id is (scope, EntryType.LIVENESS, key)
-        EntryId liveEntryId = new EntryId(envelope.scope, EntryType.LIVENESS, envelope.key);
-        livenessChecker.assertLive(liveEntryId, broker, trustRoot, watermark, capabilityVerifier, nowMillis);
-
-        // Apply watermark atomically for both keyEpoch and liveness if valid and strictly greater
         if (envelope.version > currentWatermark) {
-            watermark.accept(keyEpochId, envelope.version);
+            watermark.accept(entryId, envelope.version);
         }
 
         return payload;
     }
 
     /**
-     * Step 8: Cryptographically verifies the signed object's signature.
+     * Verifies a generic envelope's integrity (signature + trust resolution).
      */
-    public void verifyCryptographic(byte[] signedObjectBytes, byte[] signatureBytes, KeyEpochPayload epoch) {
-        if (signedObjectBytes == null) {
-            throw new IllegalArgumentException("Signed object bytes cannot be null");
-        }
-        if (signatureBytes == null) {
-            throw new IllegalArgumentException("Signature bytes cannot be null");
-        }
-        if (epoch == null) {
-            throw new IllegalArgumentException("KeyEpochPayload cannot be null");
-        }
-
-        try {
-            if (epoch.alg() != Algorithm.ED25519) {
-                logger.warning("Non-constant-time signature algorithm in use: " 
-                    + epoch.alg() + " for signed object. §14.1 recommends Ed25519 for timing-safe verification.");
-            }
-            PublicKey pk = epoch.publicKey();
-            Signature sig = Signature.getInstance(epoch.alg().getJcaSignatureAlg());
-            if (epoch.alg() == Algorithm.RSA_PSS) {
-                try {
-                    sig.setParameter(new java.security.spec.PSSParameterSpec(
-                        "SHA-256", "MGF1", java.security.spec.MGF1ParameterSpec.SHA256, 32, 1
-                    ));
-                } catch (Exception ignored) {}
-            }
-
-            sig.initVerify(pk);
-            sig.update(signedObjectBytes);
-            if (!sig.verify(signatureBytes)) {
-                throw new VeridotException(ErrorCode.TRUST_RESOLUTION_FAILED, null, "Cryptographic verification of signed object failed");
-            }
-        } catch (VeridotException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new VeridotException(ErrorCode.TRUST_RESOLUTION_FAILED, null, "Signed object verification threw exception", e);
-        }
+    public void verifyEnvelope(
+            Envelope envelope,
+            TrustRoot trustRoot) {
+        signatureVerifier.verify(envelope, trustRoot);
     }
 }

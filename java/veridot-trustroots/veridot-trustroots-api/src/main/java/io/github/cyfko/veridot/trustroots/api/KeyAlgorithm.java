@@ -19,7 +19,18 @@ public enum KeyAlgorithm {
     RSA_2048("RSA-2048", "SHA256withRSA", "RSA"),
     
     /** RSA avec clé de 4096 bits et signature SHA256withRSA. */
-    RSA_4096("RSA-4096", "SHA256withRSA", "RSA");
+    RSA_4096("RSA-4096", "SHA256withRSA", "RSA"),
+
+    // ── V5 Post-Quantum and Hybrid algorithms (require a PQ JCA provider, e.g. Bouncy Castle) ──
+
+    /** Hybrid Ed25519 + ML-DSA-65 composite signature (§6, Appendix C.2). */
+    ED25519_MLDSA65("Ed25519+ML-DSA-65", "Ed25519+ML-DSA-65", "Ed25519+ML-DSA-65"),
+
+    /** Hybrid ECDSA P-256 + ML-DSA-65 composite signature (§6, Appendix C.2). */
+    ECDSA_P256_MLDSA65("ECDSA-P256+ML-DSA-65", "ECDSA-P256+ML-DSA-65", "EC+ML-DSA-65"),
+
+    /** Standalone ML-DSA-65 post-quantum signature (§6, Appendix C.2). */
+    MLDSA65("ML-DSA-65", "ML-DSA-65", "ML-DSA-65");
 
     /** Identifiant unique de l'algorithme utilisé dans la structure JSON de {@link TrustEntry}. */
     private final String identifier;

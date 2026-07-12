@@ -31,7 +31,7 @@ class CapabilityCacheTest {
     @Test
     void capability_is_cached_and_bypassed_by_invalidation() throws Exception {
         // Prepare capability for subject "subject1" covering "group1"
-        CapabilityPayload capPayload = new CapabilityPayload("subject1", java.util.List.of("group:group1"), (byte) 2, System.currentTimeMillis() + 3600000L);
+        CapabilityPayload capPayload = new CapabilityPayload("subject1", java.util.List.of("group:group1"), (byte) 2, System.currentTimeMillis() + 3600000L, null);
         byte[] payloadBytes = capPayload.encode();
 
         EntryPublisher publisher = new EntryPublisher();
@@ -42,7 +42,7 @@ class CapabilityCacheTest {
                 1L,
                 payloadBytes,
                 trust.longTermKeyPair.getPrivate(),
-                Algorithm.RSA_SHA256,
+                Algorithm.ED25519,
                 trust.signerId,
                 broker
         ).join();
@@ -67,7 +67,7 @@ class CapabilityCacheTest {
     @Test
     void invalidate_authorizations_for_issuer_clears_all_scopes_for_that_issuer() throws Exception {
         // Prepare capabilities
-        CapabilityPayload capPayload = new CapabilityPayload("subject2", java.util.List.of("group:*"), (byte) 2, System.currentTimeMillis() + 3600000L);
+        CapabilityPayload capPayload = new CapabilityPayload("subject2", java.util.List.of("group:*"), (byte) 2, System.currentTimeMillis() + 3600000L, null);
         byte[] payloadBytes = capPayload.encode();
 
         EntryPublisher publisher = new EntryPublisher();
@@ -78,7 +78,7 @@ class CapabilityCacheTest {
                 1L,
                 payloadBytes,
                 trust.longTermKeyPair.getPrivate(),
-                Algorithm.RSA_SHA256,
+                Algorithm.ED25519,
                 trust.signerId,
                 broker
         ).join();
@@ -98,7 +98,7 @@ class CapabilityCacheTest {
 
     @Test
     void clear_cache_clears_everything() throws Exception {
-        CapabilityPayload capPayload = new CapabilityPayload("subject3", java.util.List.of("group:*"), (byte) 2, System.currentTimeMillis() + 3600000L);
+        CapabilityPayload capPayload = new CapabilityPayload("subject3", java.util.List.of("group:*"), (byte) 2, System.currentTimeMillis() + 3600000L, null);
         byte[] payloadBytes = capPayload.encode();
 
         EntryPublisher publisher = new EntryPublisher();
@@ -109,7 +109,7 @@ class CapabilityCacheTest {
                 1L,
                 payloadBytes,
                 trust.longTermKeyPair.getPrivate(),
-                Algorithm.RSA_SHA256,
+                Algorithm.ED25519,
                 trust.signerId,
                 broker
         ).join();
@@ -153,7 +153,7 @@ class CapabilityCacheTest {
         };
 
         // Capability B signed by A:
-        CapabilityPayload capB = new CapabilityPayload("issuerB", java.util.List.of("group:*"), (byte) 5, System.currentTimeMillis() + 3600000L);
+        CapabilityPayload capB = new CapabilityPayload("issuerB", java.util.List.of("group:*"), (byte) 5, System.currentTimeMillis() + 3600000L, null);
         EntryPublisher publisher = new EntryPublisher();
         publisher.publish(
                 EntryType.CAPABILITY,
@@ -168,7 +168,7 @@ class CapabilityCacheTest {
         ).join();
 
         // Capability A signed by B:
-        CapabilityPayload capA = new CapabilityPayload("issuerA", java.util.List.of("group:*"), (byte) 5, System.currentTimeMillis() + 3600000L);
+        CapabilityPayload capA = new CapabilityPayload("issuerA", java.util.List.of("group:*"), (byte) 5, System.currentTimeMillis() + 3600000L, null);
         publisher.publish(
                 EntryType.CAPABILITY,
                 Scope.group("group1"),
@@ -215,7 +215,7 @@ class CapabilityCacheTest {
         };
 
         // Capability for issuerA signed by root (maxDelegationDepth = 0)
-        CapabilityPayload capA = new CapabilityPayload("issuerA", java.util.List.of("group:*"), (byte) 0, System.currentTimeMillis() + 3600000L);
+        CapabilityPayload capA = new CapabilityPayload("issuerA", java.util.List.of("group:*"), (byte) 0, System.currentTimeMillis() + 3600000L, null);
         EntryPublisher publisher = new EntryPublisher();
         publisher.publish(
                 EntryType.CAPABILITY,
@@ -230,7 +230,7 @@ class CapabilityCacheTest {
         ).join();
 
         // Capability for issuerB signed by issuerA (maxDelegationDepth = 5)
-        CapabilityPayload capB = new CapabilityPayload("issuerB", java.util.List.of("group:*"), (byte) 5, System.currentTimeMillis() + 3600000L);
+        CapabilityPayload capB = new CapabilityPayload("issuerB", java.util.List.of("group:*"), (byte) 5, System.currentTimeMillis() + 3600000L, null);
         publisher.publish(
                 EntryType.CAPABILITY,
                 Scope.group("group1"),

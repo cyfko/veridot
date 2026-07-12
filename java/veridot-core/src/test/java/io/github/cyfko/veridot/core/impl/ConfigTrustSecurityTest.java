@@ -34,9 +34,17 @@ class ConfigTrustSecurityTest {
         trust = TestTrustSetup.create();
     }
 
-    private boolean hasKeyEpoch(String groupId, String sessionKey) {
-        EntryId id = new EntryId(Scope.group(groupId), EntryType.KEY_EPOCH, sessionKey);
-        return broker.containsKey(id.storageKey());
+    private boolean hasActiveLiveness(String groupId, String sessionKey) {
+        EntryId id = new EntryId(Scope.group(groupId), EntryType.LIVENESS, sessionKey);
+        byte[] bytes = broker.get(id.storageKey());
+        if (bytes == null) return false;
+        try {
+            Envelope env = Envelope.parse(bytes);
+            LivenessPayload payload = LivenessPayload.decode(env.payload);
+            return payload.isActive();
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     @Test
@@ -55,8 +63,8 @@ class ConfigTrustSecurityTest {
             sv.sign("d2", BasicConfigurer.builder().groupId("group1").sequenceId("s2").validity(600).build());
         });
 
-        assertTrue(hasKeyEpoch("group1", "s1"));
-        assertTrue(hasKeyEpoch("group1", "s2"));
+        assertTrue(hasActiveLiveness("group1", "s1"));
+        assertTrue(hasActiveLiveness("group1", "s2"));
     }
 
     @Test
@@ -65,7 +73,7 @@ class ConfigTrustSecurityTest {
 
         // Attacker writes a config with a fake signature
         EntryId configId = new EntryId(Scope.group("group1"), EntryType.CONFIG, "");
-        ConfigPayload payload = new ConfigPayload(OptionalInt.of(1), (byte) 0x04, OptionalLong.empty(), Optional.empty(), Optional.empty(), OptionalLong.of(3600000L));
+        ConfigPayload payload = new ConfigPayload(OptionalInt.of(1), (byte) 0x04, OptionalLong.empty(), Optional.empty(), Optional.empty(), OptionalLong.of(3600000L), OptionalLong.empty(), Optional.empty());
         
         EnvelopeBuilder builder = new EnvelopeBuilder()
             .entryType(EntryType.CONFIG)
@@ -76,9 +84,9 @@ class ConfigTrustSecurityTest {
             .timestamp(System.currentTimeMillis())
             .issuer("attacker-sid")
             .payload(payload.encode())
-            .sigAlg(Algorithm.RSA_SHA256);
+            .sigAlg(Algorithm.ED25519);
 
-        byte[] badSignature = new byte[256]; // Fake signature
+        byte[] badSignature = new byte[64]; // Fake Ed25519 signature
         byte[] encoded = Envelope.encode(builder, badSignature);
         broker.put(configId.storageKey(), encoded).join();
 
@@ -89,8 +97,8 @@ class ConfigTrustSecurityTest {
             sv.sign("d2", BasicConfigurer.builder().groupId("group1").sequenceId("s2").validity(600).build());
         });
 
-        assertTrue(hasKeyEpoch("group1", "s1"));
-        assertTrue(hasKeyEpoch("group1", "s2"));
+        assertTrue(hasActiveLiveness("group1", "s1"));
+        assertTrue(hasActiveLiveness("group1", "s2"));
     }
 
     @Test
@@ -98,16 +106,17 @@ class ConfigTrustSecurityTest {
         PublicKeyTrustRoot badTrustRoot = new PublicKeyTrustRoot() {
             @Override
             public TrustIdentity resolve(String issuer) {
-                throw new VeridotException(ErrorCode.TRANSPORT_UNAVAILABLE, null, "KMS is down");
+                throw new VeridotException(ErrorCode.BROKER_UNREACHABLE, null, "KMS is down");
             }
         };
 
-        try (var sv = new GenericSignerVerifier(broker, badTrustRoot, trust.signerId, trust.longTermKeyPair.getPrivate(), Algorithm.RSA_SHA256)) {
+        try (var sv = new GenericSignerVerifier(broker, badTrustRoot, trust.cn,
+                trust.longTermKeyPair.getPrivate(), trust.longTermKeyPair.getPublic(), Algorithm.ED25519)) {
 
             // Publish a config signed with a valid signature format
             long now = System.currentTimeMillis();
             EntryId configId = new EntryId(Scope.group("group1"), EntryType.CONFIG, "");
-            ConfigPayload payload = new ConfigPayload(OptionalInt.of(1), (byte) 0x04, OptionalLong.empty(), Optional.empty(), Optional.empty(), OptionalLong.of(3600000L));
+            ConfigPayload payload = new ConfigPayload(OptionalInt.of(1), (byte) 0x04, OptionalLong.empty(), Optional.empty(), Optional.empty(), OptionalLong.of(3600000L), OptionalLong.empty(), Optional.empty());
             
             EnvelopeBuilder builder = new EnvelopeBuilder()
                 .entryType(EntryType.CONFIG)
@@ -118,13 +127,13 @@ class ConfigTrustSecurityTest {
                 .timestamp(now)
                 .issuer(trust.signerId)
                 .payload(payload.encode())
-                .sigAlg(Algorithm.RSA_SHA256);
+                .sigAlg(Algorithm.ED25519);
 
             // Sign it with valid long term key
             try {
-                Signature sig = Signature.getInstance("SHA256withRSA");
+                Signature sig = Signature.getInstance("Ed25519");
                 sig.initSign(trust.longTermKeyPair.getPrivate());
-                Envelope tempEnv = new Envelope(Envelope.PROTO_VERSION, EntryType.CONFIG, (byte) 0x00, Scope.group("group1"), "", 1L, now, trust.signerId, payload.encode(), Algorithm.RSA_SHA256, new byte[0]);
+                Envelope tempEnv = new Envelope(Envelope.PROTO_VERSION, EntryType.CONFIG, (byte) 0x00, Scope.group("group1"), "", 1L, now, trust.signerId, payload.encode(), Algorithm.ED25519, new byte[0]);
                 sig.update(tempEnv.canonicalSigningBytes());
                 byte[] signature = sig.sign();
                 byte[] encoded = Envelope.encode(builder, signature);
@@ -141,8 +150,8 @@ class ConfigTrustSecurityTest {
                 sv.sign("d2", BasicConfigurer.builder().groupId("group1").sequenceId("s2").validity(600).build());
             });
 
-            assertTrue(hasKeyEpoch("group1", "s1"));
-            assertTrue(hasKeyEpoch("group1", "s2"));
+            assertTrue(hasActiveLiveness("group1", "s1"));
+            assertTrue(hasActiveLiveness("group1", "s2"));
         }
     }
 
@@ -163,8 +172,8 @@ class ConfigTrustSecurityTest {
             sv.sign("d2", BasicConfigurer.builder().groupId("group1").sequenceId("s2").validity(600).build());
         });
 
-        assertTrue(hasKeyEpoch("group1", "s1"));
-        assertTrue(hasKeyEpoch("group1", "s2"));
+        assertTrue(hasActiveLiveness("group1", "s1"));
+        assertTrue(hasActiveLiveness("group1", "s2"));
     }
 
     @Test
@@ -189,17 +198,18 @@ class ConfigTrustSecurityTest {
         PublicKeyTrustRoot authRoot = new PublicKeyTrustRoot() {
             @Override
             public TrustIdentity resolve(String issuer) {
-                return new TrustIdentity(trust.longTermKeyPair.getPublic(), false);
+                return new TrustIdentity(trust.longTermKeyPair.getPublic(), false, Algorithm.ED25519);
             }
         };
 
-        try (var sv = new GenericSignerVerifier(broker, authRoot, trust.signerId, trust.longTermKeyPair.getPrivate(), Algorithm.RSA_SHA256)) {
+        try (var sv = new GenericSignerVerifier(broker, authRoot, trust.cn,
+                trust.longTermKeyPair.getPrivate(), trust.longTermKeyPair.getPublic(), Algorithm.ED25519)) {
 
             // Publish config for group-denied directly to broker
             try {
                 long now = System.currentTimeMillis();
                 EntryId configId = new EntryId(Scope.group("group-denied"), EntryType.CONFIG, "");
-                ConfigPayload payload = new ConfigPayload(OptionalInt.of(1), (byte) 0x04, OptionalLong.empty(), Optional.empty(), Optional.empty(), OptionalLong.of(3600000L));
+                ConfigPayload payload = new ConfigPayload(OptionalInt.of(1), (byte) 0x04, OptionalLong.empty(), Optional.empty(), Optional.empty(), OptionalLong.of(3600000L), OptionalLong.empty(), Optional.empty());
                 
                 EnvelopeBuilder builder = new EnvelopeBuilder()
                     .entryType(EntryType.CONFIG)
@@ -210,11 +220,11 @@ class ConfigTrustSecurityTest {
                     .timestamp(now)
                     .issuer(trust.signerId)
                     .payload(payload.encode())
-                    .sigAlg(Algorithm.RSA_SHA256);
+                    .sigAlg(Algorithm.ED25519);
 
-                Signature sig = Signature.getInstance("SHA256withRSA");
+                Signature sig = Signature.getInstance("Ed25519");
                 sig.initSign(trust.longTermKeyPair.getPrivate());
-                Envelope tempEnv = new Envelope(Envelope.PROTO_VERSION, EntryType.CONFIG, (byte) 0x00, Scope.group("group-denied"), "", 1L, now, trust.signerId, payload.encode(), Algorithm.RSA_SHA256, new byte[0]);
+                Envelope tempEnv = new Envelope(Envelope.PROTO_VERSION, EntryType.CONFIG, (byte) 0x00, Scope.group("group-denied"), "", 1L, now, trust.signerId, payload.encode(), Algorithm.ED25519, new byte[0]);
                 sig.update(tempEnv.canonicalSigningBytes());
                 byte[] signature = sig.sign();
                 byte[] encoded = Envelope.encode(builder, signature);
@@ -244,63 +254,12 @@ class ConfigTrustSecurityTest {
         // 3. Publish local config for "group-X": maxSessions = 2, REJECT
         sv.publishConfig(ConfigScope.LOCAL, "group-X", 2, EvictionPolicy.REJECT, 600, 3600);
 
-        // Sign first session with siteId = site-A. Since we resolve siteId dynamically, we can sign the first session
-        // using a configurer or manually publish a KEY_EPOCH with site-A.
-        // Let's manually publish a valid KEY_EPOCH envelope for group-X, session s1 containing site-A
-        long now = System.currentTimeMillis();
-        KeyPairGenerator gen = KeyPairGenerator.getInstance("RSA");
-        gen.initialize(2048, new SecureRandom());
-        KeyPair groupKp = gen.generateKeyPair();
-
-        KeyEpochPayload announcePayload = new KeyEpochPayload(
-            Algorithm.RSA_SHA256, 1L, groupKp.getPublic().getEncoded(), now, now + 3600000L, "site-A", null
-        );
-
-        EnvelopeBuilder builder = new EnvelopeBuilder()
-            .entryType(EntryType.KEY_EPOCH)
-            .flags((byte) 0x00)
-            .scope(Scope.group("group-X"))
-            .key("s1")
-            .version(1L)
-            .timestamp(now)
-            .issuer(trust.signerId)
-            .payload(announcePayload.encode())
-            .sigAlg(Algorithm.RSA_SHA256);
-
-        Signature sig = Signature.getInstance("SHA256withRSA");
-        sig.initSign(trust.longTermKeyPair.getPrivate());
-        Envelope tempEnv = new Envelope(Envelope.PROTO_VERSION, EntryType.KEY_EPOCH, (byte) 0x00, Scope.group("group-X"), "s1", 1L, now, trust.signerId, announcePayload.encode(), Algorithm.RSA_SHA256, new byte[0]);
-        sig.update(tempEnv.canonicalSigningBytes());
-        byte[] signature = sig.sign();
-        byte[] encoded = Envelope.encode(builder, signature);
-        
-        EntryId id = new EntryId(Scope.group("group-X"), EntryType.KEY_EPOCH, "s1");
-        broker.put(id.storageKey(), encoded).join();
-
-        // Also we need to publish liveness for s1 so it is counted as active
-        EntryId liveId = new EntryId(Scope.group("group-X"), EntryType.LIVENESS, "s1");
-        // Create active liveness payload
-        LivenessPayload livePayload = new LivenessPayload((byte) 0x01, now, now + 3600000L);
-        EnvelopeBuilder liveBuilder = new EnvelopeBuilder()
-            .entryType(EntryType.LIVENESS)
-            .flags((byte) 0x00)
-            .scope(Scope.group("group-X"))
-            .key("s1")
-            .version(1L)
-            .timestamp(now)
-            .issuer(trust.signerId)
-            .payload(livePayload.encode())
-            .sigAlg(Algorithm.RSA_SHA256);
-            
-        Envelope tempLive = new Envelope(Envelope.PROTO_VERSION, EntryType.LIVENESS, (byte) 0x00, Scope.group("group-X"), "s1", 1L, now, trust.signerId, livePayload.encode(), Algorithm.RSA_SHA256, new byte[0]);
-        sig.initSign(trust.longTermKeyPair.getPrivate());
-        sig.update(tempLive.canonicalSigningBytes());
-        byte[] liveSig = sig.sign();
-        byte[] liveEncoded = Envelope.encode(liveBuilder, liveSig);
-        broker.put(liveId.storageKey(), liveEncoded).join();
-
+        // V5: Sign sessions using the standard sign API. No KEY_EPOCH manipulation needed.
         // Since local config maxSessions = 2, REJECT is the highest priority:
-        // Sign 2nd session: ok (uses/extends the resolved site config structure internally)
+        // Sign 1st session
+        sv.sign("d1", BasicConfigurer.builder().groupId("group-X").sequenceId("s1").validity(600).build());
+
+        // Sign 2nd session: ok
         sv.sign("d2", BasicConfigurer.builder().groupId("group-X").sequenceId("s2").validity(600).build());
 
         // Sign 3rd session: should throw SessionCapacityExceededException because local config (max=2) overrides site (max=3) and global (max=5)

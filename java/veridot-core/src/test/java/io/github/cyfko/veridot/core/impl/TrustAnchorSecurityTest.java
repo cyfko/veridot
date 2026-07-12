@@ -22,34 +22,32 @@ class TrustAnchorSecurityTest {
         TestTrustSetup trust = TestTrustSetup.create();
         var sv = trust.newSignerVerifier(broker);
 
-        KeyPairGenerator gen = KeyPairGenerator.getInstance("RSA");
-        gen.initialize(2048, new SecureRandom());
-        KeyPair attackerKp = gen.generateKeyPair();
-
         long ts = System.currentTimeMillis();
-        KeyEpochPayload payload = new KeyEpochPayload(
-            Algorithm.RSA_SHA256, 1L, attackerKp.getPublic().getEncoded(), ts, ts + 3600000L, null, null
-        );
+        byte[] livenessPayloadBytes = new LivenessPayload(LivenessPayload.ACTIVE, ts, ts + 3600000L).encode();
 
         EnvelopeBuilder builder = new EnvelopeBuilder()
-            .entryType(EntryType.KEY_EPOCH)
+            .entryType(EntryType.LIVENESS)
             .flags((byte) 0x00)
             .scope(Scope.group("victim-group"))
             .key("evil-session")
             .version(1L)
             .timestamp(ts)
             .issuer(trust.signerId)
-            .payload(payload.encode())
-            .sigAlg(Algorithm.RSA_SHA256);
+            .payload(livenessPayloadBytes)
+            .sigAlg(Algorithm.ED25519);
 
         byte[] emptySignature = new byte[0];
         byte[] encoded = Envelope.encode(builder, emptySignature);
         
-        EntryId id = new EntryId(Scope.group("victim-group"), EntryType.KEY_EPOCH, "evil-session");
+        EntryId id = new EntryId(Scope.group("victim-group"), EntryType.LIVENESS, "evil-session");
         broker.put(id.storageKey(), encoded).join();
 
-        assertThrows(BrokerExtractionException.class,
-                () -> sv.verify("3:victim-group:evil-session", s -> s),
+        // Build a SIGNED_DATA entry pointing to this group so we can use NATIVE verify
+        EntryId sdId = new EntryId(Scope.group("victim-group"), EntryType.SIGNED_DATA, "evil-session");
+        broker.put(sdId.storageKey(), encoded).join();
+
+        assertThrows(Exception.class,
+                () -> sv.verify("8:victim-group:evil-session", s -> s),
                 "Missing sig must cause rejection (F1)");
     }
 
@@ -59,35 +57,32 @@ class TrustAnchorSecurityTest {
         TestTrustSetup trust = TestTrustSetup.create();
         var sv = trust.newSignerVerifier(broker);
 
-        KeyPairGenerator gen = KeyPairGenerator.getInstance("RSA");
-        gen.initialize(2048, new SecureRandom());
-        KeyPair attackerKp = gen.generateKeyPair();
-
         long ts = System.currentTimeMillis();
-        KeyEpochPayload payload = new KeyEpochPayload(
-            Algorithm.RSA_SHA256, 1L, attackerKp.getPublic().getEncoded(), ts, ts + 3600000L, null, null
-        );
+        byte[] livenessPayloadBytes = new LivenessPayload(LivenessPayload.ACTIVE, ts, ts + 3600000L).encode();
 
         EnvelopeBuilder builder = new EnvelopeBuilder()
-            .entryType(EntryType.KEY_EPOCH)
+            .entryType(EntryType.LIVENESS)
             .flags((byte) 0x00)
             .scope(Scope.group("victim-group2"))
             .key("evil-session2")
             .version(1L)
             .timestamp(ts)
             .issuer(trust.signerId)
-            .payload(payload.encode())
-            .sigAlg(Algorithm.RSA_SHA256);
+            .payload(livenessPayloadBytes)
+            .sigAlg(Algorithm.ED25519);
 
-        byte[] fakeSignature = new byte[256];
+        byte[] fakeSignature = new byte[64]; // Ed25519 signatures are 64 bytes
         new SecureRandom().nextBytes(fakeSignature);
         byte[] encoded = Envelope.encode(builder, fakeSignature);
         
-        EntryId id = new EntryId(Scope.group("victim-group2"), EntryType.KEY_EPOCH, "evil-session2");
+        EntryId id = new EntryId(Scope.group("victim-group2"), EntryType.LIVENESS, "evil-session2");
         broker.put(id.storageKey(), encoded).join();
 
-        assertThrows(BrokerExtractionException.class,
-                () -> sv.verify("3:victim-group2:evil-session2", s -> s),
+        EntryId sdId = new EntryId(Scope.group("victim-group2"), EntryType.SIGNED_DATA, "evil-session2");
+        broker.put(sdId.storageKey(), encoded).join();
+
+        assertThrows(Exception.class,
+                () -> sv.verify("8:victim-group2:evil-session2", s -> s),
                 "Forged announcement signature must be rejected");
     }
 
@@ -99,12 +94,12 @@ class TrustAnchorSecurityTest {
         PublicKeyTrustRoot flakeyRoot = new PublicKeyTrustRoot() {
             @Override
             public TrustIdentity resolve(String issuer) {
-                throw new VeridotException(ErrorCode.TRANSPORT_UNAVAILABLE, null, "KMS is down");
+                throw new VeridotException(ErrorCode.BROKER_UNREACHABLE, null, "KMS is down");
             }
         };
 
-        try (var sv = new GenericSignerVerifier(broker, flakeyRoot, trust.signerId,
-                trust.longTermKeyPair.getPrivate(), Algorithm.RSA_SHA256)) {
+        try (var sv = new GenericSignerVerifier(broker, flakeyRoot, trust.cn,
+                trust.longTermKeyPair.getPrivate(), trust.longTermKeyPair.getPublic(), Algorithm.ED25519)) {
 
             String token = sv.sign("data",
                     BasicConfigurer.builder().groupId("infra-test").validity(600).build());
@@ -122,37 +117,38 @@ class TrustAnchorSecurityTest {
         var sv = trust.newSignerVerifier(broker);
 
         long ts = System.currentTimeMillis();
-        KeyPairGenerator gen = KeyPairGenerator.getInstance("RSA");
-        gen.initialize(2048, new SecureRandom());
-        KeyPair fakeKp = gen.generateKeyPair();
-
-        KeyEpochPayload payload = new KeyEpochPayload(
-            Algorithm.RSA_SHA256, 1L, fakeKp.getPublic().getEncoded(), ts, ts + 3600000L, null, null
-        );
+        byte[] livenessPayloadBytes = new LivenessPayload(LivenessPayload.ACTIVE, ts, ts + 3600000L).encode();
 
         EnvelopeBuilder builder = new EnvelopeBuilder()
-            .entryType(EntryType.KEY_EPOCH)
+            .entryType(EntryType.LIVENESS)
             .flags((byte) 0x00)
             .scope(Scope.group("victim"))
             .key("unknown-attack")
             .version(1L)
             .timestamp(ts)
             .issuer("unknown-signer")
-            .payload(payload.encode())
-            .sigAlg(Algorithm.RSA_SHA256);
+            .payload(livenessPayloadBytes)
+            .sigAlg(Algorithm.ED25519);
 
-        Envelope tempEnv = new Envelope(Envelope.PROTO_VERSION, EntryType.KEY_EPOCH, (byte) 0x00, Scope.group("victim"), "unknown-attack", 1L, ts, "unknown-signer", payload.encode(), Algorithm.RSA_SHA256, new byte[0]);
-        Signature sig = Signature.getInstance("SHA256withRSA");
+        // Sign with a different key pair
+        KeyPairGenerator gen = KeyPairGenerator.getInstance("Ed25519");
+        KeyPair fakeKp = gen.generateKeyPair();
+
+        Envelope tempEnv = new Envelope(Envelope.PROTO_VERSION, EntryType.LIVENESS, (byte) 0x00, Scope.group("victim"), "unknown-attack", 1L, ts, "unknown-signer", livenessPayloadBytes, Algorithm.ED25519, new byte[0]);
+        Signature sig = Signature.getInstance("Ed25519");
         sig.initSign(fakeKp.getPrivate());
         sig.update(tempEnv.canonicalSigningBytes());
         byte[] fakeSig = sig.sign();
         byte[] encoded = Envelope.encode(builder, fakeSig);
         
-        EntryId id = new EntryId(Scope.group("victim"), EntryType.KEY_EPOCH, "unknown-attack");
+        EntryId id = new EntryId(Scope.group("victim"), EntryType.LIVENESS, "unknown-attack");
         broker.put(id.storageKey(), encoded).join();
 
-        assertThrows(BrokerExtractionException.class,
-                () -> sv.verify("3:victim:unknown-attack", s -> s),
+        EntryId sdId = new EntryId(Scope.group("victim"), EntryType.SIGNED_DATA, "unknown-attack");
+        broker.put(sdId.storageKey(), encoded).join();
+
+        assertThrows(Exception.class,
+                () -> sv.verify("8:victim:unknown-attack", s -> s),
                 "Unknown signerId must be rejected by TrustRoot");
     }
 
@@ -160,8 +156,8 @@ class TrustAnchorSecurityTest {
     void canonical_announcement_is_deterministic() {
         Scope scope = Scope.group("test");
         byte[] payload = new byte[]{1, 2, 3, 4};
-        Envelope a1 = new Envelope(Envelope.PROTO_VERSION, EntryType.KEY_EPOCH, (byte) 0x00, scope, "seq1", 1L, 1706712000L, "svc-A", payload, Algorithm.RSA_SHA256, new byte[0]);
-        Envelope a2 = new Envelope(Envelope.PROTO_VERSION, EntryType.KEY_EPOCH, (byte) 0x00, scope, "seq1", 1L, 1706712000L, "svc-A", payload, Algorithm.RSA_SHA256, new byte[0]);
+        Envelope a1 = new Envelope(Envelope.PROTO_VERSION, EntryType.LIVENESS, (byte) 0x00, scope, "seq1", 1L, 1706712000L, "svc-A", payload, Algorithm.ED25519, new byte[0]);
+        Envelope a2 = new Envelope(Envelope.PROTO_VERSION, EntryType.LIVENESS, (byte) 0x00, scope, "seq1", 1L, 1706712000L, "svc-A", payload, Algorithm.ED25519, new byte[0]);
         assertArrayEquals(a1.canonicalSigningBytes(), a2.canonicalSigningBytes(), "canonicalSigningBytes must be deterministic");
     }
 
@@ -169,11 +165,11 @@ class TrustAnchorSecurityTest {
     void canonical_announcement_changes_when_any_field_changes() {
         Scope scope = Scope.group("g");
         byte[] payload = new byte[]{1, 2, 3};
-        Envelope base = new Envelope(Envelope.PROTO_VERSION, EntryType.KEY_EPOCH, (byte) 0x00, scope, "s", 1L, 1706712000L, "svc-A", payload, Algorithm.RSA_SHA256, new byte[0]);
+        Envelope base = new Envelope(Envelope.PROTO_VERSION, EntryType.LIVENESS, (byte) 0x00, scope, "s", 1L, 1706712000L, "svc-A", payload, Algorithm.ED25519, new byte[0]);
 
-        Envelope diffPayload = new Envelope(Envelope.PROTO_VERSION, EntryType.KEY_EPOCH, (byte) 0x00, scope, "s", 1L, 1706712000L, "svc-A", new byte[]{1, 2, 4}, Algorithm.RSA_SHA256, new byte[0]);
-        Envelope diffTs = new Envelope(Envelope.PROTO_VERSION, EntryType.KEY_EPOCH, (byte) 0x00, scope, "s", 1L, 1706712001L, "svc-A", payload, Algorithm.RSA_SHA256, new byte[0]);
-        Envelope diffIssuer = new Envelope(Envelope.PROTO_VERSION, EntryType.KEY_EPOCH, (byte) 0x00, scope, "s", 1L, 1706712000L, "svc-B", payload, Algorithm.RSA_SHA256, new byte[0]);
+        Envelope diffPayload = new Envelope(Envelope.PROTO_VERSION, EntryType.LIVENESS, (byte) 0x00, scope, "s", 1L, 1706712000L, "svc-A", new byte[]{1, 2, 4}, Algorithm.ED25519, new byte[0]);
+        Envelope diffTs = new Envelope(Envelope.PROTO_VERSION, EntryType.LIVENESS, (byte) 0x00, scope, "s", 1L, 1706712001L, "svc-A", payload, Algorithm.ED25519, new byte[0]);
+        Envelope diffIssuer = new Envelope(Envelope.PROTO_VERSION, EntryType.LIVENESS, (byte) 0x00, scope, "s", 1L, 1706712000L, "svc-B", payload, Algorithm.ED25519, new byte[0]);
 
         assertFalse(Arrays.equals(base.canonicalSigningBytes(), diffPayload.canonicalSigningBytes()));
         assertFalse(Arrays.equals(base.canonicalSigningBytes(), diffTs.canonicalSigningBytes()));

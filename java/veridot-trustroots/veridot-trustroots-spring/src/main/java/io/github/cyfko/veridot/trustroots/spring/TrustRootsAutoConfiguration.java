@@ -3,7 +3,7 @@ package io.github.cyfko.veridot.trustroots.spring;
 import io.github.cyfko.veridot.core.TrustRoot;
 import io.github.cyfko.veridot.trustroots.api.TrustRootProvider;
 import io.github.cyfko.veridot.trustroots.core.CachingTrustRoot;
-import io.github.cyfko.veridot.trustroots.tad.client.TadTrustRootProvider;
+import io.github.cyfko.veridot.trustroots.taas.client.TaasTrustRootProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -32,17 +32,17 @@ public class TrustRootsAutoConfiguration {
     }
 
     /**
-     * Enregistre le fournisseur d'API distant TAD.
+     * Enregistre le fournisseur d'API distant TAAS.
      *
      * @param properties Propriétés de configuration injectées.
-     * @return L'instance {@link TrustRootProvider} du client TAD.
+     * @return L'instance {@link TrustRootProvider} du client TAAS.
      */
     @Bean
     @ConditionalOnMissingBean(TrustRootProvider.class)
     public TrustRootProvider trustRootProvider(TrustRootsProperties properties) {
-        if ("tad".equalsIgnoreCase(properties.getProviderType())) {
-            return new TadTrustRootProvider(
-                properties.getTadClusterUrls() != null ? properties.getTadClusterUrls() : Collections.singletonList("http://127.0.0.1:8443"),
+        if ("taas".equalsIgnoreCase(properties.getProviderType())) {
+            return new TaasTrustRootProvider(
+                properties.getTaasClusterUrls() != null ? properties.getTaasClusterUrls() : Collections.singletonList("http://127.0.0.1:8443"),
                 null,
                 properties.getConnectTimeout()
             );
@@ -54,7 +54,7 @@ public class TrustRootsAutoConfiguration {
      * Enregistre et initialise le moteur de cache de validation de clés de confiance {@link TrustRoot} (CachingTrustRoot).
      *
      * @param properties Propriétés de configuration.
-     * @param provider Fournisseur d'API TAD injecté.
+     * @param provider Fournisseur d'API TAAS injecté.
      * @return L'instance {@link TrustRoot} initialisée.
      */
     @Bean(initMethod = "initialize", destroyMethod = "close")

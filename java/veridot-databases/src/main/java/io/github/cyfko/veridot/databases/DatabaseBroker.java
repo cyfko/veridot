@@ -181,6 +181,9 @@ public class DatabaseBroker implements Broker, WatermarkStore {
             return CompletableFuture.failedFuture(new VeridotException(ErrorCode.INVALID_ENVELOPE, null, "Failed to parse envelope bytes", e));
         }
 
+        // Update local cache synchronously to ensure read-after-write consistency
+        localCache.put(toHexKey(storageKey), envelopeBytes);
+
         return CompletableFuture.runAsync(() -> {
             try (Connection conn = dataSource.getConnection()) {
                 String sql = buildUpsertSql();

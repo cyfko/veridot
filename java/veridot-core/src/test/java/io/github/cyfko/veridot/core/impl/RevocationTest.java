@@ -20,8 +20,8 @@ class RevocationTest {
         sv = TestTrustSetup.create().newSignerVerifier(broker);
     }
 
-    private boolean hasKeyEpoch(String groupId, String sessionKey) {
-        EntryId id = new EntryId(Scope.group(groupId), EntryType.KEY_EPOCH, sessionKey);
+    private boolean hasLiveness(String groupId, String sessionKey) {
+        EntryId id = new EntryId(Scope.group(groupId), EntryType.LIVENESS, sessionKey);
         return broker.containsKey(id.storageKey());
     }
 
@@ -44,24 +44,24 @@ class RevocationTest {
     }
 
     @Test
-    void revoke_by_indirect_messageId_then_verify_fails() {
+    void revoke_by_native_reference_then_verify_fails() {
         var cfg = BasicConfigurer.builder().groupId("u1").sequenceId("s2").validity(600)
-                .distribution(DistributionMode.INDIRECT).build();
-        String messageId = sv.sign("data", cfg);
+                .distribution(DistributionMode.NATIVE).build();
+        String nativeRef = sv.sign("data", cfg);
         sv.revoke("u1", "s2");
-        assertThrows(BrokerExtractionException.class, () -> sv.verify(messageId, s -> s),
-                "Verify must fail after revoking via messageId");
+        assertThrows(Exception.class, () -> sv.verify(nativeRef, s -> s),
+                "Verify must fail after revoking via native reference");
     }
 
     @Test
-    void revoke_updates_liveness_to_revoked_but_retains_key_epoch() {
+    void revoke_updates_liveness_to_revoked_but_retains_liveness_entry() {
         var cfg = BasicConfigurer.builder().groupId("u1").sequenceId("s1").validity(600).build();
         sv.sign("data", cfg);
-        assertTrue(hasKeyEpoch("u1", "s1"), "KeyEpoch must exist before revocation");
+        assertTrue(hasLiveness("u1", "s1"), "Liveness must exist before revocation");
         
         sv.revoke("u1", "s1");
         
-        assertTrue(hasKeyEpoch("u1", "s1"), "KeyEpoch must NOT be removed after revocation (V4-02)");
+        assertTrue(hasLiveness("u1", "s1"), "Liveness entry must NOT be removed after revocation");
         
         LivenessPayload liveness = getLivenessPayload("u1", "s1");
         assertNotNull(liveness);
@@ -75,17 +75,17 @@ class RevocationTest {
         String t3 = sv.sign("d3", BasicConfigurer.builder().groupId("u1").sequenceId("s3").validity(600).build());
 
         Scope scope = Scope.group("u1");
-        long keyEpochCountBefore = broker.snapshot(scope).stream()
-                .filter(e -> Envelope.parse(e.envelopeBytes()).entryType == EntryType.KEY_EPOCH)
+        long livenessCountBefore = broker.snapshot(scope).stream()
+                .filter(e -> Envelope.parse(e.envelopeBytes()).entryType == EntryType.LIVENESS)
                 .count();
-        assertEquals(3, keyEpochCountBefore, "Must have 3 active sessions before revokeGroup");
+        assertEquals(3, livenessCountBefore, "Must have 3 active sessions before revokeGroup");
         
         sv.revoke("u1", null);
         
-        long keyEpochCountAfter = broker.snapshot(scope).stream()
-                .filter(e -> Envelope.parse(e.envelopeBytes()).entryType == EntryType.KEY_EPOCH)
+        long livenessCountAfter = broker.snapshot(scope).stream()
+                .filter(e -> Envelope.parse(e.envelopeBytes()).entryType == EntryType.LIVENESS)
                 .count();
-        assertEquals(3, keyEpochCountAfter, "Must have 3 KeyEpoch sessions after revokeGroup (V4-02)");
+        assertEquals(3, livenessCountAfter, "Must have 3 LIVENESS entries after revokeGroup (entries retained)");
 
         assertThrows(BrokerExtractionException.class, () -> sv.verify(t1, s -> s));
         assertThrows(BrokerExtractionException.class, () -> sv.verify(t2, s -> s));
@@ -111,20 +111,20 @@ class RevocationTest {
     }
 
     @Test
-    void revokeGroup_retains_key_epoch_but_updates_liveness_to_revoked() {
+    void revokeGroup_retains_liveness_but_updates_status_to_revoked() {
         sv.sign("d1", BasicConfigurer.builder().groupId("g1").sequenceId("ses-A").validity(600).build());
         sv.sign("d2", BasicConfigurer.builder().groupId("g1").sequenceId("ses-B").validity(600).build());
         sv.sign("d3", BasicConfigurer.builder().groupId("g1").sequenceId("ses-C").validity(600).build());
 
-        assertTrue(hasKeyEpoch("g1", "ses-A"), "ses-A must exist before revokeGroup");
-        assertTrue(hasKeyEpoch("g1", "ses-B"), "ses-B must exist before revokeGroup");
-        assertTrue(hasKeyEpoch("g1", "ses-C"), "ses-C must exist before revokeGroup");
+        assertTrue(hasLiveness("g1", "ses-A"), "ses-A must exist before revokeGroup");
+        assertTrue(hasLiveness("g1", "ses-B"), "ses-B must exist before revokeGroup");
+        assertTrue(hasLiveness("g1", "ses-C"), "ses-C must exist before revokeGroup");
 
         sv.revoke("g1", null);
 
-        assertTrue(hasKeyEpoch("g1", "ses-A"), "ses-A must NOT be physically deleted after revokeGroup");
-        assertTrue(hasKeyEpoch("g1", "ses-B"), "ses-B must NOT be physically deleted after revokeGroup");
-        assertTrue(hasKeyEpoch("g1", "ses-C"), "ses-C must NOT be physically deleted after revokeGroup");
+        assertTrue(hasLiveness("g1", "ses-A"), "ses-A must NOT be physically deleted after revokeGroup");
+        assertTrue(hasLiveness("g1", "ses-B"), "ses-B must NOT be physically deleted after revokeGroup");
+        assertTrue(hasLiveness("g1", "ses-C"), "ses-C must NOT be physically deleted after revokeGroup");
 
         assertFalse(getLivenessPayload("g1", "ses-A").isActive());
         assertFalse(getLivenessPayload("g1", "ses-B").isActive());

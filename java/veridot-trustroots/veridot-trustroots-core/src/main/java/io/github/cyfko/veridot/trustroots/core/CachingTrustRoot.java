@@ -315,7 +315,10 @@ public final class CachingTrustRoot implements PublicKeyTrustRoot, AutoCloseable
                 publicKey,
                 entry.notAfter(),
                 staleDeadline,
-                Instant.now()
+                Instant.now(),
+                entry.kemPublicKey(),
+                entry.isInstanceScoped(),
+                entry.algorithm()
             );
             
             l1Cache.compute(entry.subject(), (k, existing) -> {

@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.logging.Logger;
 
 /**
  * Implémentation du cache local L2 persistant utilisant RocksDB.
@@ -26,6 +27,12 @@ import java.util.Optional;
  * </ul>
  */
 public class RocksDbL2Cache implements L2Cache {
+
+    private static final Logger logger = Logger.getLogger(RocksDbL2Cache.class.getName());
+
+    /** V5 schema version. V1 = original (V4), V2 = V5 with instance-scoped, attestation, and KEM fields. */
+    private static final int CURRENT_SCHEMA_VERSION = 2;
+
     static {
         RocksDB.loadLibrary();
     }
@@ -125,10 +132,22 @@ public class RocksDbL2Cache implements L2Cache {
                 cfHandles.add(metaHandle);
             }
             
-            // Étape 4 : Initialiser la version de schéma de métadonnées si absente
-            byte[] schemaVerBytes = db.get(metaHandle, "schema_version".getBytes(StandardCharsets.UTF_8));
+            // Étape 4 : Initialiser ou migrer la version de schéma de métadonnées
+            byte[] schemaKey = "schema_version".getBytes(StandardCharsets.UTF_8);
+            byte[] schemaVerBytes = db.get(metaHandle, schemaKey);
             if (schemaVerBytes == null) {
-                db.put(metaHandle, "schema_version".getBytes(StandardCharsets.UTF_8), toBigEndian4(1));
+                // Fresh install — write current V5 schema version
+                db.put(metaHandle, schemaKey, toBigEndian4(CURRENT_SCHEMA_VERSION));
+            } else {
+                int existingVersion = fromBigEndian4(schemaVerBytes);
+                if (existingVersion < CURRENT_SCHEMA_VERSION) {
+                    // V4 → V5 migration: TrustEntry JSON is backward-compatible via @JsonIgnoreProperties;
+                    // new V5 fields (isInstanceScoped, attestationPlugin, kemPublicKey) will be populated
+                    // on next sync from the TAD provider.
+                    logger.info("Migrating RocksDB L2 cache schema from version " + existingVersion
+                        + " to " + CURRENT_SCHEMA_VERSION + " (V5). Existing entries remain readable.");
+                    db.put(metaHandle, schemaKey, toBigEndian4(CURRENT_SCHEMA_VERSION));
+                }
             }
         } catch (RocksDBException e) {
             throw new TrustRootInitializationException("Failed to open RocksDB L2 cache at " + path, e);
@@ -145,6 +164,16 @@ public class RocksDbL2Cache implements L2Cache {
             (byte) (val >>> 8),
             (byte) val
         };
+    }
+
+    /**
+     * Reconstitue un entier à partir d'un tableau de 4 octets Big-Endian.
+     */
+    private int fromBigEndian4(byte[] bytes) {
+        return ((bytes[0] & 0xFF) << 24) |
+               ((bytes[1] & 0xFF) << 16) |
+               ((bytes[2] & 0xFF) << 8) |
+               (bytes[3] & 0xFF);
     }
     
     /**

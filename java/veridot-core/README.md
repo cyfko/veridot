@@ -5,7 +5,7 @@
 [![Java 25+](https://img.shields.io/badge/Java-25%2B-orange.svg)](https://openjdk.org/)
 [![Build](https://img.shields.io/badge/tests-132%20passed-brightgreen.svg)]()
 
-Core module of **Veridot** — the Java implementation of the [Protocol V4.0](../../PROTOCOL_V4.md) distributed token verification protocol.
+Core module of **Veridot** — the Java implementation of the [Protocol V5.0](../../PROTOCOL_V5.md) distributed token verification protocol.
 
 This README is the **self-contained reference** for using Veridot in Java. You do not need to visit any external website to get started.
 
@@ -18,7 +18,7 @@ This README is the **self-contained reference** for using Veridot in Java. You d
 - [Core concepts](#core-concepts)
 - [TrustRoot — the security cornerstone](#trustroot--the-security-cornerstone)
 - [First integration: sign, verify, revoke](#first-integration-sign-verify-revoke)
-- [Distribution modes: DIRECT vs INDIRECT](#distribution-modes-direct-vs-indirect)
+- [Distribution modes: DIRECT vs NATIVE](#distribution-modes-direct-vs-native)
 - [Session capacity management](#session-capacity-management)
 - [Token tracking](#token-tracking)
 - [Custom serialization (POJOs, JSON…)](#custom-serialization-pojos-json)
@@ -40,13 +40,13 @@ Veridot lets any service in your cluster **sign** a payload into a verifiable to
 Service A (signer)                     Service B (verifier)
 ──────────────────                     ────────────────────
 sv.sign("alice@example.com", config)   sv.verify(token, s -> s)
-  → generates Ed25519 ephemeral key      → reads from local RocksDB (<1ms)
+  → uses instance private key            → reads from local RocksDB (<1ms)
   → signs payload → JWT                  → validates TrustRoot signature
-  → publishes key announcement           → verifies JWT signature
+  → publishes active liveness            → verifies liveness and signature
     to Kafka (async)                     → returns VerifiedData<String>
 
 sv.revoke("user-alice", null)
-  → broadcasts signed __REVOKE__ tombstone
+  → broadcasts signed LIVENESS(REVOKED) tombstone
   → Service B invalidates session within ~1s (next Kafka poll)
 ```
 
@@ -126,15 +126,15 @@ Every key announcement carries a long-term signature (typically Ed25519 or RSA-P
 
 `TrustRoot` resolves a signer ID to a `TrustIdentity` record which encapsulates both the signer's public key and its root status (`isRoot`). This unified resolution avoids custom bypasses and ensures security by default.
 
-### Option A — `PublicKeyTrustRoot` (Recommended with TAD)
+### Option A — `PublicKeyTrustRoot` (Recommended with TAAS)
 
-Resolves `signerId` to a `PublicKey` directly. In production, this should be paired with the **Trust Authority Directory (TAD)** consensus cluster and `CachingTrustRoot` (provided in the `veridot-trustroots` package) to enable high-availability, offline-first resolution.
+Resolves `signerId` to a `PublicKey` directly. In production, this should be paired with the **Trust Authority & Attestation Service (TAAS)** consensus cluster and `CachingTrustRoot` (provided in the `veridot-trustroots` package) to enable high-availability, offline-first resolution.
 
 ```java
 TrustRoot trust = new PublicKeyTrustRoot() {
     @Override
     public TrustIdentity resolve(String signerId) {
-        // Resolve public key (e.g. from local CachingTrustRoot or TAD cluster client)
+        // Resolve public key (e.g. from local CachingTrustRoot or TAAS cluster client)
         PublicKey key = trustProvider.getKey(signerId);
         boolean isRoot = "root-signer-id".equals(signerId);
         return new TrustIdentity(key, isRoot);
@@ -149,9 +149,9 @@ Delegates cryptographic signature verification to an external service (such as V
 :::warning Cloud KMS & Protocol Conflicts
 Using cloud KMS providers (such as AWS KMS, Google Cloud KMS, or Azure Key Vault) directly for verification introduces architectural trade-offs:
 1. **Offline Verification Violation**: Querying external cloud KMS APIs synchronously on the verification path adds 1–10ms latency and creates a runtime SPoF.
-2. **Key Custody Violation**: Protocol V4 requires that **the long-term private key must never leave the issuer's boundary**. Cloud KMS systems generate and manage private keys inside the cloud provider's boundary, violating this custody principle unless used purely as a public-key directory.
+2. **Key Custody Violation**: Protocol V5 requires that **the long-term private key must never leave the issuer's boundary**. Cloud KMS systems generate and manage private keys inside the cloud provider's boundary, violating this custody principle unless used purely as a public-key directory.
 
-For distributed production deployments, it is highly recommended to use local keys for signing and distribute public keys using the **TAD cluster**.
+For distributed production deployments, it is highly recommended to use local keys for signing and distribute public keys using the **TAAS cluster**.
 :::
 
 ```java
@@ -173,11 +173,11 @@ DelegatedTrustRoot trust = new DelegatedTrustRoot() {
 
 ### KMS / TrustRoot High Availability (Not a SPoF)
 
-Veridot is designed so that the TAD cluster or the central `TrustRoot` provider is **completely decoupled from the request-processing hot path**, eliminating it as a Single Point of Failure (SPoF):
+Veridot is designed so that the TAAS cluster or the central `TrustRoot` provider is **completely decoupled from the request-processing hot path**, eliminating it as a Single Point of Failure (SPoF):
 
-- **Hot path isolation**: When verifying tokens (JWTs), edge verifiers only use the **ephemeral public keys** cached locally in memory or RocksDB. The verifier does NOT query the KMS or TrustRoot on each request.
-- **Control plane only**: The TrustRoot/TAD is only queried when a new ephemeral key is rotated (e.g. once every 24 hours per signer) or when a new capability is presented.
-- **Resilience to downtime**: If the TAD cluster goes down, the verifiers continue to verify incoming tokens using the cached ephemeral keys without any interruption or latency increase. Only key rotation or capability changes will be delayed until TAD recovers.
+- **Hot path isolation**: When verifying tokens, edge verifiers resolve cryptographic signatures using the **instance public keys** cached locally in memory or RocksDB, and check token liveness using fast local lookups.
+- **Control plane only**: The TrustRoot/TAAS is only queried when a new instance registers its key, or when a new capability is presented.
+- **Resilience to downtime**: If the TAAS cluster goes down, the verifiers continue to verify incoming tokens using the cached public keys and active liveness records without any interruption or latency increase. Only new instance registration or capability changes will be delayed until TAAS recovers.
 
 ---
 
@@ -249,7 +249,7 @@ sv.revoke("user-alice", null);             // revoke ALL sessions for this group
 
 ---
 
-## Distribution modes: DIRECT, INDIRECT, and PRIVATE
+## Distribution modes: DIRECT, NATIVE, and PRIVATE
 
 ### DIRECT (default)
 
@@ -267,29 +267,29 @@ String jwt = sv.sign("alice@example.com",
 // → pass to client as Authorization: Bearer <jwt>
 ```
 
-### INDIRECT
+### NATIVE
 
-The payload is stored in the broker (Kafka/DB). The caller receives a `messageId` — a short opaque reference. The JWT never reaches the client.
+The payload is stored in the broker (Kafka/DB) as a `SIGNED_DATA` entry. The caller receives a reference token (format: `"8:scope:key"`).
 
 ```java
-String messageId = sv.sign(sensitiveObject,
+String nativeToken = sv.sign(sensitiveObject,
     BasicConfigurer.builder()
         .groupId("reports")
         .sequenceId("report-2026-q2")
         .validity(86400)               // 24 hours
-        .distribution(DistributionMode.INDIRECT)
+        .distribution(DistributionMode.NATIVE)
         .serializedBy(obj -> mapper.writeValueAsString(obj))
         .build());
 
-// messageId = "4:reports:report-2026-q2"
+// nativeToken = "8:group:reports:report-2026-q2"
 // → store in your DB, pass to trusted services as a reference
 
-// Verify using messageId — identical API
-VerifiedData<ReportData> result = sv.verify(messageId,
+// Verify using nativeToken — identical API
+VerifiedData<ReportData> result = sv.verify(nativeToken,
     json -> mapper.readValue(json, ReportData.class));
 ```
 
-**Use INDIRECT when:**
+**Use NATIVE when:**
 - Payload is large (> a few KB) and should not be embedded in a JWT.
 - You want to save client-side network bandwidth for large session claims.
 
@@ -569,7 +569,6 @@ sv.publishConfig(
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `VDOT_KEYS_ROTATION_MINUTES` | Rotation interval for ephemeral key pairs | `1440` (24 hours) |
 | `VDOT_RECONCILIATION_INTERVAL_MINUTES` | Interval for watermark periodic reconciliation against the broker | `15` minutes |
 | `VDOT_CAPABILITY_CACHE_TTL_SECONDS` | Positive cache TTL for verified capabilities | `10` seconds |
 | `VDOT_CAPABILITY_NEGATIVE_CACHE_TTL_SECONDS` | Negative cache TTL for capability validation failures | `5` seconds |
@@ -578,6 +577,11 @@ sv.publishConfig(
 | `VDOT_MIN_RSA_KEY_LENGTH` | Minimum allowed RSA public key length | `2048` bits |
 | `VDOT_WATERMARK_PERSISTENCE_FILE` | Optional local file path for persistent version watermarks snapshot | *None* |
 | `VDOT_RECONCILIATION_MAX_STALENESS_MINUTES` | Maximum allowed watermark staleness before rejecting validation | `60` minutes |
+| `VDOT_TRUST_CACHE_SYNC_HOURS` | Sync interval for trust roots L2 cache | `24` hours |
+| `VDOT_TRUST_STALE_WINDOW_SECONDS` | Stale window for caching trust roots | `86400` (24 hours) |
+| `VDOT_TAAS_DIGEST_INTERVAL` | Interval for checking TAAS transparency digests | `60` seconds |
+| `VDOT_DIGEST_TOLERANCE` | Max number of digests behind allowed for verification | `2` |
+| `VDOT_FENCE_ANCHOR_MAX_AGE` | Maximum allowed age of a fence anchor | `600` seconds |
 
 ---
 
@@ -600,7 +604,7 @@ new GenericSignerVerifier(Broker broker, TrustRoot trustRoot, String sid, Privat
 | `.groupId(String)` | ✅ | Logical group (userId, clientId…) |
 | `.sequenceId(String)` | — | Session ID within group (UUID if omitted) |
 | `.validity(long seconds)` | ✅ | Token TTL in seconds |
-| `.distribution(DistributionMode)` | — | `DIRECT` (default), `INDIRECT`, or `PRIVATE` |
+| `.distribution(DistributionMode)` | — | `DIRECT` (default), `NATIVE`, or `PRIVATE` |
 | `.recipients(List<String>)` | — | List of authorized recipient processor IDs (for `PRIVATE` mode) |
 | `.mimeType(String)` | — | MIME type of the payload (for `PRIVATE` mode, e.g. "application/json") |
 | `.serializedBy(Function<Object, String>)` | — | Custom payload serializer |

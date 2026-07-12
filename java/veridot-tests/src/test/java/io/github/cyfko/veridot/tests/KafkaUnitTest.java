@@ -65,7 +65,7 @@ class KafkaUnitTest {
     // ── Signing ──────────────────────────────────────────────────────────────
 
     @ParameterizedTest
-    @EnumSource(value = DistributionMode.class, names = {"DIRECT", "INDIRECT"})
+    @EnumSource(value = DistributionMode.class, names = {"DIRECT", "NATIVE"})
     void sign_with_valid_data_returns_token(DistributionMode mode) {
         var cfg = BasicConfigurer.builder()
                 .groupId("unit-sign-" + mode.name())
@@ -78,7 +78,7 @@ class KafkaUnitTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = DistributionMode.class, names = {"DIRECT", "INDIRECT"})
+    @EnumSource(value = DistributionMode.class, names = {"DIRECT", "NATIVE"})
     void sign_with_null_data_throws(DistributionMode mode) {
         var cfg = BasicConfigurer.builder()
                 .groupId("unit-null-" + mode.name())
@@ -89,7 +89,7 @@ class KafkaUnitTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = DistributionMode.class, names = {"DIRECT", "INDIRECT"})
+    @EnumSource(value = DistributionMode.class, names = {"DIRECT", "NATIVE"})
     void sign_with_negative_duration_throws(DistributionMode mode) {
         var cfg = BasicConfigurer.builder()
                 .groupId("unit-neg-" + mode.name())
@@ -103,7 +103,7 @@ class KafkaUnitTest {
     // ── Verification ─────────────────────────────────────────────────────────
 
     @ParameterizedTest
-    @EnumSource(value = DistributionMode.class, names = {"DIRECT", "INDIRECT"})
+    @EnumSource(value = DistributionMode.class, names = {"DIRECT", "NATIVE"})
     void verify_valid_token_returns_payload(DistributionMode mode) throws InterruptedException {
         String data = "john.doe@example.com";
         var cfg = BasicConfigurer.builder()
@@ -124,7 +124,7 @@ class KafkaUnitTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = DistributionMode.class, names = {"DIRECT", "INDIRECT"})
+    @EnumSource(value = DistributionMode.class, names = {"DIRECT", "NATIVE"})
     void verify_expired_token_throws(DistributionMode mode) throws InterruptedException {
         var cfg = BasicConfigurer.builder()
                 .groupId("unit-exp-" + mode.name())

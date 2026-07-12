@@ -16,14 +16,14 @@ final class VersionWatermark {
 
     public void accept(EntryId entryId, long version) {
         if (version == 0) {
-            throw new VeridotException(ErrorCode.STALE_VERSION, entryId.loggable(), "Version cannot be 0");
+            throw new VeridotException(ErrorCode.VERSION_REJECTED, entryId.loggable(), "Version cannot be 0");
         }
 
         String key = toMapKey(entryId);
         watermarks.compute(key, (k, current) -> {
             long currentVal = current == null ? 0L : current;
             if (version <= currentVal) {
-                throw new VeridotException(ErrorCode.STALE_VERSION, entryId.loggable(),
+                throw new VeridotException(ErrorCode.VERSION_REJECTED, entryId.loggable(),
                     "Incoming version " + version + " is not strictly greater than recorded watermark " + currentVal);
             }
             return version;

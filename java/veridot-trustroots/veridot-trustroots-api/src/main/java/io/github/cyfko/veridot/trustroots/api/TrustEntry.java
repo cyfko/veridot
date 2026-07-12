@@ -10,21 +10,33 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Entrée canonique du registre de confiance représentant une clé publique signée.
- * Ce record Java garantit l'immuabilité et applique des règles strictes de validation à l'instanciation.
+ * Trust Entry for Protocol V5 (§5.4).
  *
- * @param schemaVersion Version du schéma JSON du document (par défaut 1).
- * @param subject Identifiant de l'émetteur de tokens (ex: "service-name").
- * @param publicKeyEncoded Clé publique encodée en Base64 URL-safe.
- * @param algorithm Algorithme cryptographique de la clé publique ({@link KeyAlgorithm}).
- * @param notBefore Instant de début de validité de la clé.
- * @param notAfter Instant d'expiration de la clé.
- * @param version Numéro de version séquentiel strictement positif de l'entrée.
- * @param fingerprint Empreinte de hachage unique de la clé (ex: SHA-256 hex).
- * @param issuerSignature Signature cryptographique de l'autorité de confiance, garantissant l'intégrité de l'entrée.
- * @param publishedAt Date de publication de cette entrée dans le registre TAD.
- * @param isRoot Indique s'il s'agit d'une clé racine (Root Key).
- * @param metadata Métadonnées complémentaires clés/valeurs.
+ * <p>Represents a public key identity registered with TAAS. V5 changes from V4:
+ * <ul>
+ *   <li>{@code schemaVersion} defaults to {@code 2}</li>
+ *   <li>{@code isInstanceScoped} — single-key-per-instance (§5.1), default {@code true}</li>
+ *   <li>{@code attestationPlugin} — name of the attestation plugin used during registration (§1.3.1)</li>
+ *   <li>{@code attestationRef} — opaque reference to attestation evidence (optional)</li>
+ *   <li>{@code kemPublicKey} — ML-KEM-768 encapsulation key for hybrid encryption (§14.5, optional, 1184 bytes)</li>
+ * </ul>
+ *
+ * @param schemaVersion Schema version (MUST be 2 for V5).
+ * @param subject Subject identifier in {@code CN@hash} format (§5.1).
+ * @param publicKeyEncoded Public key in Base64 URL-safe encoding.
+ * @param algorithm Cryptographic algorithm ({@link KeyAlgorithm}).
+ * @param notBefore Validity start instant.
+ * @param notAfter Validity end instant.
+ * @param version Sequential version number (strictly positive).
+ * @param fingerprint SHA-256 fingerprint of the public key (hex).
+ * @param issuerSignature Cryptographic signature by the TAAS authority.
+ * @param publishedAt Publication timestamp in the TAAS registry.
+ * @param isRoot Whether this is a root trust anchor.
+ * @param isInstanceScoped Whether this identity is instance-scoped (single-key).
+ * @param attestationPlugin Name of the attestation plugin ("k8s", "gcp", "tpm", "none").
+ * @param attestationRef Opaque reference to attestation evidence (nullable).
+ * @param kemPublicKey ML-KEM-768 encapsulation key for HYBRID_ASYMMETRIC encryption (nullable, 1184 bytes if present).
+ * @param metadata Supplementary key-value metadata.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record TrustEntry(
@@ -39,10 +51,18 @@ public record TrustEntry(
     String issuerSignature,
     Instant publishedAt,
     boolean isRoot,
+    boolean isInstanceScoped,
+    String attestationPlugin,
+    String attestationRef,
+    byte[] kemPublicKey,
     Map<String, String> metadata
 ) {
+
+    /** ML-KEM-768 public key size in bytes. */
+    private static final int KEM_PUBLIC_KEY_SIZE = 1184;
+
     /**
-     * Constructeur canonique avec logique de validation robuste.
+     * Canonical constructor with validation.
      */
     public TrustEntry {
         Objects.requireNonNull(subject, "subject");
@@ -53,31 +73,42 @@ public record TrustEntry(
         Objects.requireNonNull(fingerprint, "fingerprint");
         Objects.requireNonNull(issuerSignature, "issuerSignature");
         Objects.requireNonNull(publishedAt, "publishedAt");
-        
+        Objects.requireNonNull(attestationPlugin, "attestationPlugin");
+
         if (subject.isBlank()) throw new IllegalArgumentException("subject must not be blank");
         if (subject.length() > 512) throw new IllegalArgumentException("subject exceeds 512 chars");
+        if (isInstanceScoped && !subject.contains("@")) {
+            throw new IllegalArgumentException("Instance-scoped subject must contain '@': " + subject);
+        }
         if (!notBefore.isBefore(notAfter)) throw new IllegalArgumentException("notBefore must be before notAfter");
         if (version <= 0) throw new IllegalArgumentException("version must be positive");
-        
+        if (kemPublicKey != null && kemPublicKey.length != KEM_PUBLIC_KEY_SIZE) {
+            throw new IllegalArgumentException("kemPublicKey must be exactly " + KEM_PUBLIC_KEY_SIZE 
+                + " bytes (ML-KEM-768), got: " + kemPublicKey.length);
+        }
+
+        // Defensive copy of mutable fields
         metadata = metadata == null ? Collections.emptyMap() : Map.copyOf(metadata);
+        kemPublicKey = kemPublicKey == null ? null : kemPublicKey.clone();
     }
 
     /**
-     * Indique si cette entrée est valide à l'instant donné.
-     * Une entrée est valide si l'instant spécifié se trouve dans l'intervalle [notBefore, notAfter].
+     * Whether this entry is valid at the given instant.
      *
-     * @param instant L'instant à évaluer.
-     * @return {@code true} si l'entrée est valide à cet instant, sinon {@code false}.
+     * @param instant the instant to evaluate
+     * @return true if the entry is valid at this instant
      */
     public boolean isValidAt(Instant instant) {
         return !instant.isBefore(notBefore) && !instant.isAfter(notAfter);
     }
 
     /**
-     * Calcule la charge utile canonique brute destinée à être signée ou vérifiée cryptographiquement.
-     * La charge utile est générée selon un format strict à base de sauts de lignes (\n).
+     * Computes the canonical payload for cryptographic signing/verification (§5.4.2).
      *
-     * @return La charge utile brute au format UTF-8.
+     * <p>Fields concatenated with newline separators in the following order:
+     * {@code subject\npublicKeyEncoded\nalgorithm\nnotBefore\nnotAfter\nversion\nisInstanceScoped\nattestationPlugin}
+     *
+     * @return the canonical payload as UTF-8 bytes
      */
     public byte[] canonicalPayload() {
         String payload = subject + "\n"
@@ -85,24 +116,35 @@ public record TrustEntry(
                 + algorithm.identifier() + "\n"
                 + notBefore.toString() + "\n"
                 + notAfter.toString() + "\n"
-                + version;
+                + version + "\n"
+                + isInstanceScoped + "\n"
+                + attestationPlugin;
         return payload.getBytes(java.nio.charset.StandardCharsets.UTF_8);
     }
 
     /**
-     * Crée une nouvelle instance de Builder pour construire une {@link TrustEntry}.
+     * Returns whether this entry supports HYBRID_ASYMMETRIC encryption (encAlg 0x03).
      *
-     * @return Un nouveau {@link Builder}.
+     * @return true if kemPublicKey is present
+     */
+    public boolean supportsHybridEncryption() {
+        return kemPublicKey != null;
+    }
+
+    /**
+     * Creates a new Builder for constructing a {@link TrustEntry}.
+     *
+     * @return a new Builder
      */
     public static Builder builder() {
         return new Builder();
     }
 
     /**
-     * Builder fluide pour faciliter la création d'instances {@link TrustEntry}.
+     * Fluent builder for {@link TrustEntry}.
      */
     public static class Builder {
-        private int schemaVersion = 1;
+        private int schemaVersion = 2; // V5 default
         private String subject;
         private String publicKeyEncoded;
         private KeyAlgorithm algorithm;
@@ -113,147 +155,92 @@ public record TrustEntry(
         private String issuerSignature;
         private Instant publishedAt;
         private boolean isRoot;
+        private boolean isInstanceScoped = true; // V5 default
+        private String attestationPlugin = "none";
+        private String attestationRef;
+        private byte[] kemPublicKey;
         private Map<String, String> metadata = new HashMap<>();
 
-        /**
-         * Spécifie la version de schéma.
-         *
-         * @param schemaVersion Version de schéma.
-         * @return {@code this} Builder.
-         */
         public Builder schemaVersion(int schemaVersion) {
             this.schemaVersion = schemaVersion;
             return this;
         }
 
-        /**
-         * Spécifie le sujet.
-         *
-         * @param subject Le sujet.
-         * @return {@code this} Builder.
-         */
         public Builder subject(String subject) {
             this.subject = subject;
             return this;
         }
 
-        /**
-         * Spécifie la clé publique encodée.
-         *
-         * @param publicKeyEncoded La clé publique encodée en Base64 URL-safe.
-         * @return {@code this} Builder.
-         */
         public Builder publicKeyEncoded(String publicKeyEncoded) {
             this.publicKeyEncoded = publicKeyEncoded;
             return this;
         }
 
-        /**
-         * Spécifie l'algorithme cryptographique de la clé publique.
-         *
-         * @param algorithm L'algorithme.
-         * @return {@code this} Builder.
-         */
         public Builder algorithm(KeyAlgorithm algorithm) {
             this.algorithm = algorithm;
             return this;
         }
 
-        /**
-         * Spécifie le début de validité de la clé.
-         *
-         * @param notBefore Date de début.
-         * @return {@code this} Builder.
-         */
         public Builder notBefore(Instant notBefore) {
             this.notBefore = notBefore;
             return this;
         }
 
-        /**
-         * Spécifie la fin de validité (expiration) de la clé.
-         *
-         * @param notAfter Date d'expiration.
-         * @return {@code this} Builder.
-         */
         public Builder notAfter(Instant notAfter) {
             this.notAfter = notAfter;
             return this;
         }
 
-        /**
-         * Spécifie la version séquentielle de l'entrée.
-         *
-         * @param version Numéro de version.
-         * @return {@code this} Builder.
-         */
         public Builder version(long version) {
             this.version = version;
             return this;
         }
 
-        /**
-         * Spécifie l'empreinte unique calculée.
-         *
-         * @param fingerprint L'empreinte.
-         * @return {@code this} Builder.
-         */
         public Builder fingerprint(String fingerprint) {
             this.fingerprint = fingerprint;
             return this;
         }
 
-        /**
-         * Spécifie la signature d'intégrité de l'entrée.
-         *
-         * @param issuerSignature La signature de l'émetteur/autorité.
-         * @return {@code this} Builder.
-         */
         public Builder issuerSignature(String issuerSignature) {
             this.issuerSignature = issuerSignature;
             return this;
         }
 
-        /**
-         * Spécifie la date de publication dans le TAD.
-         *
-         * @param publishedAt La date de publication.
-         * @return {@code this} Builder.
-         */
         public Builder publishedAt(Instant publishedAt) {
             this.publishedAt = publishedAt;
             return this;
         }
 
-        /**
-         * Indique s'il s'agit d'une clé racine.
-         *
-         * @param isRoot {@code true} si clé racine.
-         * @return {@code this} Builder.
-         */
         public Builder isRoot(boolean isRoot) {
             this.isRoot = isRoot;
             return this;
         }
 
-        /**
-         * Spécifie la map complète des métadonnées.
-         *
-         * @param metadata Map clé/valeur.
-         * @return {@code this} Builder.
-         */
+        public Builder isInstanceScoped(boolean isInstanceScoped) {
+            this.isInstanceScoped = isInstanceScoped;
+            return this;
+        }
+
+        public Builder attestationPlugin(String attestationPlugin) {
+            this.attestationPlugin = attestationPlugin;
+            return this;
+        }
+
+        public Builder attestationRef(String attestationRef) {
+            this.attestationRef = attestationRef;
+            return this;
+        }
+
+        public Builder kemPublicKey(byte[] kemPublicKey) {
+            this.kemPublicKey = kemPublicKey;
+            return this;
+        }
+
         public Builder metadata(Map<String, String> metadata) {
             this.metadata = metadata;
             return this;
         }
 
-        /**
-         * Ajoute une métadonnée unitaire.
-         *
-         * @param key Clé.
-         * @param value Valeur.
-         * @return {@code this} Builder.
-         */
         public Builder putMetadata(String key, String value) {
             if (this.metadata == null) {
                 this.metadata = new HashMap<>();
@@ -262,11 +249,6 @@ public record TrustEntry(
             return this;
         }
 
-        /**
-         * Construit l'instance finale de {@link TrustEntry}.
-         *
-         * @return L'entrée {@link TrustEntry} immuable construite.
-         */
         public TrustEntry build() {
             return new TrustEntry(
                 schemaVersion,
@@ -280,6 +262,10 @@ public record TrustEntry(
                 issuerSignature,
                 publishedAt,
                 isRoot,
+                isInstanceScoped,
+                attestationPlugin,
+                attestationRef,
+                kemPublicKey,
                 metadata
             );
         }

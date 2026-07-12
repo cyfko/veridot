@@ -7,19 +7,22 @@ import io.github.cyfko.veridot.core.Algorithm;
 
 /// Provide defaults to some constants.
 abstract class ConstantDefault {
-    static final long KEYS_ROTATION_MINUTES = 1440; // 24 hours
-    static final int  ASYMMETRIC_KEY_SIZE   = 3072;  // RSA-3072 (NIST recommendation post-2030)
     static final long RECONCILIATION_INTERVAL_MINUTES = 15;
     static final long CAPABILITY_CACHE_TTL_SECONDS = 10;
     static final long CAPABILITY_NEGATIVE_CACHE_TTL_SECONDS = 5;
     static final long MAX_CLOCK_DRIFT_SECONDS = 300;
     static final int  MIN_RSA_KEY_LENGTH = 2048;
     static final long RECONCILIATION_MAX_STALENESS_MINUTES = 60;
+    // V5 additions
+    static final long TRUST_CACHE_SYNC_HOURS = 6;
+    static final long TRUST_STALE_WINDOW_SECONDS = 3600;
+    static final long TAAS_DIGEST_INTERVAL_SECONDS = 3600;
+    static final int  DIGEST_TOLERANCE = 2;
+    static final long FENCE_ANCHOR_MAX_AGE_SECONDS = 600;
 }
 
 /// Defines environment variable names.
 abstract class Env {
-    static final String KEYS_ROTATION_MINUTES = "VDOT_KEYS_ROTATION_MINUTES";
     static final String RECONCILIATION_INTERVAL_MINUTES = "VDOT_RECONCILIATION_INTERVAL_MINUTES";
     static final String CAPABILITY_CACHE_TTL_SECONDS = "VDOT_CAPABILITY_CACHE_TTL_SECONDS";
     static final String CAPABILITY_NEGATIVE_CACHE_TTL_SECONDS = "VDOT_CAPABILITY_NEGATIVE_CACHE_TTL_SECONDS";
@@ -28,6 +31,12 @@ abstract class Env {
     static final String MIN_RSA_KEY_LENGTH = "VDOT_MIN_RSA_KEY_LENGTH";
     static final String WATERMARK_PERSISTENCE_FILE = "VDOT_WATERMARK_PERSISTENCE_FILE";
     static final String RECONCILIATION_MAX_STALENESS_MINUTES = "VDOT_RECONCILIATION_MAX_STALENESS_MINUTES";
+    // V5 additions
+    static final String TRUST_CACHE_SYNC_HOURS = "VDOT_TRUST_CACHE_SYNC_HOURS";
+    static final String TRUST_STALE_WINDOW_SECONDS = "VDOT_TRUST_STALE_WINDOW_SECONDS";
+    static final String TAAS_DIGEST_INTERVAL = "VDOT_TAAS_DIGEST_INTERVAL";
+    static final String DIGEST_TOLERANCE = "VDOT_DIGEST_TOLERANCE";
+    static final String FENCE_ANCHOR_MAX_AGE = "VDOT_FENCE_ANCHOR_MAX_AGE";
 }
 
 /**
@@ -42,8 +51,6 @@ abstract class Env {
  * <table border="1">
  *   <caption>Supported environment variables and their defaults</caption>
  *   <tr><th>Variable</th><th>Constant</th><th>Default</th></tr>
- *   <tr><td>{@code VDOT_KEYS_ROTATION_MINUTES}</td>
- *       <td>{@link #KEYS_ROTATION_MINUTES}</td><td>1440 (24 h)</td></tr>
  *   <tr><td>{@code VDOT_RECONCILIATION_INTERVAL_MINUTES}</td>
  *       <td>{@link #RECONCILIATION_INTERVAL_MINUTES}</td><td>15 (15 min)</td></tr>
  * </table>
@@ -60,19 +67,11 @@ public abstract class Config {
     /**
      * Protocol version implemented by this library.
      *
-     * <p>This value corresponds to the version prefix embedded in every Protocol V4
-     * {@code messageId} (e.g., {@code "4:user-123:session-A"}).</p>
+     * <p>This value corresponds to the version prefix embedded in every Protocol V5
+     * token reference (e.g., {@code "8:group:orders:session-A"}).</p>
      */
     public static final int PROTOCOL_VERSION = Protocol.VERSION;
 
-    /**
-     * The interval in minutes between automatic ephemeral key-pair rotations.
-     *
-     * <p>Override with the {@code VDOT_KEYS_ROTATION_MINUTES} environment variable.
-     * Default is {@code 1440} (24 hours). Reducing this value increases forward secrecy
-     * but invalidates tokens signed with the previous key sooner.</p>
-     */
-    public static final long KEYS_ROTATION_MINUTES;
 
     /**
      * The interval in minutes between automatic VersionWatermark periodic reconciliations against the broker.
@@ -83,35 +82,6 @@ public abstract class Config {
      */
     public static final long RECONCILIATION_INTERVAL_MINUTES;
 
-    /**
-     * The asymmetric algorithm used to generate signing key pairs.
-     *
-     * @implNote Currently {@code "RSA"}. This is an implementation detail of
-     *           {@code GenericSignerVerifier} and is not mandated by the protocol specification.
-     */
-    public static final String ASYMMETRIC_KEYPAIR_ALGORITHM = "RSA";
-
-    /**
-     * The RSA key size in bits used when generating ephemeral signing key pairs.
-     *
-     * <p>Veridot uses <strong>RSA-3072</strong> by default. RSA-2048 was the previous
-     * implicit default, but is scheduled for deprecation by NIST around 2030-2035.
-     * By targeting 3072 now we avoid a second breaking change when that deprecation
-     * becomes effective.</p>
-     *
-     * @implNote Value: {@code 3072}.
-     */
-    public static final int ASYMMETRIC_KEY_SIZE = ConstantDefault.ASYMMETRIC_KEY_SIZE;
-
-    /**
-     * The default cryptographic mode identifier embedded in Protocol V3 metadata messages.
-     *
-     * <p>This value is stored in the {@code alg} property of each V3 metadata message so
-     * that verifiers know which algorithm was used to sign the token.</p>
-     *
-     * @implNote Currently {@code "rsa"}.
-     */
-    public static final String DEFAULT_CRYPTO_MODE = "rsa";
 
     /**
      * How long resolved configs are cached before re-querying the broker.
@@ -153,28 +123,29 @@ public abstract class Config {
      */
     public static final long CAPABILITY_NEGATIVE_CACHE_TTL_SECONDS;
 
+    // ── V5 Constants ──────────────────────────────────────────────────
+
+    /**
+     * HKDF salt for watermark persistence integrity (V5, §6.8).
+     */
+    public static final String WATERMARK_HKDF_SALT = "veridot-watermark-v5";
+
+    /** How often (hours) the local TrustRoot cache syncs with TAAS (Appendix G). */
+    public static final long TRUST_CACHE_SYNC_HOURS;
+
+    /** Grace window (seconds) for stale TrustEntries past notAfter (§5.6.3). */
+    public static final long TRUST_STALE_WINDOW_SECONDS;
+
+    /** Interval (seconds) between TAAS digest publications (§18.2). */
+    public static final long TAAS_DIGEST_INTERVAL_SECONDS;
+
+    /** Allowable entry-count divergence before flagging broker omission (§18.2.1). */
+    public static final int DIGEST_TOLERANCE;
+
+    /** Max age (seconds) of a FENCE anchoredAt timestamp (§18.3). */
+    public static final long FENCE_ANCHOR_MAX_AGE_SECONDS;
+
     static {
-        long parsedRotation = ConstantDefault.KEYS_ROTATION_MINUTES;
-        final var rotationRate = getEnvOrProp(Env.KEYS_ROTATION_MINUTES);
-        if (rotationRate != null) {
-            try {
-                long parsed = Long.parseLong(rotationRate);
-                if (parsed >= 1) {
-                    parsedRotation = parsed;
-                } else {
-                    System.getLogger(Config.class.getName()).log(
-                            System.Logger.Level.WARNING,
-                            "Ignoring invalid " + Env.KEYS_ROTATION_MINUTES + "=" + parsed
-                                    + " (must be >= 1). Using default: " + ConstantDefault.KEYS_ROTATION_MINUTES);
-                }
-            } catch (NumberFormatException e) {
-                System.getLogger(Config.class.getName()).log(
-                        System.Logger.Level.WARNING,
-                        "Ignoring non-numeric " + Env.KEYS_ROTATION_MINUTES + "='" + rotationRate
-                                + "'. Using default: " + ConstantDefault.KEYS_ROTATION_MINUTES);
-            }
-        }
-        KEYS_ROTATION_MINUTES = parsedRotation;
 
         long parsedReconciliation = ConstantDefault.RECONCILIATION_INTERVAL_MINUTES;
         final var reconciliationRate = getEnvOrProp(Env.RECONCILIATION_INTERVAL_MINUTES);
@@ -292,14 +263,20 @@ public abstract class Config {
             String[] parts = allowedAlgsVal.split(",");
             for (String part : parts) {
                 String clean = part.trim().toUpperCase();
-                if (clean.equals("RSA") || clean.equals("1") || clean.equals("0X01") || clean.equals("RSA-SHA256") || clean.equals("RSA_SHA256")) {
-                    parsedAlgs.add(Algorithm.RSA_SHA256);
-                } else if (clean.equals("ECDSA") || clean.equals("ECDSA-SHA256") || clean.equals("ECDSA_SHA256") || clean.equals("2") || clean.equals("0X02")) {
-                    parsedAlgs.add(Algorithm.ECDSA_SHA256);
-                } else if (clean.equals("RSA-PSS") || clean.equals("RSA_PSS") || clean.equals("3") || clean.equals("0X03")) {
-                    parsedAlgs.add(Algorithm.RSA_PSS);
-                } else if (clean.equals("ED25519") || clean.equals("EDDSA") || clean.equals("4") || clean.equals("0X04")) {
+                if (clean.equals("ED25519") || clean.equals("EDDSA") || clean.equals("1") || clean.equals("0X01")) {
                     parsedAlgs.add(Algorithm.ED25519);
+                } else if (clean.equals("ECDSA") || clean.equals("ECDSA-P256") || clean.equals("ECDSA_P256") || clean.equals("2") || clean.equals("0X02")) {
+                    parsedAlgs.add(Algorithm.ECDSA_P256);
+                } else if (clean.equals("RSA") || clean.equals("RSA-SHA256") || clean.equals("RSA_SHA256") || clean.equals("3") || clean.equals("0X03")) {
+                    parsedAlgs.add(Algorithm.RSA_SHA256);
+                } else if (clean.equals("RSA-PSS") || clean.equals("RSA_PSS") || clean.equals("4") || clean.equals("0X04")) {
+                    parsedAlgs.add(Algorithm.RSA_PSS);
+                } else if (clean.equals("ED25519-MLDSA65") || clean.equals("ED25519_MLDSA65") || clean.equals("5") || clean.equals("0X05")) {
+                    parsedAlgs.add(Algorithm.ED25519_MLDSA65);
+                } else if (clean.equals("ECDSA-P256-MLDSA65") || clean.equals("ECDSA_P256_MLDSA65") || clean.equals("6") || clean.equals("0X06")) {
+                    parsedAlgs.add(Algorithm.ECDSA_P256_MLDSA65);
+                } else if (clean.equals("MLDSA65") || clean.equals("ML-DSA-65") || clean.equals("7") || clean.equals("0X07")) {
+                    parsedAlgs.add(Algorithm.MLDSA65);
                 } else {
                     System.getLogger(Config.class.getName()).log(
                             System.Logger.Level.WARNING,
@@ -308,8 +285,8 @@ public abstract class Config {
             }
         }
         if (parsedAlgs.isEmpty()) {
-            parsedAlgs.add(Algorithm.RSA_PSS);
             parsedAlgs.add(Algorithm.ED25519);
+            parsedAlgs.add(Algorithm.ECDSA_P256);
         }
         ALLOWED_SIG_ALGS = Collections.unmodifiableSet(parsedAlgs);
 
@@ -336,6 +313,13 @@ public abstract class Config {
             }
         }
         RECONCILIATION_MAX_STALENESS_MINUTES = parsedStaleness;
+
+        // ── V5 Constants initialization ──
+        TRUST_CACHE_SYNC_HOURS = parseLongEnv(Env.TRUST_CACHE_SYNC_HOURS, ConstantDefault.TRUST_CACHE_SYNC_HOURS, 1, 168);
+        TRUST_STALE_WINDOW_SECONDS = parseLongEnv(Env.TRUST_STALE_WINDOW_SECONDS, ConstantDefault.TRUST_STALE_WINDOW_SECONDS, 0, 86400);
+        TAAS_DIGEST_INTERVAL_SECONDS = parseLongEnv(Env.TAAS_DIGEST_INTERVAL, ConstantDefault.TAAS_DIGEST_INTERVAL_SECONDS, 60, 86400);
+        DIGEST_TOLERANCE = (int) parseLongEnv(Env.DIGEST_TOLERANCE, ConstantDefault.DIGEST_TOLERANCE, 0, 100);
+        FENCE_ANCHOR_MAX_AGE_SECONDS = parseLongEnv(Env.FENCE_ANCHOR_MAX_AGE, ConstantDefault.FENCE_ANCHOR_MAX_AGE_SECONDS, 60, 3600);
     }
 
     private static String getEnvOrProp(String key) {
@@ -344,5 +328,26 @@ public abstract class Config {
             val = System.getProperty(key);
         }
         return val;
+    }
+
+    private static long parseLongEnv(String envKey, long defaultVal, long min, long max) {
+        final var envVal = getEnvOrProp(envKey);
+        if (envVal != null) {
+            try {
+                long parsed = Long.parseLong(envVal);
+                if (parsed >= min && parsed <= max) {
+                    return parsed;
+                }
+                System.getLogger(Config.class.getName()).log(
+                    System.Logger.Level.WARNING,
+                    "Ignoring invalid " + envKey + "=" + parsed
+                        + " (must be " + min + "–" + max + "). Using default: " + defaultVal);
+            } catch (NumberFormatException e) {
+                System.getLogger(Config.class.getName()).log(
+                    System.Logger.Level.WARNING,
+                    "Ignoring non-numeric " + envKey + "='" + envVal + "'. Using default: " + defaultVal);
+            }
+        }
+        return defaultVal;
     }
 }

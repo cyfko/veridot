@@ -1,0 +1,301 @@
+{
+  "description": "Veridot Protocol V5 — Canonical Envelope Test Vectors",
+  "specReference": "PROTOCOL_V5.md §3, §4, §6, Appendix B",
+  "version": "5.0",
+  "vectors": [
+    {
+      "name": "ed25519_signed_data_basic",
+      "description": "Ed25519 signing of SIGNED_DATA entry with global scope",
+      "input": {
+        "protoVersion": 5,
+        "entryType": "SIGNED_DATA",
+        "entryTypeCode": "0x08",
+        "flags": 1,
+        "flagsHex": "0x0001",
+        "scope": "global",
+        "key": "msg-001",
+        "version": 1,
+        "timestamp": 1720000000000,
+        "issuer": "orders-service@abcdefghijklmnopqrstuvwxyz012345",
+        "payloadHex": "0100036162630202000100030003666F6F",
+        "algorithm": "ED25519",
+        "algorithmCode": "0x01",
+        "signatureHex": "deadbeefcafebabe0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expected": {
+        "headerSize": 8,
+        "flagsU16": "0x0001",
+        "flagCompactSig": true,
+        "flagHybridSig": false,
+        "flagDetachedPayload": false,
+        "flagInstanceScoped": false,
+        "valid": true,
+        "entryType": "SIGNED_DATA",
+        "scope": "global",
+        "key": "msg-001",
+        "issuer": "orders-service@abcdefghijklmnopqrstuvwxyz012345"
+      },
+      "notes": "COMPACT_SIG=1 is required for Ed25519 (fixed 64-byte signatures)"
+    },
+    {
+      "name": "ecdsa_p256_capability_with_subject_pattern",
+      "description": "ECDSA-P256 signing of CAPABILITY entry with subjectPattern",
+      "input": {
+        "protoVersion": 5,
+        "entryType": "CAPABILITY",
+        "entryTypeCode": "0x02",
+        "flags": 0,
+        "flagsHex": "0x0000",
+        "scope": "group:orders",
+        "key": "cap-orders-wildcard",
+        "version": 1,
+        "timestamp": 1720000000000,
+        "issuer": "root-authority@AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHH",
+        "payloadHex": "050012006F72646572732D736572766963654020",
+        "algorithm": "ECDSA_P256",
+        "algorithmCode": "0x02"
+      },
+      "expected": {
+        "headerSize": 8,
+        "flagsU16": "0x0000",
+        "flagCompactSig": false,
+        "flagHybridSig": false,
+        "valid": true,
+        "entryType": "CAPABILITY",
+        "scope": "group:orders"
+      },
+      "notes": "COMPACT_SIG=0 is required for ECDSA-P256 (variable-length DER signatures). Payload contains subjectPattern tag 0x05."
+    },
+    {
+      "name": "compact_sig_0_with_ed25519_reject",
+      "description": "COMPACT_SIG=0 with Ed25519 — MUST be rejected (§3.3): Ed25519 requires COMPACT_SIG",
+      "input": {
+        "protoVersion": 5,
+        "entryType": "LIVENESS",
+        "entryTypeCode": "0x04",
+        "flags": 0,
+        "flagsHex": "0x0000",
+        "scope": "group:users",
+        "key": "sess-abc",
+        "algorithm": "ED25519",
+        "algorithmCode": "0x01"
+      },
+      "expected": {
+        "valid": false,
+        "errorCode": "V5110",
+        "errorName": "COMPACT_SIG_FLAG_MISMATCH",
+        "reason": "Ed25519 produces compact (fixed-length) signatures; COMPACT_SIG flag MUST be set"
+      }
+    },
+    {
+      "name": "compact_sig_1_with_ecdsa_reject",
+      "description": "COMPACT_SIG=1 with ECDSA-P256 — MUST be rejected (§3.3): ECDSA produces variable-length DER signatures",
+      "input": {
+        "protoVersion": 5,
+        "entryType": "LIVENESS",
+        "entryTypeCode": "0x04",
+        "flags": 1,
+        "flagsHex": "0x0001",
+        "scope": "group:users",
+        "key": "sess-xyz",
+        "algorithm": "ECDSA_P256",
+        "algorithmCode": "0x02"
+      },
+      "expected": {
+        "valid": false,
+        "errorCode": "V5110",
+        "errorName": "COMPACT_SIG_FLAG_MISMATCH",
+        "reason": "ECDSA-P256 produces variable-length signatures; COMPACT_SIG flag MUST NOT be set"
+      }
+    },
+    {
+      "name": "hybrid_sig_ed25519_mldsa65",
+      "description": "HYBRID_SIG flag with Ed25519+ML-DSA-65 composite algorithm",
+      "input": {
+        "protoVersion": 5,
+        "entryType": "SIGNED_DATA",
+        "entryTypeCode": "0x08",
+        "flags": 3,
+        "flagsHex": "0x0003",
+        "scope": "global",
+        "key": "msg-pq-001",
+        "version": 1,
+        "timestamp": 1720000000000,
+        "issuer": "pq-service@xyzxyzxyzxyzxyzxyzxyzxyz01234567",
+        "algorithm": "ED25519_MLDSA65",
+        "algorithmCode": "0x05"
+      },
+      "expected": {
+        "headerSize": 8,
+        "flagsU16": "0x0003",
+        "flagCompactSig": true,
+        "flagHybridSig": true,
+        "valid": true,
+        "entryType": "SIGNED_DATA"
+      },
+      "notes": "Both COMPACT_SIG and HYBRID_SIG are set. Ed25519+ML-DSA-65 is both compact and hybrid."
+    },
+    {
+      "name": "hybrid_sig_without_hybrid_alg_reject",
+      "description": "HYBRID_SIG=1 with non-hybrid algorithm — MUST be rejected (§3.3)",
+      "input": {
+        "protoVersion": 5,
+        "entryType": "SIGNED_DATA",
+        "entryTypeCode": "0x08",
+        "flags": 2,
+        "flagsHex": "0x0002",
+        "scope": "global",
+        "key": "msg-bad",
+        "algorithm": "RSA_SHA256",
+        "algorithmCode": "0x03"
+      },
+      "expected": {
+        "valid": false,
+        "errorCode": "V5110",
+        "errorName": "COMPACT_SIG_FLAG_MISMATCH",
+        "reason": "HYBRID_SIG flag set but sigAlg RSA_SHA256 is not a hybrid algorithm"
+      }
+    },
+    {
+      "name": "proto_version_0x05_accept",
+      "description": "Protocol version 0x05 MUST be accepted",
+      "input": {
+        "protoVersion": 5,
+        "magicHex": "5644",
+        "protoVersionHex": "05"
+      },
+      "expected": {
+        "valid": true
+      }
+    },
+    {
+      "name": "proto_version_0x04_reject",
+      "description": "Protocol version 0x04 (V4) MUST be rejected with V5001",
+      "input": {
+        "protoVersion": 4,
+        "magicHex": "5644",
+        "protoVersionHex": "04"
+      },
+      "expected": {
+        "valid": false,
+        "errorCode": "V5001",
+        "errorName": "INVALID_ENVELOPE",
+        "reason": "Protocol version 0x04 is not V5; envelope rejected at magic/proto validation"
+      }
+    },
+    {
+      "name": "entry_type_0x01_reserved_reject",
+      "description": "Entry type 0x01 (KEY_EPOCH, eliminated in V5) MUST be rejected with V5002",
+      "input": {
+        "protoVersion": 5,
+        "entryTypeCode": "0x01",
+        "magicAndHeaderHex": "564405010001"
+      },
+      "expected": {
+        "valid": false,
+        "errorCode": "V5002",
+        "errorName": "UNREGISTERED_ENTRY_TYPE",
+        "reason": "Entry type 0x01 is reserved (KEY_EPOCH eliminated in V5)"
+      }
+    },
+    {
+      "name": "reserved_flag_bits_reject",
+      "description": "Setting any reserved flag bit (4–15) MUST be rejected with V5005",
+      "input": {
+        "protoVersion": 5,
+        "flags": 16,
+        "flagsHex": "0x0010"
+      },
+      "expected": {
+        "valid": false,
+        "errorCode": "V5005",
+        "errorName": "RESERVED_FLAG_SET",
+        "reason": "Bits 4–15 are reserved and MUST be zero"
+      }
+    },
+    {
+      "name": "trailing_bytes_reject",
+      "description": "Trailing bytes after signature MUST be rejected with V5001 (§3.2)",
+      "input": {
+        "description": "A complete valid envelope followed by extra byte 0xFF"
+      },
+      "expected": {
+        "valid": false,
+        "errorCode": "V5001",
+        "errorName": "INVALID_ENVELOPE",
+        "reason": "Trailing bytes found after envelope signature"
+      }
+    },
+    {
+      "name": "rsa_pss_liveness_round_trip",
+      "description": "RSA-PSS signing of LIVENESS entry — round-trip encode/parse",
+      "input": {
+        "protoVersion": 5,
+        "entryType": "LIVENESS",
+        "entryTypeCode": "0x04",
+        "flags": 0,
+        "flagsHex": "0x0000",
+        "scope": "group:users",
+        "key": "sess-rsa-001",
+        "version": 42,
+        "timestamp": 1720000000000,
+        "issuer": "auth-service@rsa_rsa_rsa_rsa_rsa_rsa_rsa_rsa",
+        "algorithm": "RSA_PSS",
+        "algorithmCode": "0x04"
+      },
+      "expected": {
+        "valid": true,
+        "flagCompactSig": false,
+        "flagHybridSig": false,
+        "entryType": "LIVENESS",
+        "version": 42
+      },
+      "notes": "COMPACT_SIG=0 and HYBRID_SIG=0 are both correct for RSA-PSS."
+    },
+    {
+      "name": "instance_scoped_flag",
+      "description": "INSTANCE_SCOPED flag (bit 3) set with Ed25519",
+      "input": {
+        "protoVersion": 5,
+        "entryType": "LIVENESS",
+        "entryTypeCode": "0x04",
+        "flags": 9,
+        "flagsHex": "0x0009",
+        "scope": "group:orders",
+        "key": "sess-inst-001",
+        "algorithm": "ED25519",
+        "algorithmCode": "0x01"
+      },
+      "expected": {
+        "valid": true,
+        "flagCompactSig": true,
+        "flagInstanceScoped": true,
+        "flagsU16": "0x0009"
+      },
+      "notes": "Flags = COMPACT_SIG | INSTANCE_SCOPED = 0x0001 | 0x0008 = 0x0009"
+    },
+    {
+      "name": "all_entry_types_valid_codes",
+      "description": "All valid V5 entry type codes and their corresponding enums",
+      "input": {
+        "validCodes": {
+          "0x02": "CAPABILITY",
+          "0x03": "CONFIG",
+          "0x04": "LIVENESS",
+          "0x05": "FENCE",
+          "0x06": "SNAPSHOT_MARKER",
+          "0x07": "SECURE_PAYLOAD",
+          "0x08": "SIGNED_DATA",
+          "0x09": "AUDIT_ANCHOR",
+          "0x0A": "TRUST_REVOCATION"
+        },
+        "invalidCodes": ["0x00", "0x01", "0x0B", "0xFF"]
+      },
+      "expected": {
+        "validCount": 9,
+        "reservedRejection": "0x01 → V5002",
+        "unknownRejection": "0x0B+ → V5002"
+      }
+    }
+  ]
+}

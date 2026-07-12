@@ -79,21 +79,25 @@ public class SecurePayloadTest {
         TrustRoot trustRoot = new PublicKeyTrustRoot() {
             @Override
             public TrustIdentity resolve(String issuer) {
-                PublicKey pk = keyStore.get(issuer);
+                String key = SubjectComputer.isInstanceScoped(issuer) ? SubjectComputer.extractCn(issuer) : issuer;
+                PublicKey pk = keyStore.get(key);
                 if (pk == null) {
                     throw new VeridotException(ErrorCode.TRUST_RESOLUTION_FAILED, null, "Unknown: " + issuer);
                 }
-                return new TrustIdentity(pk, keyStore.containsKey(issuer));
+                return new TrustIdentity(pk, keyStore.containsKey(key));
             }
         };
 
-        GenericSignerVerifier signerNode = new GenericSignerVerifier(broker, trustRoot, signerId, kpSigner.getPrivate(), Algorithm.RSA_SHA256);
-        GenericSignerVerifier aliceNode = new GenericSignerVerifier(broker, trustRoot, aliceId, kpAlice.getPrivate(), Algorithm.RSA_SHA256);
-        GenericSignerVerifier bobNode = new GenericSignerVerifier(broker, trustRoot, bobId, kpBob.getPrivate(), Algorithm.RSA_SHA256);
-        GenericSignerVerifier charlieNode = new GenericSignerVerifier(broker, trustRoot, charlieId, kpCharlie.getPrivate(), Algorithm.RSA_SHA256);
+        GenericSignerVerifier signerNode = new GenericSignerVerifier(broker, trustRoot, signerId, kpSigner.getPrivate(), kpSigner.getPublic(), Algorithm.RSA_SHA256);
+        GenericSignerVerifier aliceNode = new GenericSignerVerifier(broker, trustRoot, aliceId, kpAlice.getPrivate(), kpAlice.getPublic(), Algorithm.RSA_SHA256);
+        GenericSignerVerifier bobNode = new GenericSignerVerifier(broker, trustRoot, bobId, kpBob.getPrivate(), kpBob.getPublic(), Algorithm.RSA_SHA256);
+        GenericSignerVerifier charlieNode = new GenericSignerVerifier(broker, trustRoot, charlieId, kpCharlie.getPrivate(), kpCharlie.getPublic(), Algorithm.RSA_SHA256);
 
         Scope scope = Scope.group("confidential-docs");
         byte[] payload = "Highly Sensitive Data".getBytes(StandardCharsets.UTF_8);
+
+        String aliceSubject = SubjectComputer.compute(aliceId, kpAlice.getPublic());
+        String bobSubject = SubjectComputer.compute(bobId, kpBob.getPublic());
 
         // Publish to Alice and Bob only
         String token = signerNode.sign("Highly Sensitive Data",
@@ -102,7 +106,7 @@ public class SecurePayloadTest {
                 .sequenceId("secret-1")
                 .distribution(DistributionMode.PRIVATE)
                 .validity(3600)
-                .recipients(Arrays.asList(aliceId, bobId))
+                .recipients(Arrays.asList(aliceSubject, bobSubject))
                 .mimeType("text/plain")
                 .build()
         );

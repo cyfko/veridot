@@ -12,14 +12,22 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+/**
+ * JWT builder for Protocol V5.
+ *
+ * <p>V5 changes: uses {@link Algorithm#jwtAlg()} for the header "alg" value,
+ * and supports arbitrary header fields (e.g. "kid" for instance-scoped identity).
+ */
 class JwtMaker {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final Map<String, Object> claims = new HashMap<>();
+    private final Map<String, Object> extraHeaders = new LinkedHashMap<>();
     private String subject;
     private Instant issuedAt;
     private Instant expiration;
     private PrivateKey privateKey;
+    private Algorithm alg = Algorithm.ED25519; // V5 default
 
     public static JwtMaker builder() {
         return new JwtMaker();
@@ -40,8 +48,6 @@ class JwtMaker {
         return this;
     }
 
-    private Algorithm alg = Algorithm.RSA_SHA256; // default to RSA
-
     public JwtMaker alg(Algorithm alg) {
         this.alg = alg;
         return this;
@@ -57,20 +63,21 @@ class JwtMaker {
         return this;
     }
 
+    /**
+     * Adds a custom header field (e.g. "kid" for V5 instance subject).
+     */
+    public JwtMaker header(String name, Object value) {
+        this.extraHeaders.put(name, value);
+        return this;
+    }
+
     public String compact() throws Exception {
         if (privateKey == null) throw new IllegalStateException("Private key must be set");
 
         Map<String, Object> header = new LinkedHashMap<>();
-        String algStr = "RS256";
-        if (alg == Algorithm.ECDSA_SHA256) {
-            algStr = "ES256";
-        } else if (alg == Algorithm.RSA_PSS) {
-            algStr = "PS256";
-        } else if (alg == Algorithm.ED25519) {
-            algStr = "EdDSA";
-        }
-        header.put("alg", algStr);
+        header.put("alg", alg.jwtAlg()); // V5: use Algorithm.jwtAlg()
         header.put("typ", "JWT");
+        header.putAll(extraHeaders); // V5: custom headers (kid, etc.)
 
         Map<String, Object> payload = new LinkedHashMap<>();
         if (subject != null) payload.put("sub", subject);
@@ -106,9 +113,7 @@ class JwtMaker {
             } catch (Exception ignored) {}
         }
         signature.initSign(privateKey);
-
         signature.update(data.getBytes(StandardCharsets.UTF_8));
-
         byte[] signed = signature.sign();
         return base64UrlEncode(signed);
     }

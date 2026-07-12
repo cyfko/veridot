@@ -7,7 +7,7 @@ import java.util.function.Function;
 
 /**
  * Contract for verifying a signed token and extracting its embedded payload along with
- * the Protocol V4 identifiers that were bound to the token at signing time.
+ * the Protocol V5 identifiers that were bound to the token at signing time.
  *
  * <p>Implementations validate the cryptographic integrity and temporal validity of the token,
  * retrieve the associated verification metadata from a {@link Broker}, and
@@ -16,7 +16,7 @@ import java.util.function.Function;
  * <p>The method accepts both token formats produced by {@link DataSigner#sign}:</p>
  * <ul>
  *   <li>A <em>signed token</em> (issued in {@link DistributionMode#DIRECT} mode)</li>
- *   <li>A Protocol V4 {@code messageId} (issued in {@link DistributionMode#INDIRECT} mode)</li>
+ *   <li>A compact reference token (issued in {@link DistributionMode#NATIVE} mode)</li>
  * </ul>
  *
  * <h2>Typical usage</h2>
@@ -52,14 +52,14 @@ public interface TokenVerifier {
 
     /**
      * Verifies the given token and returns the deserialized payload together with
-     * the Protocol V4 identifiers ({@code groupId} and {@code sequenceId}) that were
+     * the Protocol V5 identifiers ({@code groupId} and {@code sequenceId}) that were
      * bound to the token at signing time.
      *
      * <p>The verification process:</p>
      * <ol>
      *   <li>Resolves the token format (signed token vs {@code messageId})</li>
-     *   <li>Retrieves the verification metadata (KEY_EPOCH envelope) from the {@link Broker}</li>
-     *   <li>Validates the structural integrity and bounds of the identifiers and key epoch</li>
+     *   <li>Retrieves the verification metadata (capability envelope) from the {@link Broker}</li>
+     *   <li>Validates the structural integrity and bounds of the identifiers</li>
      *   <li>Validates the long-term cryptographic signature of the key epoch against a {@link TrustRoot}</li>
      *   <li>Verifies the authorization chain of capabilities for the signer ID</li>
      *   <li>Enforces version monotonicity checks via the {@code VersionWatermark}</li>

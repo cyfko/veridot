@@ -5,6 +5,7 @@ import io.github.cyfko.veridot.core.TrustRoot;
 import io.github.cyfko.veridot.core.TrustIdentity;
 import io.github.cyfko.veridot.core.exceptions.VeridotException;
 
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -41,7 +42,7 @@ final class CapabilityVerifier {
             if (entry.authorized) {
                 return;
             } else {
-                throw new VeridotException(ErrorCode.CAPABILITY_NOT_FOUND, null, "Issuer " + issuer + " is not authorized for scope " + scope.value() + " (cached)");
+                throw new VeridotException(ErrorCode.NO_CAPABILITY, null, "Issuer " + issuer + " is not authorized for scope " + scope.value() + " (cached)");
             }
         }
 
@@ -71,8 +72,35 @@ final class CapabilityVerifier {
         try {
             capBytes = broker.get(targetEntryId.storageKey());
         } catch (Exception e) {
-            throw new VeridotException(ErrorCode.TRANSPORT_UNAVAILABLE, targetEntryId.loggable(), 
+            throw new VeridotException(ErrorCode.BROKER_UNREACHABLE, targetEntryId.loggable(), 
                 "Failed to retrieve capability from broker", e);
+        }
+
+        // V5 §9.2.2: Pattern-based CAPABILITY lookup
+        // If exact subject lookup missed, scan entries in this scope for a
+        // CAPABILITY whose subjectPattern (tag 0x05) matches the subject.
+        if (capBytes == null) {
+            try {
+                List<Broker.BrokerEntry> candidates = broker.snapshot(targetScope);
+                if (candidates != null) {
+                    for (Broker.BrokerEntry candidate : candidates) {
+                        try {
+                            Envelope candEnvelope = Envelope.parse(candidate.envelopeBytes());
+                            if (candEnvelope.entryType != EntryType.CAPABILITY) continue;
+                            CapabilityPayload candPayload = CapabilityPayload.decode(candEnvelope.payload);
+                            if (candPayload.subjectPattern() != null
+                                && PatternMatcher.matches(candPayload.subjectPattern(), subject)) {
+                                capBytes = candidate.envelopeBytes();
+                                break;
+                            }
+                        } catch (Exception ignored) {
+                            // Skip malformed entries
+                        }
+                    }
+                }
+            } catch (Exception ignored) {
+                // Snapshot unavailable — continue with scope hierarchy
+            }
         }
 
         if (capBytes == null && targetScope.isGroup()) {
@@ -82,7 +110,7 @@ final class CapabilityVerifier {
                 try {
                     capBytes = broker.get(siteEntryId.storageKey());
                 } catch (Exception e) {
-                    throw new VeridotException(ErrorCode.TRANSPORT_UNAVAILABLE, siteEntryId.loggable(), 
+                    throw new VeridotException(ErrorCode.BROKER_UNREACHABLE, siteEntryId.loggable(), 
                         "Failed to retrieve capability from broker", e);
                 }
             }
@@ -92,7 +120,7 @@ final class CapabilityVerifier {
                 try {
                     capBytes = broker.get(globalEntryId.storageKey());
                 } catch (Exception e) {
-                    throw new VeridotException(ErrorCode.TRANSPORT_UNAVAILABLE, globalEntryId.loggable(), 
+                    throw new VeridotException(ErrorCode.BROKER_UNREACHABLE, globalEntryId.loggable(), 
                         "Failed to retrieve capability from broker", e);
                 }
             }
@@ -108,7 +136,7 @@ final class CapabilityVerifier {
             } catch (Exception ignored) {
                 // Not a root identity or resolution failed
             }
-            throw new VeridotException(ErrorCode.CAPABILITY_NOT_FOUND, targetEntryId.loggable(), 
+            throw new VeridotException(ErrorCode.NO_CAPABILITY, targetEntryId.loggable(), 
                 "No capability entry found for subject " + subject + " covering scope " + targetScope.value());
         }
 
@@ -118,7 +146,7 @@ final class CapabilityVerifier {
         // is unconditionally invalid to prevent initial-state replay/rollback attacks (where watermark is 0
         // and 0 < 0 is false, allowing version 0 to pass relative monotone checks).
         if (capEnvelope.version == 0) {
-            throw new VeridotException(ErrorCode.STALE_VERSION, targetEntryId.loggable(),
+            throw new VeridotException(ErrorCode.VERSION_REJECTED, targetEntryId.loggable(),
                 "Entry version 0 is unconditionally rejected (§11.1 V4201)");
         }
         signatureVerifier.verify(capEnvelope, trustRoot);
@@ -132,7 +160,7 @@ final class CapabilityVerifier {
         }
 
         if (!capPayload.covers(targetScope)) {
-            throw new VeridotException(ErrorCode.CAPABILITY_NOT_FOUND, capEnvelope.entryId().loggable(), 
+            throw new VeridotException(ErrorCode.NO_CAPABILITY, capEnvelope.entryId().loggable(), 
                 "Capability scope patterns do not cover target scope: " + targetScope.value());
         }
 
