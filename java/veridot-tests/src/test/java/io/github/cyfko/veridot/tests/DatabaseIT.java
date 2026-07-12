@@ -34,7 +34,7 @@ public abstract class DatabaseIT {
 
     private DatabaseBroker broker;
 
-    public DatabaseTest(JdbcDatabaseContainer<?> sqlContainer) {
+    public DatabaseIT(JdbcDatabaseContainer<?> sqlContainer) {
         this.sqlContainer = sqlContainer;
         sqlContainer.start();
     }

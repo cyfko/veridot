@@ -9,8 +9,8 @@
     <version>5.0.0-SNAPSHOT</version>
 
     <properties>
-        <maven.compiler.source>25</maven.compiler.source>
-        <maven.compiler.target>25</maven.compiler.target>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.deploy.skip>true</maven.deploy.skip>
     </properties>
@@ -137,9 +137,11 @@
                 <configuration>
                     <environmentVariables>
                         <VDOT_ALLOWED_SIG_ALGS>ED25519,RSA_PSS,ECDSA_SHA256,RSA_SHA256</VDOT_ALLOWED_SIG_ALGS>
+                        <VDOT_CLOCK_DRIFT_TOLERANCE_SECONDS>0</VDOT_CLOCK_DRIFT_TOLERANCE_SECONDS>
                     </environmentVariables>
                     <systemPropertyVariables>
                         <VDOT_ALLOWED_SIG_ALGS>ED25519,RSA_PSS,ECDSA_SHA256,RSA_SHA256</VDOT_ALLOWED_SIG_ALGS>
+                        <VDOT_CLOCK_DRIFT_TOLERANCE_SECONDS>0</VDOT_CLOCK_DRIFT_TOLERANCE_SECONDS>
                     </systemPropertyVariables>
                 </configuration>
             </plugin>
