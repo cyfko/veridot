@@ -154,9 +154,9 @@
     {
       "name": "colon_star_not_at_end_literal",
       "description": "':*' is only special at the end. 'prefix:*:more' is prefix wildcard with prefix 'prefix:*:mor'",
-      "input": { "pattern": "prefix:*:more", "value": "prefix:*:more" },
+      "input": { "pattern": "prefix:*:more", "value": "prefix:val:more" },
       "expected": { "matches": false },
-      "notes": "Pattern ends with 'e' not '*', so it's an exact match check. 'prefix:*:more' != 'prefix:*:more' would be identity; this checks the parser doesn't misinterpret inner ':*'."
+      "notes": "Pattern ends with 'e' not '*', so it's an exact match check. 'prefix:*:more' != 'prefix:val:more' checks the parser doesn't misinterpret inner ':*'."
     }
   ]
 }
