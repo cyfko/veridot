@@ -1,14 +1,14 @@
 ---
-title: Veridot Documentation
-description: Comprehensive documentation for the Veridot distributed token verification protocol. Sub-millisecond verification, instant revocation, zero shared secrets.
-keywords: [veridot, distributed token verification, JWT, microservices, java, kafka]
+title: Veridot Protocol Documentation
+description: Comprehensive documentation for the Veridot Protocol V5. Attestation-first, sub-millisecond verification, instant revocation.
+keywords: [veridot, distributed token verification, TAAS, protocol v5]
 slug: /
 sidebar_position: 1
 ---
 
 # Veridot Documentation
 
-**Veridot** is a distributed token verification protocol and Java library that solves the authentication trilemma: verify tokens in **sub-millisecond** without a central authority, revoke them **instantly** across the cluster, and maintain **zero shared secrets** between services.
+**Veridot** is a distributed authenticity and integrity protocol (V5) that solves the authentication trilemma: verify tokens in **sub-millisecond** without a central authority, revoke them **instantly** across the cluster, and maintain **zero shared secrets** between services.
 
 ---
 
@@ -21,9 +21,9 @@ Every microservice authentication approach forces a compromise:
 | Shared HMAC | ✅ | ❌ | ✅ |
 | Stateless RSA/ECDSA JWT | ❌ | ✅ | ✅ |
 | Centralized IdP call | ✅ | ✅ | ❌ |
-| **Veridot** | ✅ | ✅ | ✅ |
+| **Veridot V5** | ✅ | ✅ | ✅ |
 
-Veridot achieves all three by combining **ephemeral asymmetric key pairs** with **distributed metadata propagation** and a **local RocksDB cache**.
+Veridot achieves all three through an **attestation-first** design, single-key-per-instance lifecycles, and a **broker-untrusted** architecture. 
 
 ---
 
@@ -36,31 +36,31 @@ Veridot achieves all three by combining **ephemeral asymmetric key pairs** with 
 
 New to Veridot? Start here.
 
-- [What is Veridot?](./getting-started/what-is-veridot.md)
-- [How it Works](./getting-started/how-it-works.md)
-- [Quickstart (5 min)](./getting-started/quickstart.md)
+- [The Authentication Trilemma](./learn/the-problem.md)
+- [How Veridot Works](./learn/how-veridot-works.md)
+- [Your First Integration](./learn/first-integration.md)
 
 </div>
 <div className="col col--4">
 
 ### 🔧 Developer Guides
 
-Build with Veridot.
+Understand the core mechanics.
 
-- [Core Concepts](./guides/core-concepts.md)
-- [TrustRoot Setup](./guides/trustroot-setup.md)
-- [Distribution Modes](./guides/distribution-modes.md)
+- [The TAAS Cluster](./learn/going-distributed.md)
+- [Capabilities](./learn/capabilities.md)
+- [Living Sessions](./learn/session-management.md)
+- [Going to Production](./learn/production.md)
 
 </div>
 <div className="col col--4">
 
 ### 📜 Reference
 
-Dive deep into the internals.
+Dive deep into the V5 internals.
 
-- [Protocol V4 Spec](./protocol/v4/index.md)
-- [API Reference](./api/index.md)
-- [Error Codes](./protocol/v4/error-codes.md)
+- [Protocol V5 Spec](./protocol/index.md)
+- [Error Codes](./protocol/index.md)
 
 </div>
 </div>
@@ -70,60 +70,34 @@ Dive deep into the internals.
 ## Architecture at a Glance
 
 ```mermaid
-graph LR
-    subgraph "Service A — Signer"
-        A["sign(payload, config)"]
-    end
+sequenceDiagram
+    participant Instance
+    participant TAAS
+    participant Broker
+    participant Verifier
+    participant TrustRoot
 
-    subgraph "Broker"
-        K["Kafka + RocksDB"]
-        D["SQL Database"]
-    end
-
-    subgraph "Service B — Verifier"
-        B["verify(token) → VerifiedData‹T›"]
-    end
-
-    A -->|"V4 Envelope"| K
-    A -.->|"alternative"| D
-    K -->|"< 1ms read"| B
-    D -.->|"JDBC poll"| B
+    Instance->>TAAS: POST {entry, attestation_proof}
+    TAAS-->>Instance: 201 {subject: CN@hash(pk), version}
+    Instance->>Broker: put(LIVENESS(ACTIVE))
+    Instance->>Instance: sign payload
+    Instance->>Broker: put(SIGNED_DATA)
+    Instance-->>Verifier: NATIVE token (8:scope:key)
+    Verifier->>TrustRoot: resolve(subject) -> PublicKey
+    Verifier->>Broker: get(LIVENESS)
+    Verifier->>Verifier: check liveness + capability
+    Verifier-->>Verifier: VerifiedData<T>
 ```
 
 ---
 
-## Java Modules
+## Protocol V5 Features
 
-| Module | Artifact | Description |
-|--------|----------|-------------|
-| **veridot-core** | `io.github.cyfko:veridot-core:4.0.1` | Core API, `GenericSignerVerifier`, Protocol V4 |
-| **veridot-kafka** | `io.github.cyfko:veridot-kafka:4.0.1` | Kafka + RocksDB `Broker` implementation |
-| **veridot-databases** | `io.github.cyfko:veridot-databases:4.0.1` | SQL `Broker` (PostgreSQL, MySQL, Oracle, MSSQL) |
-| **veridot-trustroots** | `io.github.cyfko:veridot-trustroots-*:4.0.1` | Production TrustRoot with L1/L2 cache + TAD cluster |
-
-:::tip[Quick Install]
-
-```xml
-<dependency>
-    <groupId>io.github.cyfko</groupId>
-    <artifactId>veridot-core</artifactId>
-    <version>4.0.1</version>
-</dependency>
-```
-
-Requires **Java 25+** · [Full installation guide →](./getting-started/installation.md)
-
-:::
-
----
-
-## Protocol V4
-
-Veridot Protocol V4 is a binary, self-describing message format enabling distributed verification of signed objects without shared secrets. It defines 7 entry types, a TLV payload encoding, monotonic state consistency, and positive-proof liveness attestation.
-
-[Read the Protocol V4 Specification →](./protocol/v4/index.md)
-
----
+Veridot Protocol V5 introduces an **attestation-first** approach:
+- **Trust Authority & Attestation Service (TAAS)** for robust identity registration.
+- Identity based on `CN@hash(pk)`.
+- **NATIVE** distribution mode using compact reference tokens (`8:<scope>:<key>`).
+- Completely removes the concept of Key Epochs.
 
 ## License
 

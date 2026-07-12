@@ -9,11 +9,11 @@
 
 ## What Changed in V5
 
-Protocol V5 is a **breaking rewrite** of V4. There is no backward compatibility layer.
+Protocol V5 is a **breaking rewrite** of V5. There is no backward compatibility layer.
 
 ### Wire Format (§3)
 
-| Change | V4 | V5 |
+| Change | V5 | V5 |
 |--------|----|----|
 | Protocol version | `0x04` | `0x05` |
 | Flags field | `u8` (1 byte) | `u16 BE` (2 bytes) |
@@ -49,7 +49,7 @@ Key principles:
 
 | Code | Name | V5 Status |
 |------|------|-----------|
-| `0x01` | _(reserved)_ | KEY_EPOCH **eliminated** — rejected with V5002 |
+| `0x01` | _(reserved)_ | RESERVED_01 **eliminated** — rejected with V5002 |
 | `0x02` | `CAPABILITY` | Unchanged + subjectPattern tag |
 | `0x03` | `CONFIG` | +maxInstanceLifetime, +attestationPlugin tags |
 | `0x04` | `LIVENESS` | Unchanged |
@@ -68,13 +68,13 @@ Key principles:
 | **NATIVE** | `8:<scope>:<key>` | `SIGNED_DATA` in broker | No JWT overhead |
 | **PRIVATE** | `7:<scope>:<key>` | `SECURE_PAYLOAD` in broker | E2EE with recipients |
 
-> **INDIRECT mode is removed.** DIRECT and NATIVE together cover all use cases.
+> **NATIVE mode is removed.** DIRECT and NATIVE together cover all use cases.
 
 ---
 
 ## TAAS — Trust Authority & Attestation Service (§15)
 
-TAAS replaces the old TAD (Trust Authority & Directory). It is a **Raft-replicated cluster** that:
+TAAS replaces the old TAAS (Trust Authority & Directory). It is a **Raft-replicated cluster** that:
 
 1. **Stores** public keys and trust entries
 2. **Verifies attestation proofs** at registration time (K8s PSAT, GCP IIT, TPM, or `none` for dev)

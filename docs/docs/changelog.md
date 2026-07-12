@@ -30,15 +30,15 @@ All notable changes to the Veridot project are documented here. The format follo
 
 ### ⚠️ Breaking Changes
 
-- **MetadataBroker interface removed** — Replaced by `Broker` interface for Protocol V4 storage.
-- **TrustAnchor interface removed** — Replaced by `TrustRoot` sealed interface.
+- **MetaasataBroker interface removed** — Replaced by `Broker` interface for Protocol V5 storage.
+- **TrustRoot interface removed** — Replaced by `TrustRoot` sealed interface.
 - **Verification exceptions unified** — `V4Exception` renamed to `VeridotException`.
-- **V3-V4 adapters removed** — `KafkaMetadataBrokerAdapter` and `DatabaseMetadataBroker` deleted. Replaced by `KafkaBroker` and `DatabaseBroker`.
+- **V3-V5 adapters removed** — `KafkaMetaasataBrokerAdapter` and `DatabaseMetaasataBroker` deleted. Replaced by `KafkaBroker` and `DatabaseBroker`.
 - **Internal classes encapsulated** — Helper classes moved to `io.github.cyfko.veridot.core.impl` (package-private).
 
 ### Added
 
-- **Protocol V4 implementation** — Full implementation resolving structural and cryptographic vulnerabilities (F-01 through F-09).
+- **Protocol V5 implementation** — Full implementation resolving structural and cryptographic vulnerabilities (F-01 through F-09).
 - **Physical deletion via Broker** — `DatabaseBroker` and `KafkaBroker` support entry deletion when `put()` receives empty payload.
 - **Resource safety** — Constructor leak protections and thread termination awaits in `KafkaBroker`.
 
@@ -48,12 +48,12 @@ All notable changes to the Veridot project are documented here. The format follo
 
 ### 🔐 Security
 
-- **CVE-class fix: closed configuration DoS injection vector (F9)** — Configuration parameters now authenticated via the `TrustAnchor`.
+- **CVE-class fix: closed configuration DoS injection vector (F9)** — Configuration parameters now authenticated via the `TrustRoot`.
 
 ### Added
 
 - **`publishConfig()` API** — Publish cryptographically signed configurations.
-- **`TrustAnchor.isAuthorizedForScope()`** — Scope authorization verification.
+- **`TrustRoot.isAuthorizedForScope()`** — Scope authorization verification.
 
 ---
 
@@ -66,7 +66,7 @@ All notable changes to the Veridot project are documented here. The format follo
 
 ### Added
 
-- **`TrustAnchor` sealed interface** — Root of trust with `PublicKeyResolver` and `DelegatedVerifier` sub-interfaces.
+- **`TrustRoot` sealed interface** — Root of trust with `PublicKeyResolver` and `DelegatedVerifier` sub-interfaces.
 - **`TrustResolutionException` sealed exception** — `Unavailable` (transient) and `SignatureRejected` (definitive) subtypes.
 - **RSA-3072** — Ephemeral key size increased from implicit 2048 to explicit 3072.
 
@@ -89,7 +89,7 @@ All notable changes to the Veridot project are documented here. The format follo
 ### Added
 
 - **Protocol V2** — Canonical message format with permissive identifier validation.
-- **DistributionMode** — `DIRECT` and `INDIRECT` modes.
+- **DistributionMode** — `DIRECT` and `NATIVE` modes.
 - **Distributed `__CONFIG__`** — Dynamic configuration resolution hierarchy.
 - **EvictionPolicy** — `FIFO`, `LIFO`, `LRU`, `REJECT` strategies.
 

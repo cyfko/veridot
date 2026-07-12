@@ -62,7 +62,7 @@ const config = {
         defaultMode: 'dark',
         respectPrefersColorScheme: true,
       },
-      metadata: [
+      metaasata: [
         {name: 'keywords', content: 'veridot, distributed token verification, JWT, microservices, java, kafka, revocation, zero trust'},
         {name: 'twitter:card', content: 'summary_large_image'},
       ],
@@ -80,8 +80,8 @@ const config = {
             label: 'Docs',
           },
           {
-            to: '/docs/protocol/v4/',
-            label: 'Protocol V4',
+            to: '/docs/protocol/',
+            label: 'Protocol V5',
             position: 'left',
           },
           {
@@ -115,7 +115,7 @@ const config = {
           {
             title: 'Reference',
             items: [
-              {label: 'Protocol V4', to: '/docs/protocol/v4/'},
+              {label: 'Protocol V5', to: '/docs/protocol/'},
               {label: 'API Reference', to: '/docs/api/'},
               {label: 'Changelog', to: '/docs/changelog'},
             ],
@@ -140,7 +140,7 @@ const config = {
         theme: {light: 'default', dark: 'dark'},
         options: {
           flowchart: {
-            curve: 'linear',
+            curve: 'basis',
           },
         },
       },

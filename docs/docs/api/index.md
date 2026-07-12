@@ -1,24 +1,24 @@
 ---
 title: API Reference
-description: Complete Java API reference for the Veridot distributed token verification library. Covers all public interfaces, classes, records, enums, and exceptions.
-keywords: [veridot, java api, DataSigner, TokenVerifier, GenericSignerVerifier, TrustRoot]
+description: Complete Java 21 API reference for the Veridot Protocol V5 distributed verification library.
+keywords: [veridot, java api, DataSigner, TokenVerifier, GenericSignerVerifier, TAAS]
 sidebar_position: 1
 ---
 
-# Java API Reference
+# Java API Reference (V5)
 
-This section documents the complete public API surface of Veridot's Java implementation.
+This section documents the public Java 21 API surface for Veridot Protocol V5.
 
 ## Core Interfaces
 
 | Interface | Description |
 |-----------|-------------|
-| [`DataSigner`](#datasigner) | Signs a payload → returns a token (JWT or messageId) |
+| [`DataSigner`](#datasigner) | Signs a payload → returns JWT (DIRECT) or reference (NATIVE/PRIVATE) |
 | [`TokenVerifier`](#tokenverifier) | Verifies a token → returns `VerifiedData<T>` |
-| [`TokenRevoker`](#tokenrevoker) | Revokes a session or all sessions of a group |
-| [`TokenTracker`](#tokentracker) | Checks whether a session is still active |
-| [`Broker`](#broker) | Transports protocol envelopes between service instances |
-| [`TrustRoot`](#trustroot) | Validates key announcements — ensures the broker cannot forge keys |
+| [`TokenRevoker`](#tokenrevoker) | Publishes `LIVENESS(REVOKED)` entry for a session |
+| [`TokenTracker`](#tokentracker) | Checks liveness status locally |
+| [`Broker`](#broker) | Untrusted storage for V5 envelopes |
+| [`TrustRoot`](#trustroot) | Backed by TAAS, resolves `CN@hash(pk)` to Public Keys |
 
 ---
 
@@ -31,19 +31,15 @@ public interface DataSigner {
 }
 ```
 
-Signs an arbitrary payload and returns either a JWT token (DIRECT mode), a broker reference (INDIRECT mode), or an encrypted reference (PRIVATE mode).
+In V5, identity is attestation-first and tied to the instance. The `DataSigner` uses the instance's unique ED25519 or RSA key.
 
-### Inner Interface: `DataSigner.Configurer`
+### Configurer
 
 | Method | Return | Description |
 |--------|--------|-------------|
 | `getGroupId()` | `String` | Logical group (e.g., userId) |
-| `getSequenceId()` | `String` | Session ID within group (UUID if null) |
-| `getDistribution()` | `DistributionMode` | DIRECT, INDIRECT, or PRIVATE |
-| `getDuration()` | `long` | Token TTL in seconds |
-| `getSerializer()` | `Function<Object, String>` | Custom payload serializer |
-| `getRecipients()` | `List<String>` | Authorized recipients (PRIVATE mode) |
-| `getMimeType()` | `String` | Payload MIME type (PRIVATE mode) |
+| `getSequenceId()` | `String` | Session ID within group |
+| `getDistribution()` | `DistributionMode` | `DIRECT`, `NATIVE`, `PRIVATE` |
 
 ---
 
@@ -56,7 +52,7 @@ public interface TokenVerifier {
 }
 ```
 
-Verifies a token through the [9-step verification pipeline](../guides/verifying-tokens.md) and returns the deserialized payload with its protocol identifiers.
+Performs full offline verification by validating the V5 Envelope signature, TAAS TrustRoot lookup, LIVENESS checking, and CAPABILITY authorization.
 
 ---
 
@@ -68,77 +64,19 @@ public interface TokenRevoker {
 }
 ```
 
-- `revoke("user-alice", "session-1")` — revokes a specific session
-- `revoke("user-alice", null)` — revokes **all** sessions for the group
+Publishes a strictly monotonic `LIVENESS(REVOKED)` envelope.
 
 ---
 
-## TokenTracker
+## TrustRoot (TAAS)
 
 ```java
-public interface TokenTracker {
-    boolean hasActiveToken(Object target);
+public sealed interface TrustRoot permits TAASClientTrustRoot, LocalCachingTrustRoot {
+    PublicKey resolve(String subject);
 }
 ```
 
-Accepts a `groupId` (String), a JWT token, or a messageId. Returns `true` if any active session matches.
-
----
-
-## Broker
-
-```java
-public interface Broker {
-    CompletableFuture<Void> put(byte[] storageKey, byte[] envelopeBytes);
-    byte[] get(byte[] storageKey);
-    List<BrokerEntry> snapshot(Scope scope);
-    default void putLocal(byte[] storageKey, byte[] envelopeBytes) {}
-
-    record BrokerEntry(byte[] storageKey, byte[] envelopeBytes) {}
-}
-```
-
-Implementations: `KafkaBroker` (veridot-kafka), `DatabaseBroker` (veridot-databases).
-
----
-
-## TrustRoot
-
-```java
-public sealed interface TrustRoot permits PublicKeyTrustRoot, DelegatedTrustRoot {
-    TrustIdentity resolve(String issuer);
-}
-```
-
-### PublicKeyTrustRoot
-
-You load the public key; Veridot verifies signatures in-process.
-
-### DelegatedTrustRoot
-
-You delegate signature verification to an external HSM or hardware security module. Note: using cloud KMS providers directly on the verification path is discouraged — see [TAD Architecture](../architecture/tad-architecture.md) for the recommended production approach.
-
-```java
-public non-sealed interface DelegatedTrustRoot extends TrustRoot {
-    boolean verifySignature(String issuer, byte[] data, byte[] signature, Algorithm sigAlg);
-}
-```
-
----
-
-## Key Records
-
-### VerifiedData\<T\>
-
-```java
-public record VerifiedData<T>(T data, String groupId, String sequenceId) {}
-```
-
-### TrustIdentity
-
-```java
-public record TrustIdentity(PublicKey publicKey, boolean isRoot) {}
-```
+V5 removes `KEY_EPOCH` and dynamically establishes trust via the TAAS. The `subject` string strictly follows the format `CN@hash(pk)`.
 
 ---
 
@@ -153,95 +91,32 @@ public record TrustIdentity(PublicKey publicKey, boolean isRoot) {}
 | `RSA_PSS` | `0x03` | `SHA256withRSAandMGF1` | ⚠️ |
 | `ED25519` | `0x04` | `Ed25519` | ✅ |
 
-:::tip
-Prefer **ED25519** for all new deployments. It is constant-time by design and immune to timing attacks.
-:::
-
 ### DistributionMode
 
 | Value | Description |
 |-------|-------------|
-| `DIRECT` | JWT returned to caller (default) |
-| `INDIRECT` | Payload stored in broker; caller receives reference |
-| `PRIVATE` | E2EE hybrid encryption (AES-256-GCM + RSA/ECDH) |
-
-### EvictionPolicy
-
-| Value | Behavior when `maxSessions` reached |
-|-------|--------------------------------------|
-| `FIFO` | Evicts the **oldest** session |
-| `LIFO` | Evicts the **newest** session |
-| `LRU` | Evicts the **least recently used** session |
-| `REJECT` | Throws `SessionCapacityExceededException` |
-
-### ConfigScope
-
-| Value | Precedence | Applies to |
-|-------|:----------:|------------|
-| `LOCAL` | 1 (highest) | Specific group only |
-| `SITE` | 2 | All groups in a site |
-| `GLOBAL` | 3 (lowest) | All groups |
+| `DIRECT` | Standard JWT string, self-contained |
+| `NATIVE` | `8:<scope>:<key>`, payload is `SIGNED_DATA` in broker |
+| `PRIVATE` | `7:<scope>:<key>`, encrypted payload `SECURE_PAYLOAD` in broker |
 
 ---
 
-## Exceptions
+## Error Codes
 
-All Veridot exceptions extend `VeridotException` (unchecked).
+Veridot V5 standardizes error formats using `V5xxx` prefixes.
 
-```mermaid
-classDiagram
-    RuntimeException <|-- VeridotException
-    VeridotException <|-- BrokerExtractionException
-    VeridotException <|-- BrokerTransportException
-    VeridotException <|-- DataSerializationException
-    VeridotException <|-- DataDeserializationException
-    VeridotException <|-- SessionCapacityExceededException
-
-    class VeridotException {
-        +ErrorCode errorCode
-        +String entryId
-    }
-    class SessionCapacityExceededException {
-        +String getGroupId()
-        +int getMaxSessions()
-    }
-```
-
-| Exception | When thrown |
-|-----------|------------|
-| `BrokerExtractionException` | Token expired, revoked, tampered, or TrustRoot validation failed |
-| `BrokerTransportException` | Kafka/DB infrastructure unavailable |
-| `DataSerializationException` | Payload serialization to String failed |
-| `DataDeserializationException` | String to payload deserialization failed |
-| `SessionCapacityExceededException` | `maxSessions` reached with `REJECT` policy |
-
----
-
-## GenericSignerVerifier
-
-The default implementation of all four core interfaces (`DataSigner`, `TokenVerifier`, `TokenRevoker`, `TokenTracker`). Also implements `AutoCloseable`.
-
-### Constructors
+| Code | Meaning |
+|------|---------|
+| `V5001` | Magic or Version mismatch (`0x56 0x44 0x05` required) |
+| `V5002` | Unregistered entryType |
+| `V5005` | Trailing bytes detected |
+| `V5007` | Invalid TLV structure |
+| `V5101` | TAAS Attestation Failure |
+| `V5102` | Invalid Subject Format `CN@hash(pk)` expected |
 
 ```java
-// Minimal — no session limit
-new GenericSignerVerifier(Broker, TrustRoot, String issuerId, PrivateKey, Algorithm)
-
-// With watermark persistence
-new GenericSignerVerifier(Broker, TrustRoot, String, PrivateKey, Algorithm, WatermarkStore)
-
-// With session capacity management
-new GenericSignerVerifier(Broker, TrustRoot, String, PrivateKey, Algorithm, int maxSessions, EvictionPolicy)
-
-// Capacity + watermark persistence
-new GenericSignerVerifier(Broker, TrustRoot, String, PrivateKey, Algorithm, int, EvictionPolicy, WatermarkStore)
-```
-
-### Additional Methods
-
-```java
-// Publish dynamic configuration to the broker
-void publishConfig(ConfigScope scope, String scopeId,
-                   int maxSessions, EvictionPolicy policy,
-                   long defaultTtlSeconds, long validitySeconds)
+public class VeridotException extends RuntimeException {
+    private final String errorCode; // e.g. "V5005"
+    // ...
+}
 ```
