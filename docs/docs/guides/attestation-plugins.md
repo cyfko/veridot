@@ -90,7 +90,7 @@ public class MyCloudAttestationPlugin implements AttestationPlugin {
     }
 
     @Override
-    public AttestationResult verify(byte[] proof, byte[] publicKey, AttestationContext ctx) {
+    public AttestationResult verify(byte[] proof, AttestationContext ctx) {
         try {
             // 1. Parse the proof (e.g., your custom JSON identity document)
             MyIdentityDoc doc = parse(proof);
@@ -101,12 +101,13 @@ public class MyCloudAttestationPlugin implements AttestationPlugin {
                 return AttestationResult.rejected("Cloud API rejected identity document");
             }
 
-            // 3. Derive the logical Subject from the proof
-            // Example: CN@hash(pk) where CN is the Cloud Instance ID
-            String subject = doc.getInstanceId() + "@" + hash(publicKey);
+            // 3. Ensure the proof matches the requested CN
+            if (!doc.getInstanceId().equals(ctx.requestedCn())) {
+                return AttestationResult.rejected("Instance ID mismatch");
+            }
 
-            // 4. Return success! TAAS will now persist this identity
-            return AttestationResult.accepted(subject);
+            // 4. Return success! Provide the Cloud document ID as authority reference
+            return AttestationResult.accepted(doc.getDocumentId());
 
         } catch (Exception e) {
             return AttestationResult.rejected("Malformed proof: " + e.getMessage());
@@ -117,7 +118,7 @@ public class MyCloudAttestationPlugin implements AttestationPlugin {
 
 **Step 2: Register the SPI**
 
-Create a file in your TAAS server classpath at `META-INF/services/io.github.cyfko.veridot.taas.spi.AttestationPlugin`:
+Create a file in your TAAS server classpath at `META-INF/services/io.github.cyfko.veridot.trustroots.api.spi.AttestationPlugin`:
 ```text
 com.mycompany.veridot.plugin.MyCloudAttestationPlugin
 ```

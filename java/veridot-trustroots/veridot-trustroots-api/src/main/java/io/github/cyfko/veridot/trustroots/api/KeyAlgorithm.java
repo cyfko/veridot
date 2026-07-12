@@ -7,30 +7,33 @@ package io.github.cyfko.veridot.trustroots.api;
 public enum KeyAlgorithm {
 
     /** Algorithme Ed25519 utilisant EdDSA. Recommandé pour la sécurité temporelle constante. */
-    ED25519("Ed25519", "EdDSA", "Ed25519"),
+    ED25519(1, "Ed25519", "EdDSA", "Ed25519"),
     
     /** Courbe elliptique NIST P-256 avec signature SHA256withECDSA. */
-    EC_P256("EC/P-256", "SHA256withECDSA", "EC"),
+    EC_P256(2, "EC/P-256", "SHA256withECDSA", "EC"),
     
     /** Courbe elliptique NIST P-384 avec signature SHA384withECDSA. */
-    EC_P384("EC/P-384", "SHA384withECDSA", "EC"),
+    EC_P384(3, "EC/P-384", "SHA384withECDSA", "EC"),
     
     /** RSA avec clé de 2048 bits et signature SHA256withRSA. */
-    RSA_2048("RSA-2048", "SHA256withRSA", "RSA"),
+    RSA_2048(4, "RSA-2048", "SHA256withRSA", "RSA"),
     
     /** RSA avec clé de 4096 bits et signature SHA256withRSA. */
-    RSA_4096("RSA-4096", "SHA256withRSA", "RSA"),
+    RSA_4096(5, "RSA-4096", "SHA256withRSA", "RSA"),
 
     // ── V5 Post-Quantum and Hybrid algorithms (require a PQ JCA provider, e.g. Bouncy Castle) ──
 
     /** Hybrid Ed25519 + ML-DSA-65 composite signature (§6, Appendix C.2). */
-    ED25519_MLDSA65("Ed25519+ML-DSA-65", "Ed25519+ML-DSA-65", "Ed25519+ML-DSA-65"),
+    ED25519_MLDSA65(6, "Ed25519+ML-DSA-65", "Ed25519+ML-DSA-65", "Ed25519+ML-DSA-65"),
 
     /** Hybrid ECDSA P-256 + ML-DSA-65 composite signature (§6, Appendix C.2). */
-    ECDSA_P256_MLDSA65("ECDSA-P256+ML-DSA-65", "ECDSA-P256+ML-DSA-65", "EC+ML-DSA-65"),
+    ECDSA_P256_MLDSA65(7, "ECDSA-P256+ML-DSA-65", "ECDSA-P256+ML-DSA-65", "EC+ML-DSA-65"),
 
     /** Standalone ML-DSA-65 post-quantum signature (§6, Appendix C.2). */
-    MLDSA65("ML-DSA-65", "ML-DSA-65", "ML-DSA-65");
+    MLDSA65(8, "ML-DSA-65", "ML-DSA-65", "ML-DSA-65");
+
+    /** Le code numerique selon l'annexe C.2 du RFC */
+    private final int code;
 
     /** Identifiant unique de l'algorithme utilisé dans la structure JSON de {@link TrustEntry}. */
     private final String identifier;
@@ -44,15 +47,24 @@ public enum KeyAlgorithm {
     /**
      * Constructeur interne.
      *
+     * @param code Le code numérique de l'algorithme.
      * @param identifier Identifiant de sérialisation.
      * @param jcaSignAlgorithm Algorithme de signature JCA.
      * @param jcaKeyAlgorithm Algorithme de clé JCA.
      */
-    KeyAlgorithm(String identifier, String jcaSignAlgorithm, String jcaKeyAlgorithm) {
+    KeyAlgorithm(int code, String identifier, String jcaSignAlgorithm, String jcaKeyAlgorithm) {
+        this.code = code;
         this.identifier = identifier;
         this.jcaSignAlgorithm = jcaSignAlgorithm;
         this.jcaKeyAlgorithm = jcaKeyAlgorithm;
     }
+
+    /**
+     * Retourne le code RFC de l'algorithme.
+     *
+     * @return Le code.
+     */
+    public int code() { return code; }
 
     /**
      * Retourne l'identifiant de sérialisation de l'algorithme.
@@ -87,5 +99,19 @@ public enum KeyAlgorithm {
             if (alg.identifier.equals(identifier)) return alg;
         }
         throw new IllegalArgumentException("Unknown algorithm identifier: " + identifier);
+    }
+
+    /**
+     * Résout une instance d'algorithme à partir de son code numérique.
+     *
+     * @param code Code à analyser.
+     * @return L'instance {@link KeyAlgorithm} correspondante.
+     * @throws IllegalArgumentException si le code n'est pas reconnu.
+     */
+    public static KeyAlgorithm fromCode(int code) {
+        for (KeyAlgorithm alg : values()) {
+            if (alg.code == code) return alg;
+        }
+        throw new IllegalArgumentException("Unknown algorithm code: " + code);
     }
 }

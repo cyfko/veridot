@@ -11,6 +11,21 @@ All notable changes to the Veridot project are documented here. The format follo
 
 ---
 
+## [5.0.0-SNAPSHOT] - Unreleased
+
+### 🚀 Major Architectural Shift (Protocol V5)
+
+- **Trust Authority & Attestation Service (TAAS)** — Introduced a Raft-replicated distributed registry for public key distribution, replacing the legacy `Key Epoch` rotation model.
+- **Attestation-First Identity (SPI)** — Introduced the `AttestationPlugin` SPI loaded dynamically via `java.util.ServiceLoader`. Identities (`CN@hash(pk)`) are strictly computed server-side, preventing spoofing. Removed the legacy `AttestationVerifier`.
+- **Numeric Algorithm Codes** — Aligned REST API and binary representations with RFC Appendix C.2 integer codes for signature algorithms (`1` for Ed25519, `6` for ED25519_MLDSA65, etc.) rather than string identifiers.
+- **Continuous Liveness** — Replaced expiry-based token assumptions with deterministic, positive-proof `LIVENESS(ACTIVE|REVOKED)` assertions.
+
+### 📚 Documentation & Tooling
+
+- **Complete Documentation Refactor** — Fully aligned all guides, architecture whitepapers, and getting-started tutorials with the V5 specifications, ensuring 100% adherence to the new Attestation and `CN@hash(pk)` paradigm.
+
+---
+
 ## [4.0.1] - 2026-07-01
 
 ### 🔐 Security

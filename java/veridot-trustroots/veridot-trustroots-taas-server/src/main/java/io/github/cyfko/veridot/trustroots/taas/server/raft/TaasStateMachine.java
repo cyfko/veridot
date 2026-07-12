@@ -10,8 +10,10 @@ import io.github.cyfko.veridot.core.VeridotMetrics;
 import io.github.cyfko.veridot.trustroots.api.AttestationRecord;
 import io.github.cyfko.veridot.trustroots.api.SecurityAlert;
 import io.github.cyfko.veridot.trustroots.api.TrustEntry;
-import io.github.cyfko.veridot.trustroots.taas.server.attestation.AttestationResult;
-import io.github.cyfko.veridot.trustroots.taas.server.attestation.AttestationVerifier;
+
+import io.github.cyfko.veridot.trustroots.taas.server.attestation.AttestationService;
+import io.github.cyfko.veridot.trustroots.api.spi.AttestationContext;
+import io.github.cyfko.veridot.trustroots.api.spi.AttestationResult;
 import io.github.cyfko.veridot.trustroots.taas.server.store.TaasRocksDbStore;
 
 import java.nio.ByteBuffer;
@@ -33,7 +35,7 @@ public class TaasStateMachine extends StateMachineAdapter {
     private final TaasRocksDbStore store;
 
     /** The attestation verifier for re-validating proofs on apply. */
-    private final AttestationVerifier attestationVerifier;
+    private final AttestationService attestationService;
     
     /** Sérialiseur Jackson thread-safe. */
     private final ObjectMapper objectMapper;
@@ -55,9 +57,9 @@ public class TaasStateMachine extends StateMachineAdapter {
      * @param store               Le stockage local RocksDB.
      * @param attestationVerifier The attestation verifier for re-validating proofs.
      */
-    public TaasStateMachine(TaasRocksDbStore store, AttestationVerifier attestationVerifier) {
+    public TaasStateMachine(TaasRocksDbStore store, AttestationService attestationService) {
         this.store = store;
-        this.attestationVerifier = attestationVerifier;
+        this.attestationService = attestationService;
         this.objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
     }
 
@@ -84,8 +86,9 @@ public class TaasStateMachine extends StateMachineAdapter {
                 String proof = proposal.attestationProof();
 
                 // Re-validate attestation on each follower
-                AttestationResult result = attestationVerifier.verify(
-                    entry, proof != null ? proof.getBytes(java.nio.charset.StandardCharsets.UTF_8) : new byte[0]);
+                AttestationContext ctx = new AttestationContext(entry.subject().split("@")[0], java.util.Base64.getDecoder().decode(entry.publicKeyEncoded()), entry.algorithm().code());
+                AttestationResult result = attestationService.verify(
+                    entry.attestationPlugin(), proof != null ? proof.getBytes(java.nio.charset.StandardCharsets.UTF_8) : new byte[0], ctx);
                 VeridotMetrics.ATTESTATION_VERIFICATIONS.increment();
 
                 if (result.valid()) {

@@ -3219,7 +3219,7 @@ TAAS supports pluggable attestation verifiers. The attestation plugin is specifi
 | `tpm2`    | TPM 2.0 Quote      | Verifies a TPM 2.0 attestation quote, including PCR values and the AIK certificate chain.           |
 | `sgx`     | Intel SGX Quote    | Verifies an SGX DCAP quote, including MRENCLAVE/MRSIGNER and Intel's attestation service signature. |
 | `sev-snp` | AMD SEV-SNP Report | Verifies a SEV-SNP attestation report, including measurement and VCEK certificate.                  |
-| `custom`  | Custom             | Delegates to a user-provided attestation verifier implementing the `AttestationVerifier` interface. |
+| `custom`  | Custom             | Delegates to a user-provided attestation plugin implementing the `AttestationPlugin` SPI interface. |
 
 Attestation verification MUST occur during registration (§15.2). Implementations MAY additionally perform periodic re-attestation at intervals defined by `CONFIG.maxInstanceLifetime`.
 

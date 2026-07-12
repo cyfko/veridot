@@ -86,10 +86,12 @@ V5 removes `KEY_EPOCH` and dynamically establishes trust via the TAAS. The `subj
 
 | Value | Code | JCA Signature | Recommended |
 |-------|:----:|---------------|:-----------:|
-| `RSA_SHA256` | `0x01` | `SHA256withRSA` | ❌ |
-| `ECDSA_SHA256` | `0x02` | `SHA256withECDSA` | ❌ |
-| `RSA_PSS` | `0x03` | `SHA256withRSAandMGF1` | ⚠️ |
-| `ED25519` | `0x04` | `Ed25519` | ✅ |
+| `ED25519` | `1` (`0x01`) | `Ed25519` | ✅ |
+| `EC_P256` | `2` (`0x02`) | `SHA256withECDSA` | ⚠️ |
+| `EC_P384` | `3` (`0x03`) | `SHA384withECDSA` | ⚠️ |
+| `RSA_2048` | `4` (`0x04`) | `SHA256withRSA` | ❌ |
+| `RSA_4096` | `5` (`0x05`) | `SHA256withRSA` | ⚠️ |
+| `ED25519_MLDSA65` | `6` (`0x06`) | `Ed25519+ML-DSA-65` | ✅ |
 
 ### DistributionMode
 

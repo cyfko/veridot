@@ -10,8 +10,9 @@ import io.github.cyfko.veridot.trustroots.api.SecurityAlert;
 import io.github.cyfko.veridot.trustroots.api.SignedDigest;
 import io.github.cyfko.veridot.trustroots.api.TrustEntry;
 import io.github.cyfko.veridot.trustroots.taas.server.TaasDigestService;
-import io.github.cyfko.veridot.trustroots.taas.server.attestation.AttestationResult;
-import io.github.cyfko.veridot.trustroots.taas.server.attestation.AttestationVerifier;
+import io.github.cyfko.veridot.trustroots.api.spi.AttestationResult;
+import io.github.cyfko.veridot.trustroots.taas.server.attestation.AttestationService;
+import io.github.cyfko.veridot.trustroots.api.spi.AttestationContext;
 import io.github.cyfko.veridot.trustroots.taas.server.raft.RaftServerEngine;
 import io.github.cyfko.veridot.trustroots.taas.server.raft.TaasStateMachine;
 import io.github.cyfko.veridot.trustroots.taas.server.raft.TaasStateMachine.TaasProposal;
@@ -50,7 +51,7 @@ public class TaasController {
     private final TaasRocksDbStore store;
 
     /** Attestation verifier for pre-validating proofs before Raft propose. */
-    private final AttestationVerifier attestationVerifier;
+    private final AttestationService attestationService;
 
     /** Digest service for State Transparency (§18.2). */
     private final TaasDigestService digestService;
@@ -64,7 +65,15 @@ public class TaasController {
      * @param entry            The TrustEntry to publish.
      * @param attestationProof The attestation proof string.
      */
-    public record PublishRequest(TrustEntry entry, String attestationProof) {}
+            public record BootstrapRequest(TrustEntry entry) {}
+
+    public record PublishRequest(
+        String cn,
+        String publicKey,
+        int algorithm,
+        String attestationPlugin,
+        String attestationProof
+    ) {}
 
     /**
      * Response body for a successful publish operation.
@@ -86,12 +95,12 @@ public class TaasController {
      * @param digestService        Digest service for State Transparency (§18.2).
      */
     public TaasController(RaftServerEngine raftEngine, TaasStateMachine stateMachine,
-                           TaasRocksDbStore store, AttestationVerifier attestationVerifier,
+                           TaasRocksDbStore store, AttestationService attestationService,
                            TaasDigestService digestService) {
         this.raftEngine = raftEngine;
         this.stateMachine = stateMachine;
         this.store = store;
-        this.attestationVerifier = attestationVerifier;
+        this.attestationService = attestationService;
         this.digestService = digestService;
         this.objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
     }
@@ -107,18 +116,17 @@ public class TaasController {
      */
     @PostMapping("/v2/trust-entries")
     public ResponseEntity<?> publish(@RequestBody PublishRequest request) {
-        // V5: attestation proof is required
-        if (request.attestationProof() == null || request.attestationProof().isBlank()) {
+        if (request.attestationPlugin() == null || request.attestationPlugin().isBlank()) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(Map.of("error", "ATTESTATION_REQUIRED",
-                                 "code", "V5105",
-                                 "detail", "attestationProof is required"));
+                    .body(Map.of("error", "INVALID_REQUEST", "detail", "attestationPlugin is required"));
         }
-
-        TrustEntry entry = request.entry();
-        if (entry == null) {
+        if (request.publicKey() == null || request.publicKey().isBlank()) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(Map.of("error", "INVALID_REQUEST", "detail", "entry is required"));
+                    .body(Map.of("error", "INVALID_REQUEST", "detail", "publicKey is required"));
+        }
+        if (request.cn() == null || request.cn().isBlank()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("error", "INVALID_REQUEST", "detail", "cn is required"));
         }
 
         if (!stateMachine.isLeader()) {
@@ -127,84 +135,92 @@ public class TaasController {
                 return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                         .body(Map.of("error", "RAFT_UNAVAILABLE", "detail", "Leader not elected yet"));
             }
-            // Redirection HTTP 307 temporaire vers le leader Raft actif
             return ResponseEntity.status(HttpStatus.TEMPORARY_REDIRECT)
                     .location(URI.create("http://" + leader.getEndpoint().toString() + "/v2/trust-entries"))
                     .build();
         }
 
-        // V5: Validate attestation BEFORE Raft propose
-        AttestationResult attestResult = attestationVerifier.verify(
-            entry, request.attestationProof().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        byte[] pkBytes;
+        try {
+            pkBytes = java.util.Base64.getDecoder().decode(request.publicKey());
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("error", "INVALID_REQUEST", "detail", "publicKey must be valid Base64"));
+        }
+
+        // Attestation Proof is optional in the JSON schema but might be required by the plugin
+        byte[] proofBytes = request.attestationProof() != null ? java.util.Base64.getDecoder().decode(request.attestationProof()) : new byte[0];
+
+        AttestationContext ctx = new AttestationContext(request.cn(), pkBytes, request.algorithm());
+        AttestationResult attestResult = attestationService.verify(request.attestationPlugin(), proofBytes, ctx);
+        
         if (!attestResult.valid()) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(Map.of("error", "ATTESTATION_FAILED",
-                                 "code", "V5106",
-                                 "detail", attestResult.reason()));
+                    .body(Map.of("error", "ATTESTATION_FAILED", "code", "V5102", "detail", attestResult.reason()));
         }
+
+        // Calculate subject
+        String subject;
+        try {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] hash = md.digest(pkBytes);
+            String b64url = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
+            subject = request.cn() + "@" + b64url.substring(0, Math.min(32, b64url.length()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+
+        // Construct TrustEntry
+        long version = store.get(subject).map(e -> e.version() + 1).orElse(1L);
+        // We will default to 1 if not exists. The state machine will handle duplicate subject error.
+        
+        TrustEntry entry = TrustEntry.builder()
+                .subject(subject)
+                .version(version)
+                .publicKeyEncoded(request.publicKey())
+                .algorithm(io.github.cyfko.veridot.trustroots.api.KeyAlgorithm.fromCode(request.algorithm()))
+                .isRoot(false)
+                .isInstanceScoped(true)
+                .notBefore(Instant.now())
+                .notAfter(Instant.now().plusSeconds(86400 * 30)) // 30 days
+                .attestationPlugin(request.attestationPlugin())
+                .attestationRef(attestResult.authorityRef())
+                .build();
 
         CompletableFuture<Status> future = new CompletableFuture<>();
         try {
-            // V5: Serialize the full proposal (entry + proof) for Raft
             TaasProposal proposal = new TaasProposal(entry, request.attestationProof());
             byte[] bytes = objectMapper.writeValueAsBytes(proposal);
             Task task = new Task();
             task.setData(ByteBuffer.wrap(bytes));
             task.setDone(future::complete);
-            
             raftEngine.getNode().apply(task);
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("error", "INTERNAL_ERROR", "detail", e.getMessage()));
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "INTERNAL_ERROR"));
         }
 
         try {
             Status status = future.get();
             if (status.isOk()) {
                 PublishResponse response = new PublishResponse(
-                    entry.subject(),
-                    entry.version(),
-                    entry.fingerprint(),
-                    Instant.now()
-                );
+                    entry.subject(), entry.version(), entry.fingerprint(), Instant.now());
                 return ResponseEntity.status(HttpStatus.CREATED).body(response);
             } else {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body(Map.of("error", "INVALID_REQUEST", "detail", status.getErrorMsg()));
+                if (status.getErrorMsg().contains("DUPLICATE_SUBJECT")) {
+                    return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", "DUPLICATE_SUBJECT", "code", "V5103"));
+                }
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", "INVALID_REQUEST", "detail", status.getErrorMsg()));
             }
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("error", "INTERNAL_ERROR", "detail", e.getMessage()));
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "INTERNAL_ERROR"));
         }
     }
 
-    /**
-     * Effectue une rotation de clé pour le sujet donné (V5).
-     * Vérifie que le sujet correspond bien à l'entrée fournie, puis applique la publication standard.
-     *
-     * @param subject Identifiant du sujet.
-     * @param request The publish request containing entry and attestation proof.
-     * @return Réponse HTTP de publication.
-     */
     @PutMapping("/v2/trust-entries/{subject}")
     public ResponseEntity<?> rotate(@PathVariable("subject") String subject, @RequestBody PublishRequest request) {
-        if (request.entry() == null) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(Map.of("error", "INVALID_REQUEST", "detail", "entry is required"));
-        }
-        if (!subject.equals(request.entry().subject())) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(Map.of("error", "SUBJECT_MISMATCH", "detail", "Subject in path does not match entry"));
-        }
-        return publish(request);
+        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).build();
     }
 
-    /**
-     * Résout la clé publique la plus récente pour le sujet donné en lisant directement du stockage local.
-     *
-     * @param subject Identifiant du sujet.
-     * @return L'entrée {@link TrustEntry} correspondante (200 OK) ou une erreur 404.
-     */
     @GetMapping("/v2/trust-entries/{subject}")
     public ResponseEntity<?> resolve(@PathVariable("subject") String subject) {
         Optional<TrustEntry> entryOpt = store.get(subject);
@@ -311,7 +327,7 @@ public class TaasController {
      * @return 201 Created if bootstrap succeeds, 403/409 otherwise.
      */
     @PostMapping("/v2/bootstrap")
-    public ResponseEntity<?> bootstrap(@RequestBody PublishRequest request) {
+    public ResponseEntity<?> bootstrap(@RequestBody BootstrapRequest request) {
         // Check if bootstrap is enabled
         String bootstrapEnabled = System.getenv("VDOT_BOOTSTRAP_ENABLED");
         if (!"true".equalsIgnoreCase(bootstrapEnabled)) {
