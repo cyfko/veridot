@@ -50,7 +50,7 @@ public class TaasClusterResilienceIT {
     @BeforeEach
     void setUp(@TempDir Path tempDir) throws Exception {
         String peers = "127.0.0.1:19451,127.0.0.1:19452,127.0.0.1:19453";
-        NoneAttestor attestor = new NoneAttestor(true);
+        io.github.cyfko.veridot.trustroots.taas.server.attestation.AttestationService attestor = new io.github.cyfko.veridot.trustroots.taas.server.attestation.AttestationService();
 
         // Node 1
         store1 = new TaasRocksDbStore(tempDir.resolve("node1").toString());

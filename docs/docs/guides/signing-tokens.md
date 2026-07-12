@@ -42,10 +42,12 @@ Veridot V5 supports the following algorithms for the envelope signature:
 
 | Enum | Wire Code | Key Type | Status |
 |---|:---:|---|---|
-| `Algorithm.ED25519` | `0x01` | Ed25519 | Default |
-| `Algorithm.RSA_PSS_SHA256` | `0x02` | RSA | Default |
-| `Algorithm.ECDSA_P256_SHA256`| `0x03` | EC | Supported |
-| `Algorithm.ML_DSA_65` | `0x07` | PQ | Supported (Post-Quantum) |
+| `Algorithm.ED25519` | `1` | Ed25519 | Default |
+| `Algorithm.EC_P256` | `2` | EC | Supported |
+| `Algorithm.EC_P384` | `3` | EC | Supported |
+| `Algorithm.RSA_2048`| `4` | RSA | Default |
+| `Algorithm.RSA_4096`| `5` | RSA | Default |
+| `Algorithm.ED25519_MLDSA65` | `6` | PQ | Supported (Post-Quantum) |
 
 :::tip[Recommendation]
 **Use `ED25519`** or **`ML_DSA_65`** for new deployments. Ed25519 provides fast, deterministic signatures. `ML_DSA_65` provides NIST level-3 post-quantum security (but cannot be used in DIRECT mode due to lack of JWT standard).

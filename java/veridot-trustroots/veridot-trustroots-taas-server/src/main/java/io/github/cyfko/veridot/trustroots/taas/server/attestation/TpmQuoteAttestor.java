@@ -1,6 +1,6 @@
 package io.github.cyfko.veridot.trustroots.taas.server.attestation;
 
-import io.github.cyfko.veridot.trustroots.api.TrustEntry;
+
 
 import java.util.logging.Logger;
 
@@ -15,7 +15,7 @@ import java.util.logging.Logger;
  * result in V5.0. It is included to reserve the plugin name and establish
  * the SPI contract for future TPM attestation support.
  */
-public class TpmQuoteAttestor implements AttestationVerifier {
+public class TpmQuoteAttestor implements io.github.cyfko.veridot.trustroots.api.spi.AttestationPlugin {
 
     private static final Logger LOG = Logger.getLogger(TpmQuoteAttestor.class.getName());
 
@@ -29,8 +29,8 @@ public class TpmQuoteAttestor implements AttestationVerifier {
     }
 
     @Override
-    public AttestationResult verify(TrustEntry entry, byte[] proof) {
-        LOG.warning(() -> "TPM quote verification requested for subject: " + entry.subject()
+    public io.github.cyfko.veridot.trustroots.api.spi.AttestationResult verify(byte[] proof, io.github.cyfko.veridot.trustroots.api.spi.AttestationContext ctx) {
+        LOG.warning(() -> "TPM quote verification requested for subject: " + ctx.requestedCn()
             + " but TPM attestation is not yet implemented (V5.0 stub)");
 
         // TODO: Implement TPM 2.0 quote verification:
@@ -40,13 +40,13 @@ public class TpmQuoteAttestor implements AttestationVerifier {
         //   4. Check nonce binding to prevent replay attacks
         //   5. Verify the AIK certificate chain against a trusted TPM CA
 
-        return AttestationResult.failure(
+        return io.github.cyfko.veridot.trustroots.api.spi.AttestationResult.rejected(
             "TPM quote verification is not yet implemented (V5.0 stub). "
             + "Use 'k8s', 'gcp', or 'none' attestation plugins instead.");
     }
 
     @Override
-    public String pluginName() {
+    public String getPluginId() {
         return "tpm";
     }
 }

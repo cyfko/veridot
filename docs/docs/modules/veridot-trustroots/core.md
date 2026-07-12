@@ -24,20 +24,21 @@ Where `CN` is the Common Name of the service/instance and `hash(pk)` is the SHA-
 When an instance boots up, it undergoes the following lifecycle handled by `taas-core`:
 
 1. **PROPOSED**: The instance submits its public key and attestation proof.
-2. **VERIFIED**: The `AttestationVerifier` in `taas-core` checks the proof (e.g., querying the AWS Nitro Enclave API or verifying a Kubernetes service account token).
+2. **VERIFIED**: The `AttestationPlugin` SPI in `taas-core` checks the proof (e.g., querying the AWS Nitro Enclave API or verifying a Kubernetes service account token).
 3. **COMMITTED**: The Raft consensus module commits the state to the replicated log. The instance can now sign objects using Protocol V5.
 
 ## Core Interfaces
 
-### AttestationVerifier
+### AttestationPlugin (SPI)
 
 ```java
-public interface AttestationVerifier {
-    ValidationResult verify(byte[] proof, PublicKey publicKey);
+public interface AttestationPlugin {
+    String name();
+    AttestationResult verify(byte[] proof, AttestationContext ctx);
 }
 ```
 
-Pluggable verifiers allow for different platform attestation documents (TPM 2.0, SPIFFE/SPIRE, Kubernetes, cloud-specific tokens). If verification fails, a `V5101` error is raised.
+Pluggable verifiers allow for different platform attestation documents (TPM 2.0, SPIFFE/SPIRE, Kubernetes, cloud-specific tokens). They are dynamically loaded via Java's `ServiceLoader`. If verification fails, a `V5101` error is raised.
 
 ### RaftStateMachine
 

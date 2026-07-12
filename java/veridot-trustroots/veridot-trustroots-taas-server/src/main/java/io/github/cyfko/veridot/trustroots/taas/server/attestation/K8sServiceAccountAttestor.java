@@ -1,6 +1,6 @@
 package io.github.cyfko.veridot.trustroots.taas.server.attestation;
 
-import io.github.cyfko.veridot.trustroots.api.TrustEntry;
+
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
@@ -18,7 +18,7 @@ import java.util.logging.Logger;
  * with JWT parsing and signature validation scaffolding. Actual JWKS fetching
  * from the Kubernetes OIDC discovery endpoint is marked as TODO.
  */
-public class K8sServiceAccountAttestor implements AttestationVerifier {
+public class K8sServiceAccountAttestor implements io.github.cyfko.veridot.trustroots.api.spi.AttestationPlugin {
 
     private static final Logger LOG = Logger.getLogger(K8sServiceAccountAttestor.class.getName());
 
@@ -46,15 +46,15 @@ public class K8sServiceAccountAttestor implements AttestationVerifier {
     }
 
     @Override
-    public AttestationResult verify(TrustEntry entry, byte[] proof) {
+    public io.github.cyfko.veridot.trustroots.api.spi.AttestationResult verify(byte[] proof, io.github.cyfko.veridot.trustroots.api.spi.AttestationContext ctx) {
         if (proof == null || proof.length == 0) {
-            return AttestationResult.failure("K8s PSAT proof is empty");
+            return io.github.cyfko.veridot.trustroots.api.spi.AttestationResult.rejected("K8s PSAT proof is empty");
         }
 
         String jwt = new String(proof, StandardCharsets.UTF_8);
         String[] parts = jwt.split("\\.");
         if (parts.length != 3) {
-            return AttestationResult.failure("K8s PSAT proof is not a valid JWT (expected 3 parts, got " + parts.length + ")");
+            return io.github.cyfko.veridot.trustroots.api.spi.AttestationResult.rejected("K8s PSAT proof is not a valid JWT (expected 3 parts, got " + parts.length + ")");
         }
 
         try {
@@ -77,21 +77,21 @@ public class K8sServiceAccountAttestor implements AttestationVerifier {
             //   - exp > now
             //   - sub matches the expected service account identity
 
-            LOG.info(() -> "K8s PSAT JWT structure validated for subject: " + entry.subject()
+            LOG.info(() -> "K8s PSAT JWT structure validated for subject: " + ctx.requestedCn()
                 + " (JWKS signature verification pending — V5.0 stub)");
 
-            return AttestationResult.success("k8s:" + oidcIssuer);
+            return io.github.cyfko.veridot.trustroots.api.spi.AttestationResult.accepted("k8s:" + oidcIssuer);
 
         } catch (IllegalArgumentException e) {
-            return AttestationResult.failure("K8s PSAT JWT decoding failed: " + e.getMessage());
+            return io.github.cyfko.veridot.trustroots.api.spi.AttestationResult.rejected("K8s PSAT JWT decoding failed: " + e.getMessage());
         } catch (Exception e) {
             LOG.log(Level.WARNING, "K8s PSAT verification error", e);
-            return AttestationResult.failure("K8s PSAT verification error: " + e.getMessage());
+            return io.github.cyfko.veridot.trustroots.api.spi.AttestationResult.rejected("K8s PSAT verification error: " + e.getMessage());
         }
     }
 
     @Override
-    public String pluginName() {
+    public String getPluginId() {
         return "k8s";
     }
 }

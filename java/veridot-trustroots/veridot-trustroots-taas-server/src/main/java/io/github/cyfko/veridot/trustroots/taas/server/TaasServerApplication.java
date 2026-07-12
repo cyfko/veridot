@@ -1,7 +1,7 @@
 package io.github.cyfko.veridot.trustroots.taas.server;
 
-import io.github.cyfko.veridot.trustroots.taas.server.attestation.AttestationVerifier;
-import io.github.cyfko.veridot.trustroots.taas.server.attestation.NoneAttestor;
+import io.github.cyfko.veridot.trustroots.taas.server.attestation.AttestationService;
+
 import io.github.cyfko.veridot.trustroots.taas.server.controller.TaasController;
 import io.github.cyfko.veridot.trustroots.taas.server.raft.RaftServerEngine;
 import io.github.cyfko.veridot.trustroots.taas.server.raft.TaasStateMachine;
@@ -40,11 +40,11 @@ public class TaasServerApplication {
      * Enregistre le Bean pour le vérificateur d'attestation.
      * Defaults to NoneAttestor; in production, a more specific verifier should be provided.
      *
-     * @return L'instance {@link AttestationVerifier}.
+     * @return L'instance {@link AttestationService}.
      */
     @Bean
-    public AttestationVerifier attestationVerifier() {
-        return new NoneAttestor();
+    public AttestationService attestationVerifier() {
+        return new AttestationService();
     }
 
     /**
@@ -59,7 +59,7 @@ public class TaasServerApplication {
      */
     @Bean
     public TaasController taasController(RaftServerEngine raftEngine, TaasStateMachine stateMachine,
-                                          TaasRocksDbStore store, AttestationVerifier attestationVerifier,
+                                          TaasRocksDbStore store, AttestationService attestationVerifier,
                                           TaasDigestService digestService) {
         return new TaasController(raftEngine, stateMachine, store, attestationVerifier, digestService);
     }
@@ -107,7 +107,7 @@ public class TaasServerApplication {
      * @return L'instance {@link TaasStateMachine} de la machine d'état.
      */
     @Bean
-    public TaasStateMachine taasStateMachine(TaasRocksDbStore store, AttestationVerifier attestationVerifier) {
+    public TaasStateMachine taasStateMachine(TaasRocksDbStore store, AttestationService attestationVerifier) {
         return new TaasStateMachine(store, attestationVerifier);
     }
 
