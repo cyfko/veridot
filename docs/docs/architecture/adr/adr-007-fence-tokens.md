@@ -1,26 +1,16 @@
 ---
-title: "ADR-007: FENCE Tokens for Capacity Mutations"
-description: "Architecture Decision Record introducing FENCE entries to prevent race conditions during session quota changes."
-keywords: [ADR, FENCE, concurrency, capacity]
+title: ADR 007 - Fence Tokens
+description: Decision to use FENCE entries for distributed concurrency.
 ---
 
-# ADR-007: FENCE Tokens for Capacity Mutations
-
-* **Status**: Accepted
-* **Date**: 2026-06-28
+# ADR 007: Concurrency Fencing Tokens
 
 ## Context
-
-When multiple instances of a signing service concurrently mutate the session registry (e.g., evicting sessions to stay under `maxSessions` quota), they might read stale states from the broker and perform conflicting actions, exceeding limits or causing unnecessary churn.
+Multiple concurrent instances may try to admit sessions to a capacity-constrained scope. Without strong broker consistency, this creates a race condition.
 
 ## Decision
-
-We introduce **FENCE entries** in Protocol V4:
-- A processor must publish a signed `FENCE` entry with a strictly-increasing counter to acquire ownership of a scope's capacity management.
-- Verifier nodes reject any session mutation from an issuer whose fence counter is lower than the active fence watermark for that scope.
-- Conflicting updates trigger a `V4301 FENCE_TOKEN_STALE` rejection, forcing the losing instance to re-sync.
+We introduce `FENCE` (0x05) singleton entries. When a `FENCE` entry is present in a scope, only the instance whose subject matches the `issuer` field of the envelope may write to that scope.
 
 ## Consequences
-
-- Prevents concurrency races and split-brain decisions.
-- Enforces strict consistency on capacity mutations.
+- Prevents split-brain capacity mutations.
+- Works securely even on eventually-consistent brokers.

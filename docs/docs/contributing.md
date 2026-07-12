@@ -43,7 +43,7 @@ cd veridot/java
 
 ### Test Results
 
-**v4.0.1**: 98 unit tests, 34 integration tests, 0 failures, 0 errors.
+**v5.0.1**: 98 unit tests, 34 integration tests, 0 failures, 0 errors.
 
 ## Pull Request Process
 

@@ -14,6 +14,7 @@ const sidebars = {
         'learn/capabilities',
         'learn/session-management',
         'learn/production',
+        'learn/glossary',
       ],
     },
     {
@@ -38,11 +39,11 @@ const sidebars = {
         'architecture/overview',
         'architecture/security-model',
         'architecture/trust-hierarchy',
-        'architecture/tad-architecture',
+        'architecture/taas-architecture',
         'architecture/caching-trustroot',
         'architecture/distributed-consistency',
-        'architecture/protocol-evolution',
         'architecture/performance',
+        'architecture/resilience-and-failure-modes',
         {
           type: 'category',
           label: '📋 ADRs',
@@ -56,26 +57,7 @@ const sidebars = {
       type: 'category',
       label: '📜 Protocol Specification',
       items: [
-        {
-          type: 'category',
-          label: 'V4 (Current)',
-          items: [
-            'protocol/v4/index',
-            'protocol/v4/wire-format',
-            'protocol/v4/entry-types',
-            'protocol/v4/key-epoch',
-            'protocol/v4/capability',
-            'protocol/v4/liveness',
-            'protocol/v4/error-codes',
-          ],
-        },
-        {
-          type: 'category',
-          label: 'V3 (Archived)',
-          items: [
-            'protocol/v3/index',
-          ],
-        },
+        'protocol/index'
       ],
     },
     {
@@ -99,9 +81,9 @@ const sidebars = {
             'modules/veridot-trustroots/index',
             'modules/veridot-trustroots/api',
             'modules/veridot-trustroots/core',
-            'modules/veridot-trustroots/tad-client',
-            'modules/veridot-trustroots/tad-server',
-            'modules/veridot-trustroots/tad-deployment',
+            'modules/veridot-trustroots/taas-client',
+            'modules/veridot-trustroots/taas-server',
+            'modules/veridot-trustroots/taas-deployment',
             'modules/veridot-trustroots/spring-autoconfiguration',
           ],
         },

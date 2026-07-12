@@ -1,27 +1,16 @@
 ---
-title: "ADR-006: TrustRoot Sealed Interface"
-description: "Architecture Decision Record changing the TrustAnchor interface into the sealed TrustRoot interface."
-keywords: [ADR, TrustRoot, sealed interface, capability]
+title: ADR 006 - TrustRoot Architecture
+description: Decision to use a two-tier CachingTrustRoot.
 ---
 
-# ADR-006: TrustRoot Sealed Interface
-
-* **Status**: Accepted
-* **Date**: 2026-06-28
+# ADR 006: TrustRoot Architecture
 
 ## Context
-
-In Veridot V3, the `TrustAnchor` callback was responsible for both *identity resolution* (fetching the public key) and *scope authorization* (deciding if the issuer is allowed to publish for a scope). This mixed concerns and forced synchronous network lookups to the KMS during scope checks on the hot path.
+Resolving an issuer's identity (`CN@hash`) to a public key must not introduce network latency into the sub-millisecond verification hot path.
 
 ## Decision
-
-We replace `TrustAnchor` with a sealed `TrustRoot` interface:
-- Permits only `PublicKeyTrustRoot` and `DelegatedTrustRoot`.
-- The `TrustRoot` is **restricted to identity resolution** only.
-- Scope authorization is offloaded to structural `CAPABILITY` envelopes published in the broker.
-- Verifiers build a local capability tree and perform scope pattern matching in-memory.
+We implement a two-tier `CachingTrustRoot` (L1 in-memory, L2 persistent RocksDB). The cache allows resolution with zero network calls and provides a "stale window" to handle temporary TAAS outages gracefully.
 
 ## Consequences
-
-- Clean separation of concerns.
-- Hot path verification performs zero external KMS calls, relying purely on local, cached capability records.
+- Verifiers can operate offline.
+- Sub-microsecond key resolution.

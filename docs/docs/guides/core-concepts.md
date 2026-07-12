@@ -1,13 +1,13 @@
 ---
 title: Core Concepts
-description: Definitions of every foundational term in the Veridot protocol — groups, sessions, scopes, epochs, entries, and versions.
-keywords: [veridot, concepts, groupId, sequenceId, session, scope, epoch, entry, version]
+description: Definitions of every foundational term in the Veridot protocol — groups, sessions, scopes, entries, TAAS, and versions.
+keywords: [veridot, concepts, groupId, sequenceId, session, scope, TAAS, entry, version, identity]
 sidebar_position: 1
 ---
 
 # Core Concepts
 
-This page defines the fundamental building blocks of the Veridot protocol. Every API call, configuration option, and verification step refers back to these concepts.
+This page defines the fundamental building blocks of the Veridot V5 protocol. Every API call, configuration option, and verification step refers back to these concepts.
 
 ## Identifiers
 
@@ -39,23 +39,51 @@ BasicConfigurer.builder()
 
 The pair `(groupId, sequenceId)` uniquely identifies a session across the entire system.
 
+## Trust Authority & Attestation Service (TAAS)
+
+In V5, cryptographic trust is established dynamically via the **Trust Authority & Attestation Service (TAAS)**. Every participating node must register its single asymmetric keypair with the TAAS alongside an **attestation proof** (e.g., TPM quote, Kubernetes service account token).
+
+- **Attestation-First:** Identity relies on verifiable runtime environment proofs.
+- **Instance-Native:** Each ephemeral compute instance (e.g. pod) has one identity and one non-rotatable key. 
+
+### Identity Subject
+
+An identity in Veridot is derived deterministically:
+`CN@base64url(SHA-256(publicKey))[0:32]`
+This binds a readable Common Name (CN) directly to the cryptographic material.
+
 ## Session
 
-A **session** is a single verification context within a group. It is backed by a `KEY_EPOCH` entry (carrying the ephemeral public key) and a `LIVENESS` entry (carrying the session status). A session is **active** if and only if a fresh, valid `LIVENESS` entry with status `ACTIVE` exists for it.
+A **session** is a single verification context within a group. It is strictly backed by a `LIVENESS` entry. A session is **active** if and only if a fresh, valid `LIVENESS` entry with status `ACTIVE` exists for it.
 
 ### Session Lifecycle
 
 ```mermaid
-stateDiagram-v2
-    [*] --> Created : sign() called
-    Created --> Active : KEY_EPOCH + LIVENESS(ACTIVE) published
-    Active --> Active : LIVENESS renewed (periodic)
-    Active --> Revoked : revoke() called → LIVENESS(REVOKED)
-    Active --> Expired : LIVENESS validUntil elapsed
-    Active --> Evicted : Capacity limit hit → policy-driven revocation
-    Revoked --> [*]
-    Expired --> [*]
-    Evicted --> [*]
+%%{init: {"flowchart": {"curve": "basis"}}}%%
+flowchart TD
+    %% Premium Theme
+    classDef default fill:#424242,stroke:#616161,stroke-width:1px,color:#fff,rx:5px,ry:5px;
+    classDef state fill:#4527a0,stroke:#5e35b1,stroke-width:1px,color:#fff,rx:5px,ry:5px;
+    classDef startend fill:#000,stroke:#616161,stroke-width:2px,color:#000,rx:20px,ry:20px;
+    linkStyle default stroke:#888888,stroke-width:2px;
+
+    Start((" ")):::startend
+    Created("Created"):::state
+    Active("Active"):::state
+    Revoked("Revoked"):::state
+    Expired("Expired"):::state
+    Evicted("Evicted"):::state
+    End((" ")):::startend
+
+    Start -->|"sign() called"| Created
+    Created -->|"LIVENESS(ACTIVE)<br/>published"| Active
+    Active -->|"LIVENESS renewed<br/>(periodic)"| Active
+    Active --->|"revoke() called →<br/>LIVENESS(REVOKED) or<br/>TRUST_REVOCATION"| Revoked
+    Active --->|"LIVENESS validUntil<br/>elapsed"| Expired
+    Active --->|"Capacity limit hit →<br/>policy-driven revocation"| Evicted
+    Revoked --> End
+    Expired --> End
+    Evicted --> End
 ```
 
 :::info
@@ -74,13 +102,9 @@ A **scope** is a typed, hierarchical namespace that determines which sessions or
 
 Scopes are used for configuration resolution (group overrides site overrides global) and for capability-based authorization.
 
-## Epoch
-
-An **epoch** is a time-bounded validity window for a piece of cryptographic material. Each `KEY_EPOCH` entry carries `validFrom` and `validUntil` timestamps that define its epoch. A key epoch is active when `now ≥ validFrom − 5min` (clock-drift tolerance) and `now < validUntil`.
-
 ## Entry
 
-An **entry** is a single signed unit of protocol state. Every entry conforms to the V4 binary envelope (magic `0x56 0x44`, protocol version `0x04`) and belongs to exactly one of the registered entry types.
+An **entry** is a single signed unit of protocol state. Every entry conforms to the V5 binary envelope (magic `0x56 0x44`, protocol version `0x05`) and belongs to exactly one of the registered entry types.
 
 ### EntryId
 
@@ -92,7 +116,7 @@ storageKey = scope || 0x00 || entryType || 0x00 || key
 
 ## Version
 
-A **version** is a 64-bit unsigned integer carried by every entry. Versions are strictly increasing per EntryId and establish total ordering for monotonic state resolution. The initial recorded version is `0`; the minimum valid version for any accepted entry is `1`.
+A **version** is a 64-bit unsigned integer carried by every entry. Versions are strictly increasing per EntryId and establish total ordering for monotonic state resolution. The minimum valid version for any accepted entry is `1`.
 
 :::warning
 Versions are **not** wall-clock timestamps. The `timestamp` field in the envelope is advisory only and must never be used for ordering decisions.
@@ -100,43 +124,53 @@ Versions are **not** wall-clock timestamps. The `timestamp` field in the envelop
 
 ## Entry Type Registry
 
-The Veridot V4 protocol defines exactly 7 entry types:
+The Veridot V5 protocol defines 10 entry types:
 
 | Code | Name | Singleton | Purpose |
 |:---:|---|:---:|---|
-| `0x01` | **KEY_EPOCH** | No (one per session) | Distributes the ephemeral public key, algorithm, and validity window for verifying signed objects. |
-| `0x02` | **CAPABILITY** | No (one per grant) | Signed authorization grant allowing an issuer to publish entries within one or more scope patterns. |
-| `0x03` | **CONFIG** | Yes per scope | Hierarchical configuration (max sessions, eviction policy, default TTL) applying at group, site, or global level. |
-| `0x04` | **LIVENESS** | Yes per session | Positive attestation of a session's current status (`ACTIVE` or `REVOKED`). Absence defaults to rejection. |
-| `0x05` | **FENCE** | Yes per scope | Monotonic counter that totally orders capacity-affecting mutations across concurrent processors. |
-| `0x06` | **SNAPSHOT_MARKER** | Yes per scope | Records that a complete point-in-time enumeration of a scope was performed, for reconciliation. |
-| `0x07` | **SECURE_PAYLOAD** | No (one per target) | Transports an application-level payload through the broker, optionally with E2EE hybrid encryption. |
-
-:::tip
-All 7 entry types share the same binary envelope and the same signature verification pipeline. No entry type can bypass cryptographic verification.
-:::
+| `0x01` | **(reserved)** | - | Reserved, rejected natively. |
+| `0x02` | **CAPABILITY** | No | Signed authorization grant allowing an issuer to publish entries. |
+| `0x03` | **CONFIG** | Yes | Scope-level configuration (e.g., max sessions). |
+| `0x04` | **LIVENESS** | No | Session liveness heartbeat. |
+| `0x05` | **FENCE** | Yes | Monotonic counter that totally orders capacity-affecting mutations. |
+| `0x06` | **SNAPSHOT_MARKER** | Yes | Records a reconciliation boundary in a scope. |
+| `0x07` | **SECURE_PAYLOAD** | No | Carries end-to-end encrypted data (PRIVATE mode). |
+| `0x08` | **SIGNED_DATA** | No | Native mode signed payload data. |
+| `0x09` | **AUDIT_ANCHOR** | No | Merkle audit proofs. |
+| `0x0A` | **TRUST_REVOCATION**| No | Identity revocation broadcasts. |
 
 ## How They Fit Together
 
 ```mermaid
 graph TD
-    A["sign(data, configurer)"] --> B[Generate ephemeral key pair]
-    B --> C[Publish KEY_EPOCH to broker]
-    C --> D[Publish LIVENESS ACTIVE]
-    D --> E[Return token / messageId]
 
-    F["verify(token, deserializer)"] --> G[Retrieve KEY_EPOCH from broker]
-    G --> H[Verify envelope signature via TrustRoot]
-    H --> I[Check CAPABILITY authorization]
-    I --> J[Validate version monotonicity]
-    J --> K[Check temporal validity]
-    K --> L[Assert LIVENESS = ACTIVE]
-    L --> M[Verify JWT signature with ephemeral key]
-    M --> N["Return VerifiedData<T>"]
+    %% Premium Theme
+    linkStyle default stroke:#888888,stroke-width:2px;
+    classDef default fill:#424242,stroke:#616161,stroke-width:1px,color:#fff,rx:5px,ry:5px;
+    classDef service fill:#4527a0,stroke:#5e35b1,stroke-width:1px,color:#fff,rx:5px,ry:5px;
+    classDef broker fill:#004d40,stroke:#00695c,stroke-width:1px,color:#fff,rx:5px,ry:5px;
+    classDef db fill:#bf360c,stroke:#d84315,stroke-width:1px,color:#fff,rx:5px,ry:5px;
+    classDef taas fill:#01579b,stroke:#0277bd,stroke-width:1px,color:#fff,rx:5px,ry:5px;
+
+    A["Instance boots"] --> B["Generate Keypair<br/>& Subject"]
+    B --> C["Obtain Attestation<br/>Proof"]
+    C --> D["Register at TAAS"]
+    D --> E["sign(data, configurer)"]
+    E --> F["Publish LIVENESS ACTIVE<br/>to broker"]
+    F --> G["Return token /<br/>messageId"]
+
+    H["verify(token,<br/>deserializer)"] --> I["Resolve Subject via<br/>TrustRoot (TAAS)"]
+    I --> J["Verify envelope signature<br/>with Public Key"]
+    J --> K["Check CAPABILITY<br/>authorization"]
+    K --> L["Validate version<br/>monotonicity"]
+    L --> M["Assert LIVENESS<br/>= ACTIVE"]
+    M --> N["Return<br/>VerifiedData<T>"]
+    class A service;
+
 ```
 
 ## Next Steps
 
 - [TrustRoot Setup](./trustroot-setup.md) — configure how Veridot resolves issuer identities
 - [Signing Tokens](./signing-tokens.md) — issue tokens with the `BasicConfigurer` builder
-- [Verifying Tokens](./verifying-tokens.md) — understand the 9-step verification pipeline
+- [Verifying Tokens](./verifying-tokens.md) — understand the verification pipeline

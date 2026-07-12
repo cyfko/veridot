@@ -2,8 +2,8 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Protocol V5](https://img.shields.io/badge/Protocol-V5.0-green.svg)](PROTOCOL_V5.md)
-[![Java](https://img.shields.io/badge/Java-25%2B-orange.svg)](java/veridot-core)
-[![Trust Architecture](https://img.shields.io/badge/Trust-TAAS%20v5.0-purple.svg)](docs/protocol/v5/PROTOCOL.md)
+[![Java](https://img.shields.io/badge/Java-21%2B-orange.svg)](java/veridot-core)
+[![Trust Architecture](https://img.shields.io/badge/Trust-TAAS%20v5.0-purple.svg)](PROTOCOL_V5.md)
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.cyfko/veridot-core)](https://central.sonatype.com/search?q=io.github.cyfko.veridot)
 
 **Veridot** solves the distributed authentication trilemma: verify tokens in **sub-millisecond** without a central authority, revoke them **instantly** across the cluster, and maintain **zero shared secrets** between services.
@@ -21,7 +21,7 @@ Microservice token verification always forces a compromise:
 | Centralized IdP call | ✅ | ✅ | ❌ |
 | **Veridot** | ✅ | ✅ | ✅ |
 
-Veridot achieves all three by combining **instance-scoped asymmetric key pairs** with **distributed metadata propagation**, **attestation-first identity**, and a **local RocksDB cache**.
+Veridot achieves all three by combining **instance-scoped asymmetric key pairs** with **distributed metaasata propagation**, **attestation-first identity**, and a **local RocksDB cache**.
 
 ---
 
@@ -35,7 +35,7 @@ Version 5 introduces:
 - **Post-quantum hybrid signatures** — Ed25519+ML-DSA-65, ECDSA-P256+ML-DSA-65 (FIPS 204)
 - **State transparency** — TAAS digest verification, broker omission detection, liveness gap monitoring
 - **New entry types** — `SIGNED_DATA` (native mode), `AUDIT_ANCHOR`, `TRUST_REVOCATION`
-- **Wire format** — u16 flags register, proto `0x05`, KEY_EPOCH eliminated
+- **Wire format** — u16 flags register, proto `0x05`, RESERVED_01 eliminated
 
 Full specification: [`PROTOCOL_V5.md`](PROTOCOL_V5.md)
 

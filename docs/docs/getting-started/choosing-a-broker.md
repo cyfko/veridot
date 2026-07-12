@@ -1,7 +1,7 @@
 ---
 title: Choosing a Broker
-description: Decide between Kafka+RocksDB and SQL-backed brokers for your Veridot deployment based on infrastructure, latency, and propagation requirements.
-keywords: [veridot broker, kafka broker, database broker, sql broker, rocksdb, choosing broker, veridot-kafka, veridot-databases]
+description: Decide between Kafka+RocksDB and SQL-backed brokers for your Veridot V5 deployment based on infrastructure, latency, and propagation requirements.
+keywords: [veridot broker, kafka broker, database broker, sql broker, rocksdb, choosing broker, veridot-kafka, veridot-databases, taas]
 sidebar_position: 4
 ---
 
@@ -10,7 +10,7 @@ import TabItem from '@theme/TabItem';
 
 # Choosing a Broker
 
-The `Broker` is the distribution layer that propagates cryptographic metadata (public keys, liveness attestations, configurations) between signer and verifier nodes. Veridot ships two production-ready implementations:
+The `Broker` is the untrusted distribution layer that propagates cryptographic state (`SIGNED_DATA`, `LIVENESS`, `CAPABILITY`, `CONFIG`) between instances. Veridot V5 ships two production-ready implementations:
 
 | Module | Backed by | Best for |
 |---|---|---|
@@ -21,6 +21,15 @@ The `Broker` is the distribution layer that propagates cryptographic metadata (p
 
 ```mermaid
 graph TD
+
+    %% Premium Theme
+    linkStyle default stroke:#888888,stroke-width:2px;
+    classDef default fill:#424242,stroke:#616161,stroke-width:1px,color:#fff,rx:5px,ry:5px;
+    classDef service fill:#4527a0,stroke:#5e35b1,stroke-width:1px,color:#fff,rx:5px,ry:5px;
+    classDef broker fill:#004d40,stroke:#00695c,stroke-width:1px,color:#fff,rx:5px,ry:5px;
+    classDef db fill:#bf360c,stroke:#d84315,stroke-width:1px,color:#fff,rx:5px,ry:5px;
+    classDef taas fill:#01579b,stroke:#0277bd,stroke-width:1px,color:#fff,rx:5px,ry:5px;
+
     A["Starting Point:<br/>Choose your Broker"] --> B{"Already running<br/>Apache Kafka?"}
     B -- "Yes" --> C["✅ veridot-kafka<br/>(recommended)"]
     B -- "No" --> D{"Need real-time<br/>propagation < 2s?"}
@@ -28,6 +37,7 @@ graph TD
     D -- "No" --> F{"Have an existing<br/>SQL database?"}
     F -- "Yes" --> G["✅ veridot-databases"]
     F -- "No" --> H["Use veridot-databases<br/>with embedded H2"]
+    class A broker;
 
 ```
 
@@ -42,10 +52,10 @@ graph TD
 | **Scaling** | Horizontally — every consumer gets all messages | Vertically — bounded by DB connections |
 | **Offline resilience** | RocksDB retains state across restarts | Local cache is in-memory only |
 | **Watermark persistence** | Built-in (RocksDB) | Built-in (same SQL table) |
-| **Java requirement** | 17+ (this module only) | 17+ (this module only) |
+| **Java requirement** | 21+ | 21+ |
 
 :::info[Both Require veridot-core]
-Both broker implementations require `veridot-core` (Java 25+) as a dependency. The broker modules themselves compile on Java 17+, but `GenericSignerVerifier` needs Java 25+.
+Both broker implementations require `veridot-core` (Java 21+) as a dependency.
 :::
 
 ## Option 1: Kafka + RocksDB (Recommended)
@@ -55,13 +65,13 @@ Both broker implementations require `veridot-core` (Java 25+) as a dependency. T
 ### How it works
 
 ```
-Signer node                    Verifier nodes (all instances)
-───────────                    ──────────────────────────────
-put(key, bytes)                Kafka consumer loop
+Signer Instance                    Verifier Instance
+───────────────                    ─────────────────
+publish()                      Kafka consumer loop
   ├─ write to local RocksDB     ├─ poll() every ~200ms
   └─ Kafka producer → topic     ├─ validate envelope structure
                                 ├─ write to local RocksDB
-                                └─ get() reads local RocksDB (< 1ms)
+                                └─ verify() reads local RocksDB (< 1ms)
 ```
 
 ### Setup
@@ -73,7 +83,7 @@ put(key, bytes)                Kafka consumer loop
 <dependency>
     <groupId>io.github.cyfko</groupId>
     <artifactId>veridot-kafka</artifactId>
-    <version>4.0.1</version>
+    <version>5.0.0</version>
 </dependency>
 ```
 
@@ -81,7 +91,7 @@ put(key, bytes)                Kafka consumer loop
   <TabItem value="gradle" label="Gradle">
 
 ```groovy
-implementation 'io.github.cyfko:veridot-kafka:4.0.1'
+implementation 'io.github.cyfko:veridot-kafka:5.0.0'
 ```
 
   </TabItem>
@@ -99,7 +109,7 @@ Properties props = new Properties();
 props.setProperty("bootstrap.servers", "kafka1:9092,kafka2:9092");
 props.setProperty("veridot.embedded.db", "/var/lib/veridot/rocksdb");
 
-// Optional: custom topic name (default: "token-verifier")
+// Optional: custom topic name (default: "veridot-v5-state")
 props.setProperty("veridot.broker.topic", "my-veridot-topic");
 
 // Production: TLS + SASL
@@ -117,7 +127,7 @@ Broker broker = new KafkaBroker(props);
 ```bash
 # Create the topic (replication factor 3 for production)
 kafka-topics.sh --create \
-  --topic token-verifier \
+  --topic veridot-v5-state \
   --replication-factor 3 \
   --partitions 12 \
   --bootstrap-server kafka:9092
@@ -129,14 +139,14 @@ Set Kafka topic retention to at least as long as the maximum token TTL. A 7-day 
 
 ### Key Characteristics
 
-- **Broadcast semantics**: every consumer instance receives all messages (auto-assigned consumer group per instance)
-- **Race-free on signer node**: the signer writes to local RocksDB *before* the Kafka send, so `verify()` on the same node succeeds immediately
-- **Implements `WatermarkStore`**: `KafkaBroker` persists version watermarks in RocksDB, surviving JVM restarts without re-processing the entire topic
-- **Implements `AutoCloseable`**: always close the broker to flush producers and release RocksDB handles
+- **Broadcast semantics**: every consumer instance receives all messages (auto-assigned consumer group per instance).
+- **Race-free on signer node**: the signer writes to local RocksDB *before* the Kafka send, so `verify()` on the same node succeeds immediately.
+- **Implements `WatermarkStore`**: `KafkaBroker` persists version watermarks in RocksDB, surviving JVM restarts without re-processing the entire topic.
+- **Implements `AutoCloseable`**: always close the broker to flush producers and release RocksDB handles.
 
 ## Option 2: SQL Database
 
-**`veridot-databases`** stores Protocol V4 entries in a standard SQL table. It auto-detects the database dialect and creates the schema automatically.
+**`veridot-databases`** stores Protocol V5 entries in a standard SQL table. It auto-detects the database dialect and creates the schema automatically.
 
 ### Supported Databases
 
@@ -157,7 +167,7 @@ Set Kafka topic retention to at least as long as the maximum token TTL. A 7-day 
 <dependency>
     <groupId>io.github.cyfko</groupId>
     <artifactId>veridot-databases</artifactId>
-    <version>4.0.1</version>
+    <version>5.0.0</version>
 </dependency>
 ```
 
@@ -165,7 +175,7 @@ Set Kafka topic retention to at least as long as the maximum token TTL. A 7-day 
   <TabItem value="gradle" label="Gradle">
 
 ```groovy
-implementation 'io.github.cyfko:veridot-databases:4.0.1'
+implementation 'io.github.cyfko:veridot-databases:5.0.0'
 ```
 
   </TabItem>
@@ -181,7 +191,7 @@ import javax.sql.DataSource;
 DataSource dataSource = createYourDataSource();
 
 // Table is created automatically if it doesn't exist
-Broker broker = new DatabaseBroker(dataSource, "veridot_entries");
+Broker broker = new DatabaseBroker(dataSource, "veridot_v5_entries");
 ```
 
 ### With H2 (Embedded — Great for Testing)
@@ -192,16 +202,16 @@ import org.h2.jdbcx.JdbcDataSource;
 JdbcDataSource ds = new JdbcDataSource();
 ds.setURL("jdbc:h2:mem:veridot;DB_CLOSE_DELAY=-1");
 
-Broker broker = new DatabaseBroker(ds, "veridot_entries");
+Broker broker = new DatabaseBroker(ds, "veridot_v5_entries");
 ```
 
 ### Key Characteristics
 
-- **Zero infrastructure**: if you already have a database, there's nothing else to deploy
-- **Auto-schema**: the broker creates the `veridot_entries` table automatically using DDL appropriate for the detected dialect
-- **Polling-based**: verifier nodes read entries on demand or via reconciliation; there is no push notification
-- **Implements `WatermarkStore`**: version watermarks are stored in the same SQL table
-- **Propagation trade-off**: revocation propagation depends on when verifier nodes query the database, making it slower than Kafka's push model
+- **Zero infrastructure**: if you already have a database, there's nothing else to deploy.
+- **Auto-schema**: the broker creates the `veridot_v5_entries` table automatically using DDL appropriate for the detected dialect.
+- **Polling-based**: verifier nodes read entries on demand or via reconciliation; there is no push notification.
+- **Implements `WatermarkStore`**: version watermarks are stored in the same SQL table.
+- **Propagation trade-off**: revocation propagation depends on when verifier nodes query the database, making it slower than Kafka's push model.
 
 :::warning[Propagation Latency]
 With `veridot-databases`, revocation is not pushed to verifiers in real time. Verifiers will see the revocation only when they next reconcile or when a `verify()` call reads from the database. For instant revocation guarantees, use `veridot-kafka`.
@@ -209,17 +219,18 @@ With `veridot-databases`, revocation is not pushed to verifiers in real time. Ve
 
 ## Making the Switch
 
-Both brokers implement the same `Broker` interface. Switching between them requires changing only the broker construction — no changes to `GenericSignerVerifier`, `sign()`, `verify()`, or `revoke()`:
+Both brokers implement the same `Broker` interface. Switching between them requires changing only the broker construction — no changes to `InstanceManager` initialization, `sign()`, `verify()`, or `revoke()`:
 
 ```java
 // Switch from Kafka to SQL — everything else stays the same
 // Broker broker = new KafkaBroker(kafkaProps);
-Broker broker = new DatabaseBroker(dataSource, "veridot_entries");
+Broker broker = new DatabaseBroker(dataSource, "veridot_v5_entries");
 
-var veridot = new GenericSignerVerifier(
-    broker, trustRoot, issuerId,
-    longTermKey, Algorithm.ED25519
-);
+var instanceManager = InstanceManager.builder()
+    .broker(broker)
+    .taasClient(taasClient)
+    .algorithm(Algorithm.ED25519)
+    .build();
 ```
 
 ## What's Next?

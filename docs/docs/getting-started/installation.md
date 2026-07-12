@@ -1,7 +1,7 @@
 ---
 title: Installation
-description: Install Veridot modules via Maven or Gradle, configure version management, and verify your setup with a simple test.
-keywords: [veridot installation, maven, gradle, java 25, veridot-core, veridot-kafka, veridot-databases, setup]
+description: Install Veridot V5 modules via Maven or Gradle, configure version management, and verify your setup with a simple test.
+keywords: [veridot installation, maven, gradle, java 21, veridot-core, veridot-kafka, veridot-databases, setup]
 sidebar_position: 5
 ---
 
@@ -10,36 +10,36 @@ import TabItem from '@theme/TabItem';
 
 # Installation
 
-This page covers how to add Veridot to your Java project, manage module versions, and verify your installation.
+This page covers how to add Veridot V5 to your Java project, manage module versions, and verify your installation.
 
 ## Requirements
 
 | Requirement | Version | Notes |
 |---|---|---|
-| **Java** | **25+** | Required by `veridot-core`. `veridot-kafka` and `veridot-databases` modules compile on Java 17+ but require `veridot-core` at runtime. |
+| **Java** | **21+** | Required by `veridot-core` V5. The entire protocol implementation leverages Java 21 records, sealed classes, and virtual threads. |
 | **Maven** or **Gradle** | Any modern version | Maven 3.9+ or Gradle 8+ recommended |
 | **Apache Kafka** | 3.x+ | Required only if using `veridot-kafka` |
 | **JDBC Database** | See [supported DBs](./choosing-a-broker.md#supported-databases) | Required only if using `veridot-databases` |
 
-:::danger[Java 25 is Required]
-Veridot uses Java 25+ features (sealed interfaces, records, pattern matching). It will **not compile or run** on earlier JDK versions. Verify your Java version:
+:::danger[Java 21 is Required]
+Veridot V5 uses Java 21+ features. It will **not compile or run** on earlier JDK versions. Verify your Java version:
 
 ```bash
 java -version
-# Expected: openjdk 25.0.x or later
+# Expected: openjdk 21.0.x or later
 ```
 :::
 
 ## Module Overview
 
-Veridot is split into focused modules. Pick only what you need:
+Veridot V5 is split into focused modules. Pick only what you need:
 
 | Module | Artifact | Purpose |
 |---|---|---|
-| **veridot-core** | `io.github.cyfko:veridot-core` | Core API: `GenericSignerVerifier`, `TrustRoot`, Protocol V4 engine |
+| **veridot-core** | `io.github.cyfko:veridot-core` | Core API: `InstanceManager`, `TaasClient`, Protocol V5 engine |
 | **veridot-kafka** | `io.github.cyfko:veridot-kafka` | Kafka + RocksDB `Broker` implementation |
 | **veridot-databases** | `io.github.cyfko:veridot-databases` | SQL `Broker` implementation (PostgreSQL, MySQL, Oracle, MSSQL, H2) |
-| **veridot-trustroots** | `io.github.cyfko:veridot-trustroots-*` | Advanced TrustRoot implementations (TAD Server, caching, Spring integration) |
+| **veridot-trustroots** | `io.github.cyfko:veridot-trustroots-*` | Advanced TAAS clients and caching implementations |
 
 ## Core + Kafka (Recommended)
 
@@ -50,11 +50,11 @@ The most common setup for production microservices:
 
 ```xml
 <properties>
-    <veridot.version>4.0.1</veridot.version>
+    <veridot.version>5.0.0</veridot.version>
 </properties>
 
 <dependencies>
-    <!-- Core API and Protocol V4 engine -->
+    <!-- Core API and Protocol V5 engine -->
     <dependency>
         <groupId>io.github.cyfko</groupId>
         <artifactId>veridot-core</artifactId>
@@ -75,11 +75,11 @@ The most common setup for production microservices:
 
 ```groovy
 ext {
-    veridotVersion = '4.0.1'
+    veridotVersion = '5.0.0'
 }
 
 dependencies {
-    // Core API and Protocol V4 engine
+    // Core API and Protocol V5 engine
     implementation "io.github.cyfko:veridot-core:${veridotVersion}"
 
     // Kafka + RocksDB broker
@@ -99,11 +99,11 @@ For teams preferring a SQL-backed broker:
 
 ```xml
 <properties>
-    <veridot.version>4.0.1</veridot.version>
+    <veridot.version>5.0.0</veridot.version>
 </properties>
 
 <dependencies>
-    <!-- Core API and Protocol V4 engine -->
+    <!-- Core API and Protocol V5 engine -->
     <dependency>
         <groupId>io.github.cyfko</groupId>
         <artifactId>veridot-core</artifactId>
@@ -132,11 +132,11 @@ For teams preferring a SQL-backed broker:
 
 ```groovy
 ext {
-    veridotVersion = '4.0.1'
+    veridotVersion = '5.0.0'
 }
 
 dependencies {
-    // Core API and Protocol V4 engine
+    // Core API and Protocol V5 engine
     implementation "io.github.cyfko:veridot-core:${veridotVersion}"
 
     // SQL broker (PostgreSQL, MySQL, Oracle, MSSQL, H2)
@@ -159,7 +159,7 @@ If you need both broker options or want access to everything:
 
 ```xml
 <properties>
-    <veridot.version>4.0.1</veridot.version>
+    <veridot.version>5.0.0</veridot.version>
 </properties>
 
 <dependencies>
@@ -186,7 +186,7 @@ If you need both broker options or want access to everything:
 
 ```groovy
 ext {
-    veridotVersion = '4.0.1'
+    veridotVersion = '5.0.0'
 }
 
 dependencies {
@@ -210,7 +210,7 @@ Define the version once in a property:
 
 ```xml
 <properties>
-    <veridot.version>4.0.1</veridot.version>
+    <veridot.version>5.0.0</veridot.version>
 </properties>
 ```
 
@@ -245,7 +245,7 @@ Use a version catalog (`gradle/libs.versions.toml`):
 
 ```toml
 [versions]
-veridot = "4.0.1"
+veridot = "5.0.0"
 
 [libraries]
 veridot-core = { module = "io.github.cyfko:veridot-core", version.ref = "veridot" }
@@ -294,12 +294,9 @@ testImplementation 'com.h2database:h2:2.2.224'
 
 ```java
 import io.github.cyfko.veridot.core.*;
-import io.github.cyfko.veridot.core.impl.*;
+import io.github.cyfko.veridot.core.taas.MockTaasClient;
 import io.github.cyfko.veridot.databases.DatabaseBroker;
 import org.h2.jdbcx.JdbcDataSource;
-
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
 
 public class VeridotInstallationTest {
 
@@ -307,46 +304,41 @@ public class VeridotInstallationTest {
         // 1. In-memory H2 database (no external dependencies)
         JdbcDataSource ds = new JdbcDataSource();
         ds.setURL("jdbc:h2:mem:veridot_test;DB_CLOSE_DELAY=-1");
-        Broker broker = new DatabaseBroker(ds, "veridot_entries");
+        Broker broker = new DatabaseBroker(ds, "veridot_v5_entries");
 
-        // 2. Generate test key pair
-        KeyPairGenerator kpg = KeyPairGenerator.getInstance("Ed25519");
-        KeyPair kp = kpg.generateKeyPair();
-        String issuerId = "test-issuer";
+        // 2. Mock TAAS Client for local testing
+        var taasClient = new MockTaasClient();
 
-        PublicKeyTrustRoot trustRoot = issuer -> {
-            if (issuerId.equals(issuer)) {
-                return new TrustIdentity(kp.getPublic(), true);
-            }
-            throw new RuntimeException("Unknown issuer: " + issuer);
-        };
+        // 3. Initialize InstanceManager
+        try (var instanceManager = InstanceManager.builder()
+                .broker(broker)
+                .taasClient(taasClient)
+                .algorithm(Algorithm.ED25519)
+                .build()) {
 
-        // 3. Create, sign, verify
-        try (var veridot = new GenericSignerVerifier(
-                broker, trustRoot, issuerId,
-                kp.getPrivate(), Algorithm.ED25519)) {
-
-            String token = veridot.sign("hello-veridot",
+            // 4. Sign and Verify
+            String token = instanceManager.sign("hello-veridot",
                 BasicConfigurer.builder()
-                    .groupId("test-group")
+                    .scope("group:test-group")
+                    .key("session-1")
                     .validity(60)
                     .build());
 
-            VerifiedData<String> result = veridot.verify(token, s -> s);
+            VerifiedData<String> result = instanceManager.verify(token, s -> s);
 
             assert "hello-veridot".equals(result.data()) : "Payload mismatch!";
-            assert "test-group".equals(result.groupId()) : "GroupId mismatch!";
+            assert "group:test-group".equals(result.scope()) : "Scope mismatch!";
 
-            System.out.println("✅ Veridot installation verified successfully!");
-            System.out.println("   Core version: 4.0.1");
+            System.out.println("✅ Veridot V5 installation verified successfully!");
+            System.out.println("   Core version: 5.0.0");
             System.out.println("   Payload: " + result.data());
-            System.out.println("   Group: " + result.groupId());
+            System.out.println("   Scope: " + result.scope());
         }
     }
 }
 ```
 
-If you see `✅ Veridot installation verified successfully!`, your setup is complete.
+If you see `✅ Veridot V5 installation verified successfully!`, your setup is complete.
 
 ## Transitive Dependencies
 
@@ -354,12 +346,12 @@ Veridot keeps its dependency footprint minimal:
 
 | Module | Key Dependencies |
 |---|---|
-| `veridot-core` | Jackson Databind (JSON serialization) |
+| `veridot-core` | None (zero external dependencies in V5 core) |
 | `veridot-kafka` | Apache Kafka Client, RocksDB JNI |
 | `veridot-databases` | None (uses `javax.sql.DataSource` — bring your own JDBC driver) |
 
 :::tip[Dependency Conflicts]
-If your project already uses Jackson or Kafka Client, Veridot uses standard versions that are compatible with most modern projects. Use Maven's `<dependencyManagement>` or Gradle's `platform()` to enforce your preferred versions if conflicts arise.
+If your project already uses Kafka Client or RocksDB, Veridot uses standard versions that are compatible with most modern projects. Use Maven's `<dependencyManagement>` or Gradle's `platform()` to enforce your preferred versions if conflicts arise.
 :::
 
 ## What's Next?

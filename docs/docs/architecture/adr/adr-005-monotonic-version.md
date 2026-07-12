@@ -1,27 +1,17 @@
 ---
-title: "ADR-005: Monotonic Version Invariant"
-description: "Architecture Decision Record replacing timestamp-based ordering with a strictly-increasing version counter."
-keywords: [ADR, versioning, consistency, clock drift]
+title: ADR 005 - Monotonic Versions
+description: Decision to enforce strictly increasing versions for all entry types.
 ---
 
-# ADR-005: Monotonic Version Invariant
-
-* **Status**: Accepted
-* **Date**: 2026-06-28
+# ADR 005: Monotonic Versions for Idempotency
 
 ## Context
-
-Veridot V3 used wall-clock timestamps for entry conflict resolution. However, in distributed systems, clock drift is inevitable. An attacker could exploit clock drift to replay older states or block updates by publishing an entry with a far-future timestamp.
+Brokers may deliver messages out of order or re-deliver them. Furthermore, attackers with broker access might attempt to replay old, valid states (rollback attack).
 
 ## Decision
-
-We introduce a **monotonic version counter** as the sole basis for ordering entries:
-- Every entry carries a 64-bit Big-Endian unsigned integer `version`.
-- Verifiers store the highest version they have processed as a local watermark.
-- Incoming entries are processed **only** if their `version` is strictly greater than the stored watermark.
-- Timestamps are relegated to advisory roles only (e.g. debugging, metrics).
+Every `EntryId` must include a strictly increasing 64-bit `version`. Verifiers maintain a local high-watermark. An incoming entry is only accepted if its version is strictly greater than the recorded watermark.
 
 ## Consequences
-
-- Immune to system clock drift or timestamp manipulation.
-- Replays of stale versions are instantly rejected.
+- Natural idempotency against duplicate deliveries.
+- Structural immunity to rollback/replay attacks.
+- Enables safe snapshot reconciliation.
