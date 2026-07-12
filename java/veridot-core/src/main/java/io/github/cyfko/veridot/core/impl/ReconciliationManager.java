@@ -53,7 +53,7 @@ final class ReconciliationManager implements AutoCloseable {
         try {
             entries = broker.snapshot(scope);
         } catch (Exception e) {
-            throw new VeridotException(ErrorCode.TRANSPORT_UNAVAILABLE, null, "Broker unavailable during reconciliation snapshot", e);
+            throw new VeridotException(ErrorCode.BROKER_UNREACHABLE, null, "Broker unavailable during reconciliation snapshot", e);
         }
 
         if (entries == null) {
@@ -79,7 +79,7 @@ final class ReconciliationManager implements AutoCloseable {
                         capabilityVerifier.invalidateAuthorization(envelope.issuer, envelope.scope);
                     }
                 } catch (VeridotException e) {
-                    if (e.getErrorCode() != ErrorCode.STALE_VERSION) {
+                    if (e.getErrorCode() != ErrorCode.VERSION_REJECTED) {
                         throw e;
                     }
                     // If version <= watermark, ignore (it is not a violation for reconciliation)

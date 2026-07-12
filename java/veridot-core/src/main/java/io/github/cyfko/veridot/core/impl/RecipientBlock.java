@@ -4,9 +4,13 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Represents a RecipientBlock within a SECURE_PAYLOAD entry (§12.3).
+ * Represents a RecipientBlock within a SECURE_PAYLOAD entry (§14.3).
+ *
+ * <p>In V5 the {@code recipientTrustVersion} field references the
+ * {@code TrustEntry.version} of the recipient at encryption time, replacing the
+ * former {@code recipientKeyEpochId} (KEY_EPOCH has been eliminated in V5).
  */
-public record RecipientBlock(String recipientSid, long recipientKeyEpochId, byte[] encryptedKey) {
+public record RecipientBlock(String recipientSid, long recipientTrustVersion, byte[] encryptedKey) {
 
     public byte[] encode() {
         byte[] sidBytes = recipientSid.getBytes(java.nio.charset.StandardCharsets.UTF_8);
@@ -19,11 +23,11 @@ public record RecipientBlock(String recipientSid, long recipientKeyEpochId, byte
         System.arraycopy(sidBytes, 0, block, 2, sidBytes.length);
         
         int offset = 2 + sidBytes.length;
-        // recipientKeyEpochId (u64)
-        long tempEpochId = recipientKeyEpochId;
+        // recipientTrustVersion (u64)
+        long tempTrustVersion = recipientTrustVersion;
         for (int i = 7; i >= 0; i--) {
-            block[offset + i] = (byte) (tempEpochId & 0xFF);
-            tempEpochId >>= 8;
+            block[offset + i] = (byte) (tempTrustVersion & 0xFF);
+            tempTrustVersion >>= 8;
         }
         offset += 8;
         
@@ -50,9 +54,9 @@ public record RecipientBlock(String recipientSid, long recipientKeyEpochId, byte
             offset += sidLen;
             
             if (offset + 8 > bytes.length) break;
-            long keyEpochId = 0;
+            long trustVersion = 0;
             for (int i = 0; i < 8; i++) {
-                keyEpochId = (keyEpochId << 8) | (bytes[offset + i] & 0xFF);
+                trustVersion = (trustVersion << 8) | (bytes[offset + i] & 0xFF);
             }
             offset += 8;
             
@@ -65,7 +69,7 @@ public record RecipientBlock(String recipientSid, long recipientKeyEpochId, byte
             System.arraycopy(bytes, offset, encKey, 0, keyLen);
             offset += keyLen;
             
-            list.add(new RecipientBlock(sid, keyEpochId, encKey));
+            list.add(new RecipientBlock(sid, trustVersion, encKey));
         }
         return list;
     }

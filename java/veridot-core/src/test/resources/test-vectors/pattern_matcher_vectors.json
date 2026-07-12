@@ -1,0 +1,162 @@
+{
+  "description": "Veridot Protocol V5 — Pattern Matching Test Vectors",
+  "specReference": "PROTOCOL_V5.md §9.2",
+  "version": "5.0",
+  "patternSyntax": {
+    "wildcard": "\"*\" matches everything",
+    "prefixWildcard": "\"prefix*\" matches any value starting with prefix",
+    "hierarchicalWildcard": "\"prefix:*\" matches prefix exactly OR prefix:anything",
+    "exact": "literal string — exact match only"
+  },
+  "vectors": [
+    {
+      "name": "wildcard_matches_everything",
+      "description": "Pattern '*' matches any value",
+      "input": { "pattern": "*", "value": "anything-at-all" },
+      "expected": { "matches": true }
+    },
+    {
+      "name": "wildcard_matches_empty_string",
+      "description": "Pattern '*' matches empty string",
+      "input": { "pattern": "*", "value": "" },
+      "expected": { "matches": true }
+    },
+    {
+      "name": "prefix_wildcard_matches",
+      "description": "Pattern 'orders*' matches 'orders-service'",
+      "input": { "pattern": "orders*", "value": "orders-service" },
+      "expected": { "matches": true }
+    },
+    {
+      "name": "prefix_wildcard_exact_prefix",
+      "description": "Pattern 'orders*' matches 'orders' (prefix itself)",
+      "input": { "pattern": "orders*", "value": "orders" },
+      "expected": { "matches": true }
+    },
+    {
+      "name": "prefix_wildcard_no_match",
+      "description": "Pattern 'orders*' does NOT match 'auth-service'",
+      "input": { "pattern": "orders*", "value": "auth-service" },
+      "expected": { "matches": false }
+    },
+    {
+      "name": "hierarchical_wildcard_matches_exact",
+      "description": "Pattern 'group:orders:*' matches 'group:orders' (exact prefix match)",
+      "input": { "pattern": "group:orders:*", "value": "group:orders" },
+      "expected": { "matches": true }
+    },
+    {
+      "name": "hierarchical_wildcard_matches_child",
+      "description": "Pattern 'group:orders:*' matches 'group:orders:sub1'",
+      "input": { "pattern": "group:orders:*", "value": "group:orders:sub1" },
+      "expected": { "matches": true }
+    },
+    {
+      "name": "hierarchical_wildcard_no_match_sibling",
+      "description": "Pattern 'group:orders:*' does NOT match 'group:users'",
+      "input": { "pattern": "group:orders:*", "value": "group:users" },
+      "expected": { "matches": false }
+    },
+    {
+      "name": "exact_match",
+      "description": "Pattern 'orders-service@abc123' matches exactly",
+      "input": { "pattern": "orders-service@abc123", "value": "orders-service@abc123" },
+      "expected": { "matches": true }
+    },
+    {
+      "name": "exact_match_no_match",
+      "description": "Pattern 'orders-service@abc123' does NOT match 'orders-service@def456'",
+      "input": { "pattern": "orders-service@abc123", "value": "orders-service@def456" },
+      "expected": { "matches": false }
+    },
+    {
+      "name": "subject_pattern_wildcard_instance",
+      "description": "SubjectPattern 'orders-service@*' matches any instance of orders-service (§9.2.2)",
+      "input": { "pattern": "orders-service@*", "value": "orders-service@xyzxyzxyzxyzxyzxyzxyzxyzxyz01234" },
+      "expected": { "matches": true }
+    },
+    {
+      "name": "subject_pattern_wildcard_different_cn",
+      "description": "SubjectPattern 'orders-service@*' does NOT match 'auth-service@abc123'",
+      "input": { "pattern": "orders-service@*", "value": "auth-service@abc123456789012345678901234567" },
+      "expected": { "matches": false }
+    },
+    {
+      "name": "null_pattern_reject",
+      "description": "Null pattern MUST throw IllegalArgumentException",
+      "input": { "pattern": null, "value": "test" },
+      "expected": { "error": "IllegalArgumentException" }
+    },
+    {
+      "name": "null_value_reject",
+      "description": "Null value MUST throw IllegalArgumentException",
+      "input": { "pattern": "*", "value": null },
+      "expected": { "error": "IllegalArgumentException" }
+    },
+    {
+      "name": "empty_pattern_no_match",
+      "description": "Empty pattern matches only empty string (exact match semantics)",
+      "input": { "pattern": "", "value": "something" },
+      "expected": { "matches": false }
+    },
+    {
+      "name": "empty_pattern_matches_empty_value",
+      "description": "Empty pattern matches empty value (exact match)",
+      "input": { "pattern": "", "value": "" },
+      "expected": { "matches": true }
+    },
+    {
+      "name": "scope_pattern_site_wildcard",
+      "description": "Scope pattern 'site:*' matches 'site:eu-west-1' (§9.2.1)",
+      "input": { "pattern": "site:*", "value": "site:eu-west-1" },
+      "expected": { "matches": true }
+    },
+    {
+      "name": "scope_pattern_site_wildcard_matches_site_alone",
+      "description": "Scope pattern 'site:*' matches 'site' (hierarchical prefix)",
+      "input": { "pattern": "site:*", "value": "site" },
+      "expected": { "matches": true }
+    },
+    {
+      "name": "matches_any_first_match",
+      "description": "matchesAny returns true if any pattern in the list matches",
+      "input": {
+        "patterns": ["auth*", "orders*", "billing*"],
+        "value": "orders-service"
+      },
+      "expected": { "matchesAny": true }
+    },
+    {
+      "name": "matches_any_no_match",
+      "description": "matchesAny returns false if no pattern matches",
+      "input": {
+        "patterns": ["auth*", "billing*"],
+        "value": "orders-service"
+      },
+      "expected": { "matchesAny": false }
+    },
+    {
+      "name": "matches_any_null_patterns",
+      "description": "matchesAny with null patterns returns false",
+      "input": {
+        "patterns": null,
+        "value": "anything"
+      },
+      "expected": { "matchesAny": false }
+    },
+    {
+      "name": "asterisk_in_middle_is_literal",
+      "description": "Asterisk in the middle is treated literally (not a wildcard)",
+      "input": { "pattern": "orders*service", "value": "orders-service" },
+      "expected": { "matches": false },
+      "notes": "Only trailing '*' is special. 'orders*service' would match 'orders*service' exactly, or values starting with 'orders*servic' via prefix wildcard — but 'orders*' portion eats everything."
+    },
+    {
+      "name": "colon_star_not_at_end_literal",
+      "description": "':*' is only special at the end. 'prefix:*:more' is prefix wildcard with prefix 'prefix:*:mor'",
+      "input": { "pattern": "prefix:*:more", "value": "prefix:*:more" },
+      "expected": { "matches": false },
+      "notes": "Pattern ends with 'e' not '*', so it's an exact match check. 'prefix:*:more' != 'prefix:*:more' would be identity; this checks the parser doesn't misinterpret inner ':*'."
+    }
+  ]
+}

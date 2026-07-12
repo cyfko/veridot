@@ -2,6 +2,8 @@ package io.github.cyfko.veridot.core.impl;
 
 import io.github.cyfko.veridot.core.DistributionMode;
 import io.github.cyfko.veridot.core.InMemoryBroker;
+import io.github.cyfko.veridot.core.exceptions.BrokerExtractionException;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -49,7 +51,10 @@ class TokenTrackerTest {
 
     @Test
     void hasActiveToken_after_expiry_returns_false() throws InterruptedException {
-        sv.sign("data", BasicConfigurer.builder().groupId("u1").validity(1).build());
+        TestTrustSetup trust = TestTrustSetup.create();
+        try (GenericSignerVerifier tempSv = trust.newSignerVerifier(broker)) {
+            tempSv.sign("data", BasicConfigurer.builder().groupId("u1").validity(1).build());
+        }
         Thread.sleep(2000); // wait for TTL to pass
         assertFalse(sv.hasActiveToken("u1"), "Must return false after token TTL has passed");
     }
@@ -63,11 +68,11 @@ class TokenTrackerTest {
     }
 
     @Test
-    void hasActiveToken_by_messageId_returns_true() {
+    void hasActiveToken_by_native_reference_returns_true() {
         var cfg = BasicConfigurer.builder().groupId("u1").validity(600)
-                .distribution(DistributionMode.INDIRECT).build();
-        String messageId = sv.sign("data", cfg);
-        assertTrue(sv.hasActiveToken(messageId), "Must return true when querying by valid messageId");
+                .distribution(DistributionMode.NATIVE).build();
+        String nativeRef = sv.sign("data", cfg);
+        assertTrue(sv.hasActiveToken(nativeRef), "Must return true when querying by valid native reference");
     }
 
     @Test

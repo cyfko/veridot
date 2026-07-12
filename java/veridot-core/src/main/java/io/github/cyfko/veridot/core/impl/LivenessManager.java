@@ -44,7 +44,7 @@ final class LivenessManager {
                      .join();
             watermark.accept(liveEntryId, version);
         } catch (Exception e) {
-            throw new VeridotException(ErrorCode.TRANSPORT_UNAVAILABLE, liveEntryId.loggable(), "Failed to publish LIVENESS(ACTIVE) entry", e);
+            throw new VeridotException(ErrorCode.BROKER_UNREACHABLE, liveEntryId.loggable(), "Failed to publish LIVENESS(ACTIVE) entry", e);
         }
     }
 
@@ -60,7 +60,7 @@ final class LivenessManager {
                      .join();
             watermark.accept(liveEntryId, version);
         } catch (Exception e) {
-            throw new VeridotException(ErrorCode.TRANSPORT_UNAVAILABLE, liveEntryId.loggable(), "Failed to publish LIVENESS(REVOKED) entry", e);
+            throw new VeridotException(ErrorCode.BROKER_UNREACHABLE, liveEntryId.loggable(), "Failed to publish LIVENESS(REVOKED) entry", e);
         }
     }
 

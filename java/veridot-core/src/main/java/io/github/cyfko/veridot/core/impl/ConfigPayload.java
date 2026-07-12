@@ -11,16 +11,20 @@ import java.util.OptionalInt;
 import java.util.OptionalLong;
 
 /**
- * Payload of a CONFIG entry (§7.3).
- * Specifies the configuration (capacity limit, eviction strategy, default TTL) of a scope.
+ * Payload of a CONFIG entry (§4.4, §7.3).
+ *
+ * <p>Specifies the configuration (capacity limit, eviction strategy, default TTL) of a scope.
+ * V5 adds {@code maxInstanceLifetime} (tag 0x07) and {@code attestationPlugin} (tag 0x08).
  */
 record ConfigPayload(
-    OptionalInt max,            // tag 0x01: optional u32
-    byte pol,                   // tag 0x02: optional u8 (default 0x01)
-    OptionalLong dttl,          // tag 0x03: optional u64
-    Optional<String> name,      // tag 0x04: optional string
-    Optional<String> description, // tag 0x05: optional string
-    OptionalLong validity       // tag 0x06: optional u64 (validity duration in ms)
+    OptionalInt max,                    // tag 0x01: optional u32 — max sessions
+    byte pol,                           // tag 0x02: u8 — eviction policy (default 0x01 FIFO)
+    OptionalLong dttl,                  // tag 0x03: optional u64 — default TTL (ms)
+    Optional<String> name,              // tag 0x04: optional string — scope display name
+    Optional<String> description,       // tag 0x05: optional string — scope description
+    OptionalLong validity,              // tag 0x06: optional u64 — validity duration (ms)
+    OptionalLong maxInstanceLifetime,   // tag 0x07: optional u64 — max instance lifetime (ms) — V5 NEW
+    Optional<String> attestationPlugin  // tag 0x08: optional string — required attestation plugin name — V5 NEW
 ) {
 
     public enum Tag {
@@ -29,7 +33,9 @@ record ConfigPayload(
         DTTL((byte) 0x03),
         NAME((byte) 0x04),
         DESCRIPTION((byte) 0x05),
-        VALIDITY((byte) 0x06);
+        VALIDITY((byte) 0x06),
+        MAX_INSTANCE_LIFETIME((byte) 0x07),
+        ATTESTATION_PLUGIN((byte) 0x08);
 
         public final byte code;
         Tag(byte code) { this.code = code; }
@@ -62,7 +68,15 @@ record ConfigPayload(
             ? OptionalLong.of(TlvCodec.readU64(fields, Tag.VALIDITY.code, true))
             : OptionalLong.empty();
 
-        return new ConfigPayload(max, pol, dttl, name, description, validity);
+        OptionalLong maxInstanceLifetime = fields.containsKey(Tag.MAX_INSTANCE_LIFETIME.code)
+            ? OptionalLong.of(TlvCodec.readU64(fields, Tag.MAX_INSTANCE_LIFETIME.code, true))
+            : OptionalLong.empty();
+
+        Optional<String> attestationPlugin = fields.containsKey(Tag.ATTESTATION_PLUGIN.code)
+            ? Optional.of(TlvCodec.readString(fields, Tag.ATTESTATION_PLUGIN.code, true))
+            : Optional.empty();
+
+        return new ConfigPayload(max, pol, dttl, name, description, validity, maxInstanceLifetime, attestationPlugin);
     }
 
     public byte[] encode() {
@@ -82,6 +96,10 @@ record ConfigPayload(
         if (validity.isPresent()) {
             fields.add(TlvCodec.u64(Tag.VALIDITY.code, validity.getAsLong()));
         }
+        if (maxInstanceLifetime.isPresent()) {
+            fields.add(TlvCodec.u64(Tag.MAX_INSTANCE_LIFETIME.code, maxInstanceLifetime.getAsLong()));
+        }
+        attestationPlugin.ifPresent(s -> fields.add(TlvCodec.string(Tag.ATTESTATION_PLUGIN.code, s)));
 
         return TlvCodec.encode(fields);
     }

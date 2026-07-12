@@ -26,14 +26,14 @@ import java.util.function.Function;
  *         .build());
  * }</pre>
  *
- * <h2>Usage — INDIRECT mode with POJO payload</h2>
+ * <h2>Usage — NATIVE mode with POJO payload</h2>
  * <pre>{@code
  * record UserClaims(String email, String role) {}
  *
- * String messageId = signer.sign(new UserClaims("user@example.com", "admin"),
+ * String reference = signer.sign(new UserClaims("user@example.com", "admin"),
  *     BasicConfigurer.builder()
  *         .groupId("user-123")
- *         .distribution(DistributionMode.INDIRECT)
+ *         .distribution(DistributionMode.NATIVE)
  *         .validity(300)            // 5 minutes
  *         .build());
  *

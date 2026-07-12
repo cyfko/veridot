@@ -10,6 +10,12 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.Map;
 
+/**
+ * JWT verifier for Protocol V5.
+ *
+ * <p>V5 changes: uses {@link Algorithm#jwtAlg()} for alg matching,
+ * expiration check includes clock drift tolerance (§8.2).
+ */
 class JwtVerifier {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -23,13 +29,13 @@ class JwtVerifier {
     }
 
     public static JwtVerifier verifyWith(PublicKey publicKey) {
-        Algorithm defaultAlg = Algorithm.RSA_SHA256;
+        Algorithm defaultAlg = Algorithm.ED25519; // V5 default
         if (publicKey != null) {
             String keyAlg = publicKey.getAlgorithm();
             if ("EC".equalsIgnoreCase(keyAlg)) {
-                defaultAlg = Algorithm.ECDSA_SHA256;
-            } else if ("Ed25519".equalsIgnoreCase(keyAlg)) {
-                defaultAlg = Algorithm.ED25519;
+                defaultAlg = Algorithm.ECDSA_P256;
+            } else if ("RSA".equalsIgnoreCase(keyAlg)) {
+                defaultAlg = Algorithm.RSA_SHA256;
             }
         }
         return new JwtVerifier(publicKey, defaultAlg);
@@ -59,20 +65,8 @@ class JwtVerifier {
         }
         String jwtAlg = (String) header.get("alg");
 
-        // 2. Map the expected Algorithm enum to expected JWT alg string
-        String expectedJwtAlg;
-        if (expectedAlg == Algorithm.RSA_SHA256) {
-            expectedJwtAlg = "RS256";
-        } else if (expectedAlg == Algorithm.ECDSA_SHA256) {
-            expectedJwtAlg = "ES256";
-        } else if (expectedAlg == Algorithm.RSA_PSS) {
-            expectedJwtAlg = "PS256";
-        } else if (expectedAlg == Algorithm.ED25519) {
-            expectedJwtAlg = "EdDSA";
-        } else {
-            throw new SecurityException("Unsupported expected algorithm: " + expectedAlg);
-        }
-
+        // 2. V5: Use Algorithm.jwtAlg() for expected alg mapping
+        String expectedJwtAlg = expectedAlg.jwtAlg();
         if (!expectedJwtAlg.equals(jwtAlg)) {
             throw new SecurityException("JWT alg mismatch: expected " + expectedJwtAlg + ", got " + jwtAlg);
         }
@@ -88,10 +82,13 @@ class JwtVerifier {
         @SuppressWarnings("unchecked")
         Map<String, Object> claims = objectMapper.readValue(payloadJson, Map.class);
 
+        // V5: Expiration check with clock drift tolerance (§8.2)
         if (verifyExpiration && claims.containsKey("exp")) {
             long exp = ((Number) claims.get("exp")).longValue();
-            if (Instant.now().getEpochSecond() > exp) {
-                throw new SecurityException("JWT has expired");
+            long nowSec = Instant.now().getEpochSecond();
+            if (nowSec > exp + Config.MAX_CLOCK_DRIFT_SECONDS) {
+                throw new SecurityException("JWT has expired (exp=" + exp
+                    + ", now=" + nowSec + ", drift=" + Config.MAX_CLOCK_DRIFT_SECONDS + "s)");
             }
         }
 

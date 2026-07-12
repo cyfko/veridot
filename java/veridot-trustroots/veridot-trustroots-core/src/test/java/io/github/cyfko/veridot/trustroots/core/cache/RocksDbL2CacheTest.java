@@ -24,7 +24,7 @@ class RocksDbL2CacheTest {
         Instant now = Instant.now();
         
         TrustEntry entry = new TrustEntry(
-            1,
+            2,
             subject,
             "abc",
             KeyAlgorithm.ED25519,
@@ -35,6 +35,10 @@ class RocksDbL2CacheTest {
             "sig",
             now,
             false,
+            false,
+            "none",
+            null,
+            null,
             Collections.emptyMap()
         );
 

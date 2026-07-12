@@ -38,11 +38,11 @@ final class LivenessChecker {
         try {
             bytes = broker.get(liveEntryId.storageKey());
         } catch (Exception e) {
-            throw new VeridotException(ErrorCode.TRANSPORT_UNAVAILABLE, loggable, "Broker unavailable when fetching liveness", e);
+            throw new VeridotException(ErrorCode.BROKER_UNREACHABLE, loggable, "Broker unavailable when fetching liveness", e);
         }
 
         if (bytes == null) {
-            throw new VeridotException(ErrorCode.LIVENESS_NOT_ESTABLISHED, loggable, "Liveness entry absent");
+            throw new VeridotException(ErrorCode.LIVENESS_INVALID, loggable, "Liveness entry absent");
         }
 
         // 2. Parse envelope & TLV Payload (V-10 duplicate check before signature)
@@ -54,7 +54,7 @@ final class LivenessChecker {
         } catch (VeridotException e) {
             throw e;
         } catch (Exception e) {
-            throw new VeridotException(ErrorCode.LIVENESS_NOT_ESTABLISHED, loggable, "Malformed liveness envelope or payload", e);
+            throw new VeridotException(ErrorCode.LIVENESS_INVALID, loggable, "Malformed liveness envelope or payload", e);
         }
 
         // 3. Verify signature
@@ -68,7 +68,7 @@ final class LivenessChecker {
         try {
             capabilityVerifier.assertAuthorized(envelope.issuer, envelope.scope, broker, trustRoot);
         } catch (Exception e) {
-            throw new VeridotException(ErrorCode.CAPABILITY_NOT_FOUND, loggable, "Liveness issuer not authorized for scope", e);
+            throw new VeridotException(ErrorCode.NO_CAPABILITY, loggable, "Liveness issuer not authorized for scope", e);
         }
 
         // 5. Verify version is strictly greater than or equal to watermark (§11.1)
@@ -76,12 +76,12 @@ final class LivenessChecker {
         // is unconditionally invalid to prevent initial-state replay/rollback attacks (where watermark is 0
         // and 0 < 0 is false, allowing version 0 to pass relative monotone checks).
         if (envelope.version == 0) {
-            throw new VeridotException(ErrorCode.STALE_VERSION, loggable,
+            throw new VeridotException(ErrorCode.VERSION_REJECTED, loggable,
                 "Entry version 0 is unconditionally rejected (§11.1 V4201)");
         }
         long currentWatermark = watermark.current(liveEntryId);
         if (envelope.version < currentWatermark) {
-            throw new VeridotException(ErrorCode.STALE_VERSION, loggable, 
+            throw new VeridotException(ErrorCode.VERSION_REJECTED, loggable, 
                 "Liveness version " + envelope.version + " is stale. Watermark is " + currentWatermark);
         }
         if (envelope.version > currentWatermark) {
@@ -90,12 +90,12 @@ final class LivenessChecker {
 
         // 7. Verify ACTIVE status
         if (!payload.isActive()) {
-            throw new VeridotException(ErrorCode.LIVENESS_NOT_ESTABLISHED, loggable, "Liveness status is not ACTIVE (status = " + payload.status() + ")");
+            throw new VeridotException(ErrorCode.LIVENESS_INVALID, loggable, "Liveness status is not ACTIVE (status = " + payload.status() + ")");
         }
 
         // 8. Verify temporal validity (freshness)
         if (!payload.isFresh(nowMillis)) {
-            throw new VeridotException(ErrorCode.LIVENESS_NOT_ESTABLISHED, loggable, "Liveness attestation expired at " + payload.validUntil());
+            throw new VeridotException(ErrorCode.LIVENESS_INVALID, loggable, "Liveness attestation expired at " + payload.validUntil());
         }
     }
 }

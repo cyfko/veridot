@@ -22,19 +22,7 @@ class SessionCapacityTest {
         trust = TestTrustSetup.create();
     }
 
-    private boolean hasKeyEpoch(String groupId, String sessionKey) {
-        EntryId id = new EntryId(Scope.group(groupId), EntryType.KEY_EPOCH, sessionKey);
-        byte[] bytes = broker.get(id.storageKey());
-        if (bytes == null) return false;
-        try {
-            Envelope env = Envelope.parse(bytes);
-            return env.payload != null && env.payload.length > 0;
-        } catch (Exception e) {
-            return false;
-        }
-    }
-
-    private boolean hasActiveLiveness(String groupId, String sessionKey) {
+    private boolean hasActiveLivenessEntry(String groupId, String sessionKey) {
         EntryId id = new EntryId(Scope.group(groupId), EntryType.LIVENESS, sessionKey);
         byte[] bytes = broker.get(id.storageKey());
         if (bytes == null) return false;
@@ -46,6 +34,7 @@ class SessionCapacityTest {
             return false;
         }
     }
+
 
     @Test
     void maxSessions_fifo_evicts_oldest() throws InterruptedException {
@@ -61,14 +50,15 @@ class SessionCapacityTest {
         var activeEntries = broker.snapshot(scope).stream()
                 .filter(e -> {
                     Envelope env = Envelope.parse(e.envelopeBytes());
-                    return env.entryType == EntryType.KEY_EPOCH && env.payload != null && env.payload.length > 0;
+                    if (env.entryType != EntryType.LIVENESS) return false;
+                    try { return LivenessPayload.decode(env.payload).isActive(); } catch (Exception ex) { return false; }
                 })
                 .toList();
 
         assertEquals(2, activeEntries.size(), "Only 2 sessions must remain after FIFO eviction");
-        assertFalse(hasKeyEpoch("u1", "s1"), "s1 must be evicted (oldest, FIFO)");
-        assertTrue(hasKeyEpoch("u1", "s2"), "s2 must still be active");
-        assertTrue(hasKeyEpoch("u1", "s3"), "s3 must be active (newest)");
+        assertFalse(hasActiveLivenessEntry("u1", "s1"), "s1 must be evicted (oldest, FIFO)");
+        assertTrue(hasActiveLivenessEntry("u1", "s2"), "s2 must still be active");
+        assertTrue(hasActiveLivenessEntry("u1", "s3"), "s3 must be active (newest)");
     }
 
     @Test
@@ -85,14 +75,15 @@ class SessionCapacityTest {
         var activeEntries = broker.snapshot(scope).stream()
                 .filter(e -> {
                     Envelope env = Envelope.parse(e.envelopeBytes());
-                    return env.entryType == EntryType.KEY_EPOCH && env.payload != null && env.payload.length > 0;
+                    if (env.entryType != EntryType.LIVENESS) return false;
+                    try { return LivenessPayload.decode(env.payload).isActive(); } catch (Exception ex) { return false; }
                 })
                 .toList();
 
         assertEquals(2, activeEntries.size(), "Only 2 sessions must remain after LIFO eviction");
-        assertTrue(hasKeyEpoch("u1", "s1"), "s1 must still be active (oldest)");
-        assertFalse(hasKeyEpoch("u1", "s2"), "s2 must be evicted (newest at time of 3rd sign, LIFO)");
-        assertTrue(hasKeyEpoch("u1", "s3"), "s3 must be active (just signed)");
+        assertTrue(hasActiveLivenessEntry("u1", "s1"), "s1 must still be active (oldest)");
+        assertFalse(hasActiveLivenessEntry("u1", "s2"), "s2 must be evicted (newest at time of 3rd sign, LIFO)");
+        assertTrue(hasActiveLivenessEntry("u1", "s3"), "s3 must be active (just signed)");
     }
 
     @Test
@@ -109,7 +100,8 @@ class SessionCapacityTest {
         var activeEntries = broker.snapshot(scope).stream()
                 .filter(e -> {
                     Envelope env = Envelope.parse(e.envelopeBytes());
-                    return env.entryType == EntryType.KEY_EPOCH && env.payload != null && env.payload.length > 0;
+                    if (env.entryType != EntryType.LIVENESS) return false;
+                    try { return LivenessPayload.decode(env.payload).isActive(); } catch (Exception ex) { return false; }
                 })
                 .toList();
 
@@ -129,9 +121,9 @@ class SessionCapacityTest {
         // This 3rd sign should NOT trigger eviction (count < maxSessions)
         sv.sign("d3", BasicConfigurer.builder().groupId("u1").sequenceId("s3").validity(600).build());
 
-        assertTrue(hasKeyEpoch("u1", "s2"), "s2 must still be active");
-        assertTrue(hasKeyEpoch("u1", "s3"), "s3 must be active");
-        assertFalse(hasActiveLiveness("u1", "s1"), "s1 must remain revoked");
+        assertTrue(hasActiveLivenessEntry("u1", "s2"), "s2 must still be active");
+        assertTrue(hasActiveLivenessEntry("u1", "s3"), "s3 must be active");
+        assertFalse(hasActiveLivenessEntry("u1", "s1"), "s1 must remain revoked");
     }
 
     @Test
@@ -143,14 +135,15 @@ class SessionCapacityTest {
         sv.sign("d3", BasicConfigurer.builder().groupId("u2").sequenceId("s3").validity(600).build());
 
         // u1 should still have its 1 session
-        assertTrue(hasKeyEpoch("u1", "s1"), "u1:s1 must not be affected by u2 eviction");
+        assertTrue(hasActiveLivenessEntry("u1", "s1"), "u1:s1 must not be affected by u2 eviction");
         
         // u2 should have exactly 1 session (s3 evicted s2)
         Scope scope = Scope.group("u2");
         long u2Count = broker.snapshot(scope).stream()
                 .filter(e -> {
                     Envelope env = Envelope.parse(e.envelopeBytes());
-                    return env.entryType == EntryType.KEY_EPOCH && env.payload != null && env.payload.length > 0;
+                    if (env.entryType != EntryType.LIVENESS) return false;
+                    try { return LivenessPayload.decode(env.payload).isActive(); } catch (Exception ex) { return false; }
                 })
                 .count();
         assertEquals(1, u2Count, "u2 must have exactly 1 active session");
@@ -181,8 +174,8 @@ class SessionCapacityTest {
         sv.sign("d2", BasicConfigurer.builder().groupId("u1").sequenceId("s2").validity(600).build());
 
         // s1 should be evicted (FIFO), only s2 remains
-        assertFalse(hasKeyEpoch("u1", "s1"), "s1 must be evicted per local config");
-        assertTrue(hasKeyEpoch("u1", "s2"), "s2 must be active");
+        assertFalse(hasActiveLivenessEntry("u1", "s1"), "s1 must be evicted per local config");
+        assertTrue(hasActiveLivenessEntry("u1", "s2"), "s2 must be active");
     }
 
     @Test
@@ -198,8 +191,8 @@ class SessionCapacityTest {
         sv.sign("d2", BasicConfigurer.builder().groupId("u2").sequenceId("s2").validity(600).build());
 
         // Global config should apply: s1 evicted
-        assertFalse(hasKeyEpoch("u2", "s1"), "s1 must be evicted per global config");
-        assertTrue(hasKeyEpoch("u2", "s2"), "s2 must remain active");
+        assertFalse(hasActiveLivenessEntry("u2", "s1"), "s1 must be evicted per global config");
+        assertTrue(hasActiveLivenessEntry("u2", "s2"), "s2 must remain active");
     }
 
     @Test
@@ -293,33 +286,37 @@ class SessionCapacityTest {
 
     @Test
     void reject_policy_allows_signing_when_all_sessions_expired() throws InterruptedException {
-        var sv = trust.newSignerVerifier(broker, 1, EvictionPolicy.REJECT);
-
-        sv.sign("d1", BasicConfigurer.builder().groupId("rej-exp").sequenceId("s1").validity(1).build());
+        try (var sv1 = trust.newSignerVerifier(broker, 1, EvictionPolicy.REJECT)) {
+            sv1.sign("d1", BasicConfigurer.builder().groupId("rej-exp").sequenceId("s1").validity(1).build());
+        }
 
         Thread.sleep(2500);
 
-        assertDoesNotThrow(
-                () -> sv.sign("d2", BasicConfigurer.builder().groupId("rej-exp").sequenceId("s2").validity(600).build()),
-                "Signing must succeed when existing sessions have expired, even with REJECT policy");
+        try (var sv2 = trust.newSignerVerifier(broker, 1, EvictionPolicy.REJECT)) {
+            assertDoesNotThrow(
+                    () -> sv2.sign("d2", BasicConfigurer.builder().groupId("rej-exp").sequenceId("s2").validity(600).build()),
+                    "Signing must succeed when existing sessions have expired, even with REJECT policy");
+        }
     }
 
     @Test
     void expired_sessions_are_garbage_collected_on_next_sign() throws InterruptedException {
-        var sv = trust.newSignerVerifier(broker, 2, EvictionPolicy.FIFO);
+        try (var sv1 = trust.newSignerVerifier(broker, 2, EvictionPolicy.FIFO)) {
+            sv1.sign("d1", BasicConfigurer.builder().groupId("gc").sequenceId("s1").validity(1).build());
+            sv1.sign("d2", BasicConfigurer.builder().groupId("gc").sequenceId("s2").validity(1).build());
+        }
 
-        sv.sign("d1", BasicConfigurer.builder().groupId("gc").sequenceId("s1").validity(1).build());
-        sv.sign("d2", BasicConfigurer.builder().groupId("gc").sequenceId("s2").validity(1).build());
-
-        assertTrue(hasKeyEpoch("gc", "s1"), "s1 must exist before expiry");
-        assertTrue(hasKeyEpoch("gc", "s2"), "s2 must exist before expiry");
+        assertTrue(hasActiveLivenessEntry("gc", "s1"), "s1 must exist before expiry");
+        assertTrue(hasActiveLivenessEntry("gc", "s2"), "s2 must exist before expiry");
 
         Thread.sleep(2500);
 
-        sv.sign("d3", BasicConfigurer.builder().groupId("gc").sequenceId("s3").validity(600).build());
+        try (var sv2 = trust.newSignerVerifier(broker, 2, EvictionPolicy.FIFO)) {
+            sv2.sign("d3", BasicConfigurer.builder().groupId("gc").sequenceId("s3").validity(600).build());
+        }
 
-        assertFalse(hasKeyEpoch("gc", "s1"), "Expired s1 must be GC'd after next sign");
-        assertFalse(hasKeyEpoch("gc", "s2"), "Expired s2 must be GC'd after next sign");
-        assertTrue(hasKeyEpoch("gc", "s3"), "New s3 must exist");
+        assertFalse(hasActiveLivenessEntry("gc", "s1"), "Expired s1 must be GC'd after next sign");
+        assertFalse(hasActiveLivenessEntry("gc", "s2"), "Expired s2 must be GC'd after next sign");
+        assertTrue(hasActiveLivenessEntry("gc", "s3"), "New s3 must exist");
     }
 }

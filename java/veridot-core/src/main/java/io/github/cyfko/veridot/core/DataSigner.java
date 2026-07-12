@@ -15,8 +15,8 @@ import java.util.function.Function;
  * <p>The returned token type depends on the chosen {@link DistributionMode}:</p>
  * <ul>
  *   <li>{@link DistributionMode#DIRECT} — the signed token itself is returned to the caller.</li>
- *   <li>{@link DistributionMode#INDIRECT} — a lightweight {@code messageId} is returned;
- *       the token is stored in the broker and retrieved at verification time.</li>
+ *   <li>{@link DistributionMode#NATIVE} — a compact reference token is returned;
+ *       the envelope is stored in the broker and retrieved at verification time.</li>
  * </ul>
  *
  * <h2>Typical usage</h2>
@@ -31,11 +31,11 @@ import java.util.function.Function;
  *         .validity(3600)
  *         .build());
  *
- * // Issue a token in INDIRECT mode (only the messageId is returned)
- * String messageId = signer.sign("user@example.com",
+ * // Issue a token in NATIVE mode (only a reference is returned)
+ * String reference = signer.sign("user@example.com",
  *     BasicConfigurer.builder()
  *         .groupId("user-123")
- *         .distribution(DistributionMode.INDIRECT)
+ *         .distribution(DistributionMode.NATIVE)
  *         .validity(3600)
  *         .build());
  * }</pre>
@@ -131,13 +131,13 @@ public interface DataSigner {
      * <p>The return value depends on the configured {@link DistributionMode}:</p>
      * <ul>
      *   <li>{@link DistributionMode#DIRECT} — returns the signed token string directly.</li>
-     *   <li>{@link DistributionMode#INDIRECT} — returns the Protocol V4 {@code messageId}
-     *       (format: {@code <version>:<groupId>:<sequenceId>}); the token is stored in the broker.</li>
+     *   <li>{@link DistributionMode#NATIVE} — returns a compact reference token
+     *       (format: {@code 8:<scope>:<key>}); the envelope is stored in the broker.</li>
      * </ul>
      *
      * @param data       the payload to embed; must not be {@code null}
      * @param configurer signing configuration; must not be {@code null}
-     * @return the issued token (or its {@code messageId} in INDIRECT mode)
+     * @return the issued token (or its reference in NATIVE mode)
      * @throws DataSerializationException if the payload cannot be serialized
      * @throws BrokerTransportException   if publishing verification metadata to the broker fails
      * @throws IllegalArgumentException   if {@code data} is {@code null}, or if configuration

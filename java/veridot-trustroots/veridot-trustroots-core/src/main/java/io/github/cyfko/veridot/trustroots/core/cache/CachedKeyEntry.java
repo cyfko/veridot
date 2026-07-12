@@ -1,5 +1,7 @@
 package io.github.cyfko.veridot.trustroots.core.cache;
 
+import io.github.cyfko.veridot.trustroots.api.KeyAlgorithm;
+
 import java.security.PublicKey;
 import java.time.Instant;
 
@@ -13,6 +15,9 @@ import java.time.Instant;
  * @param notAfter Instant d'expiration nominal de la clé publique.
  * @param staleDeadline Limite absolue tolérée de validité de secours (notAfter + staleWindow).
  * @param cachedAt Instant d'insertion dans le cache L1.
+ * @param kemPublicKey Clé d'encapsulation ML-KEM-768 pour le chiffrement hybride (§14.5, nullable).
+ * @param isInstanceScoped Indique si cette identité est de portée instance (single-key, V5 §5.1).
+ * @param algorithm Algorithme cryptographique de la clé (nécessaire pour les contrôles anti-confusion V5).
  */
 public record CachedKeyEntry(
     String subject,
@@ -20,7 +25,10 @@ public record CachedKeyEntry(
     PublicKey publicKey,
     Instant notAfter,
     Instant staleDeadline,
-    Instant cachedAt
+    Instant cachedAt,
+    byte[] kemPublicKey,
+    boolean isInstanceScoped,
+    KeyAlgorithm algorithm
 ) {
     /**
      * Indique si la clé est encore dans sa période nominale de validité.

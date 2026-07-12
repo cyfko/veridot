@@ -112,13 +112,17 @@ class MultiInstanceSessionTest {
         String refreshGroup = "refresh." + username;
         String sessionId = "sess-A";
 
-        String accessToken = limitedSigner.sign(username,
-                BasicConfigurer.builder()
-                        .groupId(username)
-                        .sequenceId(sessionId)
-                        .distribution(DistributionMode.DIRECT)
-                        .validity(1) // 1 second
-                        .build());
+        TestTrustSetup trust = TestTrustSetup.create();
+        String accessToken;
+        try (GenericSignerVerifier tempLimited = trust.newSignerVerifier(broker, 1, EvictionPolicy.REJECT)) {
+            accessToken = tempLimited.sign(username,
+                    BasicConfigurer.builder()
+                            .groupId(username)
+                            .sequenceId(sessionId)
+                            .distribution(DistributionMode.DIRECT)
+                            .validity(1) // 1 second
+                            .build());
+        }
         assertNotNull(accessToken);
 
         String refreshToken = unlimitedSigner.sign(username,
@@ -132,22 +136,24 @@ class MultiInstanceSessionTest {
 
         Thread.sleep(2500);
 
-        assertThrows(Exception.class,
-                () -> limitedSigner.verify(accessToken, s -> s),
-                "Access token must be expired");
+        try (GenericSignerVerifier newLimited = trust.newSignerVerifier(broker, 1, EvictionPolicy.REJECT)) {
+            assertThrows(Exception.class,
+                    () -> newLimited.verify(accessToken, s -> s),
+                    "Access token must be expired");
 
-        assertDoesNotThrow(
-                () -> unlimitedSigner.verify(refreshToken, s -> s),
-                "Refresh token must still be verifiable (7-day TTL)");
+            assertDoesNotThrow(
+                    () -> unlimitedSigner.verify(refreshToken, s -> s),
+                    "Refresh token must still be verifiable (7-day TTL)");
 
-        assertDoesNotThrow(
-                () -> limitedSigner.sign(username,
-                        BasicConfigurer.builder()
-                                .groupId(username)
-                                .sequenceId("sess-B")
-                                .distribution(DistributionMode.DIRECT)
-                                .validity(120)
-                                .build()),
-                "Limited signer must allow new access token after previous one expired");
+            assertDoesNotThrow(
+                    () -> newLimited.sign(username,
+                            BasicConfigurer.builder()
+                                    .groupId(username)
+                                    .sequenceId("sess-B")
+                                    .distribution(DistributionMode.DIRECT)
+                                    .validity(120)
+                                    .build()),
+                    "Limited signer must allow new access token after previous one expired");
+        }
     }
 }

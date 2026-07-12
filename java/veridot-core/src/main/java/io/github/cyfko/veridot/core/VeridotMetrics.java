@@ -12,6 +12,12 @@ public final class VeridotMetrics {
     public static final LongAdder FENCE_CONTENTIONS = new LongAdder();
     public static final LongAdder RECONCILIATIONS = new LongAdder();
 
+    /** veridot_attestation_verifications_total — incremented in TaasStateMachine on each attestation check. */
+    public static final LongAdder ATTESTATION_VERIFICATIONS = new LongAdder();
+
+    /** veridot_security_alerts_total — incremented in TaasStateMachine when attestation fails on a rotation. */
+    public static final LongAdder SECURITY_ALERTS = new LongAdder();
+
     private VeridotMetrics() {}
 
     /**
@@ -22,5 +28,7 @@ public final class VeridotMetrics {
         ENVELOPE_REJECTED.reset();
         FENCE_CONTENTIONS.reset();
         RECONCILIATIONS.reset();
+        ATTESTATION_VERIFICATIONS.reset();
+        SECURITY_ALERTS.reset();
     }
 }

@@ -7,7 +7,7 @@ import java.util.List;
 
 /**
  * Propriétés de configuration Spring Boot préfixées par {@code veridot.trustroots}.
- * Permet de paramétrer les différents aspects de la gestion du cache de clés de confiance et du client TAD.
+ * Permet de paramétrer les différents aspects de la gestion du cache de clés de confiance et du client TAAS.
  */
 @ConfigurationProperties(prefix = "veridot.trustroots")
 public class TrustRootsProperties {
@@ -30,13 +30,13 @@ public class TrustRootsProperties {
     /** Délai maximum toléré lors d'une tentative de résolution concurrente au démarrage du cache. Valeur par défaut : 5 secondes. */
     private Duration resolveWaitTimeout = Duration.ofSeconds(5);
     
-    /** Type de fournisseur de registre utilisé. Actuellement seule l'autorité répliquée {@code "tad"} est supportée. */
-    private String providerType = "tad";
+    /** Type de fournisseur de registre utilisé. Actuellement seule l'autorité répliquée {@code "taas"} est supportée. */
+    private String providerType = "taas";
     
-    /** Liste des adresses de base des nœuds du cluster TAD (ex: http://127.0.0.1:8443). */
-    private List<String> tadClusterUrls;
+    /** Liste des adresses de base des nœuds du cluster TAAS (ex: http://127.0.0.1:8443). */
+    private List<String> taasClusterUrls;
     
-    /** Timeout de connexion et de lecture réseau pour interroger le TAD. Valeur par défaut : 3 secondes. */
+    /** Timeout de connexion et de lecture réseau pour interroger le TAAS. Valeur par défaut : 3 secondes. */
     private Duration connectTimeout = Duration.ofSeconds(3);
 
     /**
@@ -66,8 +66,8 @@ public class TrustRootsProperties {
     public String getProviderType() { return providerType; }
     public void setProviderType(String providerType) { this.providerType = providerType; }
 
-    public List<String> getTadClusterUrls() { return tadClusterUrls; }
-    public void setTadClusterUrls(List<String> tadClusterUrls) { this.tadClusterUrls = tadClusterUrls; }
+    public List<String> getTaasClusterUrls() { return taasClusterUrls; }
+    public void setTaasClusterUrls(List<String> taasClusterUrls) { this.taasClusterUrls = taasClusterUrls; }
 
     public Duration getConnectTimeout() { return connectTimeout; }
     public void setConnectTimeout(Duration connectTimeout) { this.connectTimeout = connectTimeout; }

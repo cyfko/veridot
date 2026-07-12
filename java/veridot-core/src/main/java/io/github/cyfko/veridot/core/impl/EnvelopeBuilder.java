@@ -4,10 +4,13 @@ import io.github.cyfko.veridot.core.Algorithm;
 
 /**
  * Fluent builder for creating Envelope components before signature application.
+ * Protocol V5 (§3).
+ *
+ * <p>V5 change: {@code flags} is now {@code int} (u16) instead of {@code byte} (u8).
  */
 final class EnvelopeBuilder {
     public EntryType entryType;
-    public byte flags;
+    public int flags;
     public Scope scope;
     public String key = "";
     public long version;
@@ -23,7 +26,7 @@ final class EnvelopeBuilder {
         return this;
     }
 
-    public EnvelopeBuilder flags(byte flags) {
+    public EnvelopeBuilder flags(int flags) {
         this.flags = flags;
         return this;
     }

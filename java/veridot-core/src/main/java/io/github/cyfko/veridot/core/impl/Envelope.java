@@ -6,16 +6,38 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 
 /**
- * The canonical binary envelope format for Protocol V4 (§3).
+ * The canonical binary envelope format for Protocol V5 (§3).
+ *
+ * <h3>Wire layout (V5)</h3>
+ * <pre>
+ * Offset  Size  Field
+ * 0–1     2B    Magic (0x56 0x44 = "VD")
+ * 2       1B    ProtoVersion (0x05)
+ * 3       1B    EntryType
+ * 4–5     2B    Flags (u16 BE)          ← was 1B in V4
+ * 6–7     2B    ScopeLen (u16 BE)       ← offset +1 vs V4
+ * 8+      var   Scope (UTF-8)
+ * ...     2B    KeyLen (u16 BE)
+ * ...     var   Key (UTF-8)
+ * ...     8B    Version (u64 BE)
+ * ...     8B    Timestamp (i64 BE, epoch ms)
+ * ...     2B    IssuerLen (u16 BE)
+ * ...     var   Issuer (UTF-8)
+ * ...     4B    PayloadLen (u32 BE)
+ * ...     var   Payload
+ * ...     1B    SigAlg
+ * ...     2B    SigLen (u16 BE)
+ * ...     var   Signature
+ * </pre>
  */
 public final class Envelope {
 
     public static final byte[] MAGIC = { 0x56, 0x44 }; // "VD"
-    public static final byte PROTO_VERSION = 0x04;
+    public static final byte PROTO_VERSION = 0x05;
 
     public final byte protoVersion;
     public final EntryType entryType;
-    public final byte flags;
+    public final int flags;           // u16 (was byte in V4)
     public final Scope scope;
     public final String key;
     public final long version;
@@ -25,7 +47,7 @@ public final class Envelope {
     public final Algorithm sigAlg;
     public final byte[] signature;
 
-    public Envelope(byte protoVersion, EntryType entryType, byte flags, Scope scope, String key,
+    public Envelope(byte protoVersion, EntryType entryType, int flags, Scope scope, String key,
                     long version, long timestamp, String issuer, byte[] payload, Algorithm sigAlg, byte[] signature) {
         this.protoVersion = protoVersion;
         this.entryType = entryType;
@@ -41,8 +63,12 @@ public final class Envelope {
     }
 
     /**
-     * Parses and structurally validates the envelope (§3.1, §3.2).
-     * Does not verify the signature.
+     * Parses and structurally validates a V5 envelope (§3.1, §3.2).
+     * Does not verify the cryptographic signature.
+     *
+     * @param raw the raw envelope bytes
+     * @return the parsed {@link Envelope}
+     * @throws VeridotException if the envelope is malformed
      */
     public static Envelope parse(byte[] raw) {
         if (raw == null) {
@@ -55,13 +81,13 @@ public final class Envelope {
         // 1. Magic and ProtoVersion validation (§3.2)
         if (raw[0] != MAGIC[0] || raw[1] != MAGIC[1] || raw[2] != PROTO_VERSION) {
             throw new VeridotException(ErrorCode.INVALID_ENVELOPE, null, 
-                String.format("Invalid magic or protocol version. Expected 0x564404, got 0x%02X%02X%02X", raw[0], raw[1], raw[2]));
+                String.format("Invalid magic or protocol version. Expected 0x564405, got 0x%02X%02X%02X", raw[0], raw[1], raw[2]));
         }
 
         ByteBuffer buffer = ByteBuffer.wrap(raw);
         buffer.position(3); // skip magic + protoVersion
 
-        if (buffer.remaining() < 2) {
+        if (buffer.remaining() < 3) { // entryType(1) + flags(2)
             throw new VeridotException(ErrorCode.INVALID_ENVELOPE, null, "Raw envelope truncated before entryType/flags");
         }
 
@@ -74,11 +100,10 @@ public final class Envelope {
             throw new VeridotException(ErrorCode.UNREGISTERED_ENTRY_TYPE, null, "Unregistered entry type code: " + entryTypeCode);
         }
 
-        // 3. Flags validation
-        byte flags = buffer.get();
-        if ((flags & 0xFE) != 0) {
-            throw new VeridotException(ErrorCode.RESERVED_FLAG_SET, null, "Reserved flag bits 1-7 must be zero");
-        }
+        // 3. Flags validation — u16 BE (2 bytes) (§3.3)
+        int flags = Flags.decode(raw, buffer.position());
+        buffer.position(buffer.position() + 2);
+        Flags.validateReservedBits(flags);
 
         // 4. Scope validation
         if (buffer.remaining() < 2) {
@@ -105,7 +130,7 @@ public final class Envelope {
             throw new VeridotException(ErrorCode.INVALID_ENVELOPE, null, "Raw envelope truncated before key length");
         }
         int keyLen = Short.toUnsignedInt(buffer.getShort());
-        if (keyLen < 0 || keyLen > 4096) {
+        if (keyLen > 4096) {
             throw new VeridotException(ErrorCode.INVALID_IDENTIFIER_LENGTH, null, "Key length must be 0-4096 bytes: " + keyLen);
         }
         if (buffer.remaining() < keyLen) {
@@ -176,16 +201,29 @@ public final class Envelope {
         try {
             sigAlg = Algorithm.fromCode(buffer.get());
         } catch (IllegalArgumentException e) {
-            throw new VeridotException(ErrorCode.SIGALG_KEY_MISMATCH, entryIdLoggable, e.getMessage());
+            throw new VeridotException(ErrorCode.ALGORITHM_MISMATCH, entryIdLoggable, e.getMessage());
         }
 
-        // Coherence check for COMPACT_SIG flag and sigAlg
-        byte compactSigBit = (byte) (flags & 0x01);
-        if (compactSigBit == 1 && sigAlg != Algorithm.ED25519) {
-            throw new VeridotException(ErrorCode.RESERVED_FLAG_SET, entryIdLoggable, "COMPACT_SIG flag set but sigAlg is not Ed25519");
+        // Coherence check for COMPACT_SIG flag and sigAlg (§3.3)
+        boolean compactSigSet = Flags.has(flags, Flags.COMPACT_SIG);
+        if (compactSigSet && !sigAlg.isCompactSig()) {
+            throw new VeridotException(ErrorCode.COMPACT_SIG_FLAG_MISMATCH, entryIdLoggable, 
+                "COMPACT_SIG flag set but sigAlg " + sigAlg.name() + " does not produce compact signatures");
         }
-        if (compactSigBit == 0 && sigAlg == Algorithm.ED25519) {
-            throw new VeridotException(ErrorCode.RESERVED_FLAG_SET, entryIdLoggable, "COMPACT_SIG flag not set but sigAlg is Ed25519");
+        if (!compactSigSet && sigAlg.isCompactSig()) {
+            throw new VeridotException(ErrorCode.COMPACT_SIG_FLAG_MISMATCH, entryIdLoggable, 
+                "COMPACT_SIG flag not set but sigAlg " + sigAlg.name() + " requires it");
+        }
+
+        // Coherence check for HYBRID_SIG flag and sigAlg (§6.2)
+        boolean hybridSigSet = Flags.has(flags, Flags.HYBRID_SIG);
+        if (hybridSigSet && !sigAlg.isHybrid()) {
+            throw new VeridotException(ErrorCode.COMPACT_SIG_FLAG_MISMATCH, entryIdLoggable, 
+                "HYBRID_SIG flag set but sigAlg " + sigAlg.name() + " is not a hybrid algorithm");
+        }
+        if (!hybridSigSet && sigAlg.isHybrid()) {
+            throw new VeridotException(ErrorCode.COMPACT_SIG_FLAG_MISMATCH, entryIdLoggable, 
+                "HYBRID_SIG flag not set but sigAlg " + sigAlg.name() + " requires it");
         }
 
         int sigLen = Short.toUnsignedInt(buffer.getShort());
@@ -203,7 +241,11 @@ public final class Envelope {
     }
 
     /**
-     * Encodes a signed envelope to raw bytes.
+     * Encodes a signed envelope to raw bytes (V5 wire format).
+     *
+     * @param builder the envelope builder with all fields set
+     * @param signature the cryptographic signature
+     * @return the encoded envelope bytes
      */
     public static byte[] encode(EnvelopeBuilder builder, byte[] signature) {
         byte[] scopeBytes = builder.scope.value().getBytes(StandardCharsets.UTF_8);
@@ -212,25 +254,27 @@ public final class Envelope {
         byte[] payload = builder.payload != null ? builder.payload : new byte[0];
         byte[] sig = signature != null ? signature : new byte[0];
 
-        int totalLen = 2 + 1 + 1 + 1 + 2 + scopeBytes.length + 2 + keyBytes.length + 8 + 8 + 2 + issuerBytes.length + 4 + payload.length + 1 + 2 + sig.length;
+        // V5: flags is 2 bytes (u16) instead of 1 byte → total header +1 vs V4
+        int totalLen = 2 + 1 + 1 + 2 + 2 + scopeBytes.length + 2 + keyBytes.length 
+                     + 8 + 8 + 2 + issuerBytes.length + 4 + payload.length + 1 + 2 + sig.length;
         ByteBuffer buffer = ByteBuffer.allocate(totalLen);
 
-        buffer.put(MAGIC);
-        buffer.put(PROTO_VERSION);
-        buffer.put(builder.entryType.code);
-        buffer.put(builder.flags);
-        buffer.putShort((short) scopeBytes.length);
+        buffer.put(MAGIC);                              // 2B magic
+        buffer.put(PROTO_VERSION);                      // 1B protoVersion
+        buffer.put(builder.entryType.code);             // 1B entryType
+        buffer.put(Flags.encode(builder.flags));        // 2B flags (u16 BE)
+        buffer.putShort((short) scopeBytes.length);     // 2B scopeLen
         buffer.put(scopeBytes);
-        buffer.putShort((short) keyBytes.length);
+        buffer.putShort((short) keyBytes.length);       // 2B keyLen
         buffer.put(keyBytes);
-        buffer.putLong(builder.version);
-        buffer.putLong(builder.timestamp);
-        buffer.putShort((short) issuerBytes.length);
+        buffer.putLong(builder.version);                // 8B version
+        buffer.putLong(builder.timestamp);              // 8B timestamp
+        buffer.putShort((short) issuerBytes.length);    // 2B issuerLen
         buffer.put(issuerBytes);
-        buffer.putInt(payload.length);
+        buffer.putInt(payload.length);                  // 4B payloadLen
         buffer.put(payload);
-        buffer.put(builder.sigAlg.getCode());
-        buffer.putShort((short) sig.length);
+        buffer.put(builder.sigAlg.getCode());           // 1B sigAlg
+        buffer.putShort((short) sig.length);            // 2B sigLen
         buffer.put(sig);
 
         return buffer.array();
@@ -238,19 +282,22 @@ public final class Envelope {
 
     /**
      * Returns the canonical bytes to sign (§3.4): all bytes preceding sigAlg.
+     * This includes the 2-byte flags field (V5).
      */
     public byte[] canonicalSigningBytes() {
         byte[] scopeBytes = scope.value().getBytes(StandardCharsets.UTF_8);
         byte[] keyBytes = key.getBytes(StandardCharsets.UTF_8);
         byte[] issuerBytes = issuer.getBytes(StandardCharsets.UTF_8);
 
-        int signLen = 2 + 1 + 1 + 1 + 2 + scopeBytes.length + 2 + keyBytes.length + 8 + 8 + 2 + issuerBytes.length + 4 + payload.length;
+        // V5: flags = 2 bytes → signLen includes +1 vs V4
+        int signLen = 2 + 1 + 1 + 2 + 2 + scopeBytes.length + 2 + keyBytes.length 
+                    + 8 + 8 + 2 + issuerBytes.length + 4 + payload.length;
         ByteBuffer buffer = ByteBuffer.allocate(signLen);
 
         buffer.put(MAGIC);
         buffer.put(protoVersion);
         buffer.put(entryType.code);
-        buffer.put(flags);
+        buffer.put(Flags.encode(flags));                // 2B flags (u16 BE)
         buffer.putShort((short) scopeBytes.length);
         buffer.put(scopeBytes);
         buffer.putShort((short) keyBytes.length);

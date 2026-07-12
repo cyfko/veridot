@@ -25,75 +25,55 @@ class SigningTest {
                 .distribution(DistributionMode.DIRECT).build();
         String result = signer.sign("data", cfg);
         assertTrue(result.contains("."), "DIRECT mode must return a JWT (contains dots)");
-        assertFalse(result.startsWith("3:"), "DIRECT mode must NOT return a messageId");
+        assertFalse(result.startsWith("8:"), "DIRECT mode must NOT return a native reference");
     }
 
     @Test
-    void sign_indirect_returns_messageId() {
+    void sign_native_returns_reference() {
         var cfg = BasicConfigurer.builder().groupId("user1").validity(60)
-                .distribution(DistributionMode.INDIRECT).build();
+                .distribution(DistributionMode.NATIVE).build();
         String result = signer.sign("data", cfg);
-        assertTrue(result.startsWith("3:"), "INDIRECT mode must return a messageId starting with '3:'");
-        assertFalse(result.contains("."), "INDIRECT mode must NOT return a JWT");
+        assertTrue(result.startsWith("8:"), "NATIVE mode must return a reference starting with '8:'");
+        assertFalse(result.contains("."), "NATIVE mode must NOT return a JWT");
     }
 
     @Test
-    void sign_stores_v4_envelope_in_broker() {
+    void sign_stores_v5_envelope_in_broker() {
         var cfg = BasicConfigurer.builder().groupId("user1").validity(60).build();
         signer.sign("data", cfg);
 
         Scope scope = Scope.group("user1");
         var entries = broker.snapshot(scope);
-        // Two entries: KEY_EPOCH and LIVENESS(ACTIVE)
-        assertEquals(2, entries.size(), "Two broker entries (KEY_EPOCH and LIVENESS) must be created");
-
-        var keyEpochEntry = entries.stream()
-                .filter(e -> Envelope.parse(e.envelopeBytes()).entryType == EntryType.KEY_EPOCH)
-                .findFirst().orElseThrow();
-
-        Envelope parsed = Envelope.parse(keyEpochEntry.envelopeBytes());
-        assertEquals(Envelope.PROTO_VERSION, parsed.protoVersion);
-        assertEquals(EntryType.KEY_EPOCH, parsed.entryType);
-        assertEquals(scope, parsed.scope);
-        assertEquals("test-signer", parsed.issuer);
-
-        KeyEpochPayload payload = KeyEpochPayload.decode(parsed.payload);
-        assertNotNull(payload.pk());
-        assertTrue(payload.validUntil() > payload.validFrom());
+        // V5: LIVENESS entry is published (no KEY_EPOCH)
+        assertTrue(entries.stream()
+                .anyMatch(e -> Envelope.parse(e.envelopeBytes()).entryType == EntryType.LIVENESS),
+                "LIVENESS entry must be created in broker");
     }
 
     @Test
-    void sign_indirect_stores_token_in_payload() {
+    void sign_native_stores_signed_data_in_broker() {
         var cfg = BasicConfigurer.builder().groupId("user1").validity(60)
-                .distribution(DistributionMode.INDIRECT).build();
+                .distribution(DistributionMode.NATIVE).build();
         signer.sign("data", cfg);
 
         Scope scope = Scope.group("user1");
         var entries = broker.snapshot(scope);
-        var keyEpochEntry = entries.stream()
-                .filter(e -> Envelope.parse(e.envelopeBytes()).entryType == EntryType.KEY_EPOCH)
-                .findFirst().orElseThrow();
-
-        Envelope parsed = Envelope.parse(keyEpochEntry.envelopeBytes());
-        KeyEpochPayload payload = KeyEpochPayload.decode(parsed.payload);
-        assertNotNull(payload.token(), "INDIRECT mode must store token in KeyEpochPayload");
+        assertTrue(entries.stream()
+                .anyMatch(e -> Envelope.parse(e.envelopeBytes()).entryType == EntryType.SIGNED_DATA),
+                "NATIVE mode must store a SIGNED_DATA entry in broker");
     }
 
     @Test
-    void sign_direct_does_not_store_token_in_payload() {
+    void sign_direct_does_not_store_signed_data_in_broker() {
         var cfg = BasicConfigurer.builder().groupId("user1").validity(60)
                 .distribution(DistributionMode.DIRECT).build();
         signer.sign("data", cfg);
 
         Scope scope = Scope.group("user1");
         var entries = broker.snapshot(scope);
-        var keyEpochEntry = entries.stream()
-                .filter(e -> Envelope.parse(e.envelopeBytes()).entryType == EntryType.KEY_EPOCH)
-                .findFirst().orElseThrow();
-
-        Envelope parsed = Envelope.parse(keyEpochEntry.envelopeBytes());
-        KeyEpochPayload payload = KeyEpochPayload.decode(parsed.payload);
-        assertNull(payload.token(), "DIRECT mode must NOT store token in KeyEpochPayload");
+        assertTrue(entries.stream()
+                .noneMatch(e -> Envelope.parse(e.envelopeBytes()).entryType == EntryType.SIGNED_DATA),
+                "DIRECT mode must NOT store SIGNED_DATA in broker");
     }
 
     @Test
@@ -113,8 +93,8 @@ class SigningTest {
         var cfg = BasicConfigurer.builder().groupId("user1").sequenceId("my-session").validity(60).build();
         signer.sign("data", cfg);
 
-        EntryId expectedId = new EntryId(Scope.group("user1"), EntryType.KEY_EPOCH, "my-session");
-        assertTrue(broker.containsKey(expectedId.storageKey()), "Broker must contain key with custom sequenceId");
+        EntryId expectedId = new EntryId(Scope.group("user1"), EntryType.LIVENESS, "my-session");
+        assertTrue(broker.containsKey(expectedId.storageKey()), "Broker must contain LIVENESS entry with custom sequenceId");
     }
 
     @Test
@@ -126,9 +106,9 @@ class SigningTest {
 
         Scope scope = Scope.group("user1");
         var entries = broker.snapshot(scope);
-        long keyEpochCount = entries.stream()
-                .filter(e -> Envelope.parse(e.envelopeBytes()).entryType == EntryType.KEY_EPOCH)
+        long livenessCount = entries.stream()
+                .filter(e -> Envelope.parse(e.envelopeBytes()).entryType == EntryType.LIVENESS)
                 .count();
-        assertEquals(2, keyEpochCount, "Two signs with auto-sequenceId must create 2 distinct KEY_EPOCH entries");
+        assertEquals(2, livenessCount, "Two signs with auto-sequenceId must create 2 distinct LIVENESS entries");
     }
 }

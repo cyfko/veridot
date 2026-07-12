@@ -10,6 +10,10 @@ import java.util.List;
 
 /**
  * Counts and lists active sessions strictly based on positively verified LIVENESS entries (§10.1).
+ *
+ * <p>V5: session validity is determined solely by LIVENESS entries. There is no longer
+ * a dependency on the former key-epoch entry type. A session is active if its LIVENESS entry is ACTIVE
+ * and not expired.
  */
 final class SessionCounter {
 
@@ -37,7 +41,7 @@ final class SessionCounter {
         try {
             entries = broker.snapshot(groupScope);
         } catch (Exception e) {
-            throw new VeridotException(ErrorCode.TRANSPORT_UNAVAILABLE, null, "Failed to fetch snapshot for capacity check", e);
+            throw new VeridotException(ErrorCode.BROKER_UNREACHABLE, null, "Failed to fetch snapshot for capacity check", e);
         }
 
         if (entries == null || entries.isEmpty()) {
@@ -55,23 +59,19 @@ final class SessionCounter {
 
                 EntryId liveEntryId = envelope.entryId();
 
-                // Verify liveness. If this throws, the session is not active.
+                // V5: Verify liveness. If this throws, the session is not active.
                 livenessChecker.assertLive(liveEntryId, broker, trustRoot, watermark, capabilityVerifier, nowMillis);
 
-                // Verify corresponding KEY_EPOCH is present and not expired (§10.1)
-                EntryId keyEpochId = new EntryId(envelope.scope, EntryType.KEY_EPOCH, envelope.key);
-                byte[] epochBytes = broker.get(keyEpochId.storageKey());
-                if (epochBytes == null || epochBytes.length == 0) {
+                // Decode the LIVENESS payload to extract asOf
+                LivenessPayload livenessPayload = LivenessPayload.decode(envelope.payload);
+
+                // V5: LIVENESS alone determines session validity (no key-epoch check)
+                if (!livenessPayload.isActive()) {
                     continue;
                 }
-                Envelope epochEnv = Envelope.parse(epochBytes);
-                KeyEpochPayload epochPayload = KeyEpochPayload.decode(epochEnv.payload);
-                if (nowMillis >= epochPayload.validUntil()) {
-                    continue; // Expired
+                if (!livenessPayload.isFresh(nowMillis)) {
+                    continue;
                 }
-
-                // If valid, decode the payload to extract asOf
-                LivenessPayload livenessPayload = LivenessPayload.decode(envelope.payload);
 
                 activeSessions.add(new SessionInfo(envelope.key, livenessPayload.asOf(), envelope.version));
             } catch (Exception e) {

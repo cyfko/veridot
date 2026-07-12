@@ -1,0 +1,157 @@
+{
+  "description": "Veridot Protocol V5 — Deterministic Subject Computation Test Vectors",
+  "specReference": "PROTOCOL_V5.md §5.1",
+  "version": "5.0",
+  "algorithm": "CN + \"@\" + base64url(SHA-256(publicKey.getEncoded()))[0:32]",
+  "notes": [
+    "The hash portion is exactly 32 characters of base64url (no padding)",
+    "Corresponds to 192 bits of SHA-256 output (24 bytes → 32 base64url chars)",
+    "publicKey.getEncoded() returns the X.509 SubjectPublicKeyInfo encoding",
+    "Determinism: same CN + same public key bytes → same subject, always"
+  ],
+  "vectors": [
+    {
+      "name": "ed25519_orders_service",
+      "description": "Ed25519 public key for 'orders-service' CN",
+      "input": {
+        "cn": "orders-service",
+        "algorithm": "ED25519",
+        "publicKeyEncodedHex": "302A300506032B6570032100D75A980182B10AB7D54BFED3C964073A0EE172F3DAA3F4A18446B0B99E7617B9"
+      },
+      "expected": {
+        "subjectFormat": "orders-service@<32-char-base64url-hash>",
+        "isInstanceScoped": true,
+        "extractedCn": "orders-service",
+        "hashLength": 32
+      },
+      "notes": "The exact hash depends on SHA-256 of the encoded key bytes. Verify determinism by computing twice."
+    },
+    {
+      "name": "ed25519_auth_service",
+      "description": "Ed25519 public key for 'auth' CN",
+      "input": {
+        "cn": "auth",
+        "algorithm": "ED25519",
+        "publicKeyEncodedHex": "302A300506032B65700321009D61B19DEFFD5A60BA844AF492EC2CC44449C5697B326919703BAC031CAE7F60"
+      },
+      "expected": {
+        "subjectFormat": "auth@<32-char-base64url-hash>",
+        "isInstanceScoped": true,
+        "extractedCn": "auth",
+        "hashLength": 32
+      }
+    },
+    {
+      "name": "cn_single_char",
+      "description": "Single character CN 'x'",
+      "input": {
+        "cn": "x",
+        "algorithm": "ED25519",
+        "publicKeyEncodedHex": "302A300506032B6570032100D75A980182B10AB7D54BFED3C964073A0EE172F3DAA3F4A18446B0B99E7617B9"
+      },
+      "expected": {
+        "subjectFormat": "x@<32-char-base64url-hash>",
+        "isInstanceScoped": true,
+        "extractedCn": "x",
+        "hashLength": 32
+      }
+    },
+    {
+      "name": "cn_with_hyphens_and_dots",
+      "description": "CN with hyphens and dots: 'my-service.v2'",
+      "input": {
+        "cn": "my-service.v2"
+      },
+      "expected": {
+        "isInstanceScoped": true,
+        "extractedCn": "my-service.v2"
+      }
+    },
+    {
+      "name": "cn_with_at_sign_reject",
+      "description": "CN containing '@' MUST be rejected",
+      "input": {
+        "cn": "bad@cn"
+      },
+      "expected": {
+        "valid": false,
+        "error": "IllegalArgumentException",
+        "reason": "CN must not contain '@'"
+      }
+    },
+    {
+      "name": "cn_null_reject",
+      "description": "Null CN MUST be rejected",
+      "input": {
+        "cn": null
+      },
+      "expected": {
+        "valid": false,
+        "error": "IllegalArgumentException",
+        "reason": "CN must not be null or blank"
+      }
+    },
+    {
+      "name": "cn_blank_reject",
+      "description": "Blank CN MUST be rejected",
+      "input": {
+        "cn": "   "
+      },
+      "expected": {
+        "valid": false,
+        "error": "IllegalArgumentException",
+        "reason": "CN must not be null or blank"
+      }
+    },
+    {
+      "name": "public_key_null_reject",
+      "description": "Null public key MUST be rejected",
+      "input": {
+        "cn": "test-service",
+        "publicKey": null
+      },
+      "expected": {
+        "valid": false,
+        "error": "IllegalArgumentException",
+        "reason": "PublicKey must not be null"
+      }
+    },
+    {
+      "name": "not_instance_scoped_legacy",
+      "description": "A subject without '@' is NOT instance-scoped (legacy/root identity)",
+      "input": {
+        "subject": "legacy-root-identity"
+      },
+      "expected": {
+        "isInstanceScoped": false
+      }
+    },
+    {
+      "name": "determinism_same_key_same_cn",
+      "description": "Same CN + same key MUST always produce the same subject (determinism invariant)",
+      "input": {
+        "cn": "determinism-test",
+        "algorithm": "ED25519",
+        "iterations": 100
+      },
+      "expected": {
+        "allResultsIdentical": true
+      }
+    },
+    {
+      "name": "different_cn_same_key_different_subject",
+      "description": "Different CN + same key MUST produce different subjects",
+      "input": {
+        "cn1": "service-a",
+        "cn2": "service-b",
+        "sameKey": true
+      },
+      "expected": {
+        "subjectsEqual": false,
+        "hashesEqual": true,
+        "cnsEqual": false
+      },
+      "notes": "The hash portion is the same (derived from key bytes), but the CN prefix differs."
+    }
+  ]
+}
