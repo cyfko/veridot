@@ -46,7 +46,7 @@ The `shipping-service` receives the string `8:group:orders:session-1`.
 
 ```java
 try {
-    VerifiedData data = veridot.verifyNative("8:group:orders:session-1");
+    VerifiedData data = veridot.verify("8:group:orders:session-1");
     System.out.println("Verified payload: " + data.getPayload());
 } catch (VeridotException e) {
     // Fails with a V5xxx error code if invalid or revoked
@@ -63,4 +63,4 @@ If the session is compromised, the original instance (or an admin holding the ri
 broker.put(new LivenessEntry(subject, Liveness.REVOKED));
 ```
 
-The moment that `REVOKED` entry propagates (usually milliseconds), `verifyNative` will throw a `V5005` or contextually appropriate validation error. Since versions strictly increase, a compromised broker cannot replay the old `ACTIVE` state!
+The moment that `REVOKED` entry propagates (usually milliseconds), `verify` will throw a `V5005` or contextually appropriate validation error. Since versions strictly increase, a compromised broker cannot replay the old `ACTIVE` state!
