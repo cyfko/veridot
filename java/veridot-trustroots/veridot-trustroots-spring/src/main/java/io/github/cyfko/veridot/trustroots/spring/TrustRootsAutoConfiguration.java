@@ -22,7 +22,7 @@ import java.util.Collections;
  */
 @AutoConfiguration
 @ConditionalOnClass(TrustRoot.class)
-@EnableConfigurationProperties(TrustRootsProperties.class)
+@EnableConfigurationProperties({TrustRootsProperties.class, TaasProperties.class})
 public class TrustRootsAutoConfiguration {
 
     /**
@@ -39,12 +39,12 @@ public class TrustRootsAutoConfiguration {
      */
     @Bean
     @ConditionalOnMissingBean(TrustRootProvider.class)
-    public TrustRootProvider trustRootProvider(TrustRootsProperties properties) {
+    public TrustRootProvider trustRootProvider(TrustRootsProperties properties, TaasProperties taasProperties) {
         if ("taas".equalsIgnoreCase(properties.getProviderType())) {
             return new TaasTrustRootProvider(
-                properties.getTaasClusterUrls() != null ? properties.getTaasClusterUrls() : Collections.singletonList("http://127.0.0.1:8443"),
+                taasProperties.getEndpoints() != null && !taasProperties.getEndpoints().isEmpty() ? taasProperties.getEndpoints() : Collections.singletonList("http://127.0.0.1:8443"),
                 null,
-                properties.getConnectTimeout()
+                taasProperties.getConnectTimeout()
             );
         }
         throw new IllegalArgumentException("Unsupported veridot provider type: " + properties.getProviderType());

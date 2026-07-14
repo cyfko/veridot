@@ -25,7 +25,7 @@ The project is split into several modules:
 
 - **[taas-core](./core.md)**: Shared data models, Raft consensus abstractions, and the Trust Entry state machine.
 - **[taas-api](./api.md)**: The standard Java definitions and REST interfaces for the TAAS.
-- **[taas-client](./taas-client.md)**: The client SDK providing the `TAASClientTrustRoot` implementation for `veridot-core`.
+- **[taas-client](./taas-client.md)**: The client SDK providing the `TaasTrustRootProvider` implementation for `veridot-core`.
 - **[taas-server](./taas-server.md)**: The Raft-replicated TAAS daemon executable.
 - **[spring-autoconfiguration](./spring-autoconfiguration.md)**: Spring Boot starters for easy integration.
 

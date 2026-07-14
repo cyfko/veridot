@@ -14,7 +14,7 @@ The `spring-autoconfiguration` module provides Spring Boot starters to dramatica
 ```xml
 <dependency>
     <groupId>io.github.cyfko</groupId>
-    <artifactId>veridot-spring-boot-starter</artifactId>
+    <artifactId>veridot-trustroots-spring</artifactId>
     <version>5.0.0</version>
 </dependency>
 ```
@@ -23,7 +23,7 @@ The `spring-autoconfiguration` module provides Spring Boot starters to dramatica
 
 The starter automatically configures and injects the following beans into your application context:
 
-1. **`TAASClientTrustRoot`**: Configured based on the `veridot.taas.endpoints` property.
+1. **`TaasTrustRootProvider`**: Configured based on the `veridot.taas.endpoints` property.
 2. **`Broker`**: Depending on your classpath, it will auto-configure either a `KafkaBroker` (if `veridot-kafka` is present) or a `DatabaseBroker` (if `veridot-databases` is present).
 3. **`GenericSignerVerifier`**: The core V5 protocol engine, ready for injection.
 

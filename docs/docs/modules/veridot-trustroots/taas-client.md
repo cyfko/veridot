@@ -10,14 +10,14 @@ sidebar_position: 5
 The `taas-client` module provides the Java 21 SDK for interacting with a TAAS cluster. It serves two primary roles:
 
 1. **Instance Registration**: Provides the APIs for an instance to submit its public key and attestation proof upon boot.
-2. **Key Resolution**: Implements the `TrustRoot` interface required by `veridot-core` for verifying signatures.
+2. **Key Resolution**: Implements the `TrustRootProvider` interface required by `veridot-core` for verifying signatures.
 
 ## Maven Dependency
 
 ```xml
 <dependency>
     <groupId>io.github.cyfko</groupId>
-    <artifactId>taas-client</artifactId>
+    <artifactId>veridot-trustroots-taas-client</artifactId>
     <version>5.0.0</version>
 </dependency>
 ```
@@ -42,12 +42,12 @@ client.register(
 );
 ```
 
-## TAASClientTrustRoot
+## TaasTrustRootProvider
 
-For verification, `veridot-core` requires a `TrustRoot` to resolve identities to public keys. The `TAASClientTrustRoot` implements this, providing an aggressively caching, highly resilient resolver.
+For verification, `veridot-core` requires a `TrustRootProvider` to resolve identities to public keys. The `TaasTrustRootProvider` implements this, providing an aggressively caching, highly resilient resolver.
 
 ```java
-TrustRoot trustRoot = new TAASClientTrustRoot(
+TrustRootProvider trustRootProvider = new TaasTrustRootProvider(
     // Provide a single Load Balancer or API Gateway URL
     List.of("https://taas.internal.company.com")
 );
@@ -55,7 +55,7 @@ TrustRoot trustRoot = new TAASClientTrustRoot(
 // Inject into the Veridot processor
 var sv = new GenericSignerVerifier(
     broker, 
-    trustRoot, 
+    trustRootProvider, 
     "my-service@a1b2...", 
     privateKey, 
     Algorithm.ED25519

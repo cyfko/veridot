@@ -33,11 +33,7 @@ public class TrustRootsProperties {
     /** Type de fournisseur de registre utilisé. Actuellement seule l'autorité répliquée {@code "taas"} est supportée. */
     private String providerType = "taas";
     
-    /** Liste des adresses de base des nœuds du cluster TAAS (ex: http://127.0.0.1:8443). */
-    private List<String> taasClusterUrls;
-    
-    /** Timeout de connexion et de lecture réseau pour interroger le TAAS. Valeur par défaut : 3 secondes. */
-    private Duration connectTimeout = Duration.ofSeconds(3);
+
 
     /**
      * Constructeur par défaut.
@@ -66,9 +62,5 @@ public class TrustRootsProperties {
     public String getProviderType() { return providerType; }
     public void setProviderType(String providerType) { this.providerType = providerType; }
 
-    public List<String> getTaasClusterUrls() { return taasClusterUrls; }
-    public void setTaasClusterUrls(List<String> taasClusterUrls) { this.taasClusterUrls = taasClusterUrls; }
 
-    public Duration getConnectTimeout() { return connectTimeout; }
-    public void setConnectTimeout(Duration connectTimeout) { this.connectTimeout = connectTimeout; }
 }

@@ -53,7 +53,6 @@ public class TaasTrustRootProvider implements TrustRootProvider {
         }
         
         HttpClient.Builder builder = HttpClient.newBuilder()
-                .version(HttpClient.Version.HTTP_2)
                 .followRedirects(HttpClient.Redirect.NORMAL);
                 
         if (sslContext != null) {
