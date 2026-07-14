@@ -28,7 +28,9 @@ When a service starts, it uses the `TAASRegistrationClient` to acquire its ident
 
 ```java
 TAASRegistrationClient client = TAASRegistrationClient.builder()
-    .endpoints(List.of("http://taas-1:8080", "http://taas-2:8080"))
+    // Provide a single Load Balancer or API Gateway URL
+    // The TAAS cluster transparently handles internal Raft routing
+    .endpoints(List.of("https://taas.internal.company.com"))
     .build();
 
 // Register with a Kubernetes Service Account Token (SAT)
@@ -46,7 +48,8 @@ For verification, `veridot-core` requires a `TrustRoot` to resolve identities to
 
 ```java
 TrustRoot trustRoot = new TAASClientTrustRoot(
-    List.of("http://taas-1:8080", "http://taas-2:8080")
+    // Provide a single Load Balancer or API Gateway URL
+    List.of("https://taas.internal.company.com")
 );
 
 // Inject into the Veridot processor

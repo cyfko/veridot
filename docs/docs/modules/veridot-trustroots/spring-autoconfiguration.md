@@ -34,9 +34,9 @@ veridot:
   identity:
     common-name: "order-service"
   taas:
+    # Use a single Load Balancer URL in production
     endpoints: 
-      - "http://taas-1:8080"
-      - "http://taas-2:8080"
+      - "https://taas.internal.company.com"
   broker:
     mode: "NATIVE"
     kafka:

@@ -35,8 +35,8 @@ graph TD
         Leader -.->|"2. AppendEntries"| Follower2
     end
     
-    Instance[Compute Instance] -->|POST /v2/trust-entries| Leader
-    Verifier[Verification Node] -->|GET /v2/trust-entries/{subject}| Follower1
+    Instance[Compute Instance] -->|"POST /v2/trust-entries"| Leader
+    Verifier[Verification Node] -->|"GET /v2/trust-entries/{subject}"| Follower1
     class Instance service;
     class Follower2,Leader,Follower1 taas;
 

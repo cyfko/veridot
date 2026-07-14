@@ -1,0 +1,7 @@
+veridot:
+  taas-server:
+    node-id: ${VERIDOT_TAAS_SERVER_NODE_ID}
+    raft-group-id: ${VERIDOT_TAAS_SERVER_RAFT_GROUP_ID:veridot-taas}
+    initial-peers: ${VERIDOT_TAAS_SERVER_INITIAL_PEERS}
+    storage:
+      directory: ${VERIDOT_TAAS_SERVER_STORAGE_DIRECTORY:/tmp/veridot-taas}

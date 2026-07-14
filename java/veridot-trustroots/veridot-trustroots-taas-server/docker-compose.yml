@@ -1,0 +1,51 @@
+services:
+  taas-node-1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: veridot/taas-server:5.0.0-SNAPSHOT
+    container_name: taas-node-1
+    ports:
+      # Allows overriding host ports using a .env file, defaults are 8080 and 8081
+      - "${NODE1_HTTP_PORT:-8080}:${NODE1_HTTP_PORT:-8080}"
+      - "${NODE1_RAFT_PORT:-8081}:${NODE1_RAFT_PORT:-8081}"
+    environment:
+      - SERVER_PORT=${NODE1_HTTP_PORT:-8080}
+      - VERIDOT_TAAS_SERVER_NODE_ID=taas-node-1:${NODE1_RAFT_PORT:-8081}
+      - VERIDOT_TAAS_SERVER_INITIAL_PEERS=taas-node-1:${NODE1_RAFT_PORT:-8081},taas-node-2:${NODE2_RAFT_PORT:-8083},taas-node-3:${NODE3_RAFT_PORT:-8085}
+      - VERIDOT_TAAS_SERVER_STORAGE_DIRECTORY=/data/taas
+    volumes:
+      - taas-data-1:/data/taas
+
+  taas-node-2:
+    image: veridot/taas-server:5.0.0-SNAPSHOT
+    container_name: taas-node-2
+    ports:
+      - "${NODE2_HTTP_PORT:-8082}:${NODE2_HTTP_PORT:-8082}"
+      - "${NODE2_RAFT_PORT:-8083}:${NODE2_RAFT_PORT:-8083}"
+    environment:
+      - SERVER_PORT=${NODE2_HTTP_PORT:-8082}
+      - VERIDOT_TAAS_SERVER_NODE_ID=taas-node-2:${NODE2_RAFT_PORT:-8083}
+      - VERIDOT_TAAS_SERVER_INITIAL_PEERS=taas-node-1:${NODE1_RAFT_PORT:-8081},taas-node-2:${NODE2_RAFT_PORT:-8083},taas-node-3:${NODE3_RAFT_PORT:-8085}
+      - VERIDOT_TAAS_SERVER_STORAGE_DIRECTORY=/data/taas
+    volumes:
+      - taas-data-2:/data/taas
+
+  taas-node-3:
+    image: veridot/taas-server:5.0.0-SNAPSHOT
+    container_name: taas-node-3
+    ports:
+      - "${NODE3_HTTP_PORT:-8084}:${NODE3_HTTP_PORT:-8084}"
+      - "${NODE3_RAFT_PORT:-8085}:${NODE3_RAFT_PORT:-8085}"
+    environment:
+      - SERVER_PORT=${NODE3_HTTP_PORT:-8084}
+      - VERIDOT_TAAS_SERVER_NODE_ID=taas-node-3:${NODE3_RAFT_PORT:-8085}
+      - VERIDOT_TAAS_SERVER_INITIAL_PEERS=taas-node-1:${NODE1_RAFT_PORT:-8081},taas-node-2:${NODE2_RAFT_PORT:-8083},taas-node-3:${NODE3_RAFT_PORT:-8085}
+      - VERIDOT_TAAS_SERVER_STORAGE_DIRECTORY=/data/taas
+    volumes:
+      - taas-data-3:/data/taas
+
+volumes:
+  taas-data-1:
+  taas-data-2:
+  taas-data-3:
