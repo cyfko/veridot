@@ -5,33 +5,52 @@ import java.time.Duration;
 import java.util.List;
 
 /**
- * Propriétés de configuration Spring Boot préfixées par {@code veridot.taas}.
- * Permet de configurer le client TAAS (Trust Authority as a Service).
+ * Spring Boot configuration properties prefixed with {@code veridot.taas}.
+ * Allows configuring the TAAS (Trust Authority as a Service) client.
  */
 @ConfigurationProperties(prefix = "veridot.taas")
 public class TaasProperties {
 
-    /** Liste des adresses de base des nœuds du cluster TAAS (ex: http://127.0.0.1:8080). */
+    /** List of base URLs of the TAAS cluster nodes (e.g., http://127.0.0.1:8080). */
     private List<String> endpoints;
 
-    /** Timeout de connexion et de lecture réseau pour interroger le TAAS. Valeur par défaut : 3 secondes. */
+    /** Connection and read timeout for querying TAAS. Default value: 3 seconds. */
     private Duration connectTimeout = Duration.ofSeconds(3);
 
+    /**
+     * Default constructor.
+     */
     public TaasProperties() {
     }
 
+    /**
+     * Returns the list of cluster endpoints.
+     * @return list of URIs
+     */
     public List<String> getEndpoints() {
         return endpoints;
     }
 
+    /**
+     * Sets the list of cluster endpoints.
+     * @param endpoints list of URIs
+     */
     public void setEndpoints(List<String> endpoints) {
         this.endpoints = endpoints;
     }
 
+    /**
+     * Returns the connection timeout.
+     * @return the timeout duration
+     */
     public Duration getConnectTimeout() {
         return connectTimeout;
     }
 
+    /**
+     * Sets the connection timeout.
+     * @param connectTimeout the timeout duration
+     */
     public void setConnectTimeout(Duration connectTimeout) {
         this.connectTimeout = connectTimeout;
     }

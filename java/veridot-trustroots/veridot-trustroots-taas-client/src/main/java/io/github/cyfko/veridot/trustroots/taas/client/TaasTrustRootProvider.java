@@ -20,31 +20,31 @@ import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 /**
- * Implémentation cliente de {@link TrustRootProvider} interrogeant un cluster d'autorités TAAS (Trust Authority as a Service).
+ * Client implementation of {@link TrustRootProvider} querying a TAAS (Trust Authority as a Service) cluster.
  * <p>
- * Implémente une stratégie de tolérance aux pannes réseau en bouclant sur la liste des adresses du cluster
- * (failover) jusqu'à obtenir une réponse valide ou épuiser les nœuds disponibles.
+ * Implements a network fault-tolerance strategy by looping over the list of cluster addresses
+ * (failover) until a valid response is obtained or available nodes are exhausted.
  */
 public class TaasTrustRootProvider implements TrustRootProvider {
     
-    /** Liste des adresses de base HTTP/HTTPS des nœuds du cluster TAAS. */
+    /** List of HTTP/HTTPS base URLs of the TAAS cluster nodes. */
     private final List<String> clusterUrls;
     
-    /** Client HTTP Java 11 natif, réutilisé pour toutes les requêtes (thread-safe). */
+    /** Native Java 11 HTTP client, reused for all requests (thread-safe). */
     private final HttpClient httpClient;
     
-    /** Mapper Jackson configuré pour la désérialisation JSON. */
+    /** Jackson mapper configured for JSON deserialization. */
     private final ObjectMapper objectMapper;
     
-    /** Timeout de connexion et de lecture pour chaque requête unitaire. */
+    /** Connection and read timeout for each individual request. */
     private final Duration requestTimeout;
 
     /**
-     * Instancie le client TAAS avec les configurations de cluster et de sécurité requises.
+     * Instantiates the TAAS client with the required cluster and security configurations.
      *
-     * @param clusterUrls Adresses de base des nœuds du cluster (ex: "http://127.0.0.1:8443").
-     * @param sslContext Contexte SSL JCA pour activer la sécurité TLS/HTTPS. Optionnel.
-     * @param requestTimeout Délai d'expiration de requête. Optionnel (5s par défaut).
+     * @param clusterUrls Base addresses of the cluster nodes (e.g., "http://127.0.0.1:8443").
+     * @param sslContext JCA SSL context to enable TLS/HTTPS security. Optional.
+     * @param requestTimeout Request expiration timeout. Optional (defaults to 5s).
      */
     public TaasTrustRootProvider(List<String> clusterUrls, SSLContext sslContext, Duration requestTimeout) {
         this.clusterUrls = new ArrayList<>(Objects.requireNonNull(clusterUrls, "clusterUrls"));
@@ -64,6 +64,13 @@ public class TaasTrustRootProvider implements TrustRootProvider {
         this.requestTimeout = requestTimeout != null ? requestTimeout : Duration.ofSeconds(5);
     }
 
+    /**
+     * Queries TAAS to fetch a trust key specific to a subject (CN@hash(pk)).
+     *
+     * @param subject The identity of the subject to resolve.
+     * @return The trust entry if it exists, or an empty Optional if not found (404).
+     * @throws TrustRootProviderException in case of network failures on all cluster nodes or server error.
+     */
     @Override
     public Optional<TrustEntry> fetch(String subject) throws TrustRootProviderException {
         Exception lastException = null;
@@ -92,6 +99,14 @@ public class TaasTrustRootProvider implements TrustRootProvider {
         throw new TrustRootProviderException("Failed to fetch subject '" + subject + "' from any TAAS cluster node", lastException);
     }
 
+    /**
+     * Asynchronously fetches all modifications made to the TAAS registry since a given instant.
+     * Allows incremental synchronization of the L1/L2 cache.
+     *
+     * @param since The instant since which to fetch modifications.
+     * @return The list of modified or inserted trust entries.
+     * @throws TrustRootProviderException in case of network failures on all cluster nodes or server error.
+     */
     @Override
     public List<TrustEntry> fetchModifiedSince(Instant since) throws TrustRootProviderException {
         Exception lastException = null;
@@ -120,6 +135,11 @@ public class TaasTrustRootProvider implements TrustRootProvider {
         throw new TrustRootProviderException("Failed to fetch modifications since " + since + " from any TAAS cluster node", lastException);
     }
 
+    /**
+     * Returns the name of this identity provider.
+     *
+     * @return {@code "TAAS-Cluster"}
+     */
     @Override
     public String name() {
         return "TAAS-Cluster";

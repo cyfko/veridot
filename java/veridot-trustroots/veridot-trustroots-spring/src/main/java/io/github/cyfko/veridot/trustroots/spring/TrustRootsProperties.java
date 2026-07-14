@@ -6,60 +6,109 @@ import java.time.Duration;
 import java.util.List;
 
 /**
- * Propriétés de configuration Spring Boot préfixées par {@code veridot.trustroots}.
- * Permet de paramétrer les différents aspects de la gestion du cache de clés de confiance et du client TAAS.
+ * Spring Boot configuration properties prefixed with {@code veridot.trustroots}.
+ * Allows configuring the various aspects of the trust root cache management and the TAAS client.
  */
 @ConfigurationProperties(prefix = "veridot.trustroots")
 public class TrustRootsProperties {
 
-    /** Nombre maximal de clés stockées simultanément en mémoire dans le cache L1. Valeur par défaut : 10000. */
+    /** Maximum number of keys stored concurrently in memory in the L1 cache. Default value: 10000. */
     private int l1MaxSize = 10000;
     
-    /** Répertoire physique utilisé par RocksDB pour le cache local L2. Valeur par défaut : {@code ~/.veridot/trust-cache}. */
+    /** Physical directory used by RocksDB for the local L2 cache. Default value: {@code ~/.veridot/trust-cache}. */
     private String l2Directory = System.getProperty("user.home") + "/.veridot/trust-cache";
     
-    /** Seuil avant expiration nominale pour déclencher un rafraîchissement asynchrone (L1/L2). Valeur par défaut : 1 heure. */
+    /** Threshold before nominal expiration to trigger an asynchronous refresh (L1/L2). Default value: 1 hour. */
     private Duration refreshThreshold = Duration.ofHours(1);
     
-    /** Fenêtre temporelle de validité transitoire de secours (Stale Window). Valeur par défaut : 5 minutes. */
+    /** Fallback transient validity window (Stale Window). Default value: 5 minutes. */
     private Duration staleWindow = Duration.ofMinutes(5);
     
-    /** Intervalle de temps pour exécuter la tâche récurrente de synchronisation incrémentale d'arrière-plan. Valeur par défaut : 6 heures. */
+    /** Time interval to execute the incremental background sync recurring task. Default value: 6 hours. */
     private Duration fullSyncInterval = Duration.ofHours(6);
     
-    /** Délai maximum toléré lors d'une tentative de résolution concurrente au démarrage du cache. Valeur par défaut : 5 secondes. */
+    /** Maximum tolerated delay during a concurrent resolution attempt on cache startup. Default value: 5 seconds. */
     private Duration resolveWaitTimeout = Duration.ofSeconds(5);
     
-    /** Type de fournisseur de registre utilisé. Actuellement seule l'autorité répliquée {@code "taas"} est supportée. */
+    /** Type of registry provider used. Currently only the replicated authority {@code "taas"} is supported. */
     private String providerType = "taas";
     
 
 
     /**
-     * Constructeur par défaut.
+     * Default constructor.
      */
     public TrustRootsProperties() {
     }
 
+    /**
+     * @return the maximum size of the L1 cache
+     */
     public int getL1MaxSize() { return l1MaxSize; }
+
+    /**
+     * @param l1MaxSize the maximum size of the L1 cache
+     */
     public void setL1MaxSize(int l1MaxSize) { this.l1MaxSize = l1MaxSize; }
 
+    /**
+     * @return the L2 cache directory
+     */
     public String getL2Directory() { return l2Directory; }
+
+    /**
+     * @param l2Directory the L2 cache directory
+     */
     public void setL2Directory(String l2Directory) { this.l2Directory = l2Directory; }
 
+    /**
+     * @return the refresh threshold
+     */
     public Duration getRefreshThreshold() { return refreshThreshold; }
+
+    /**
+     * @param refreshThreshold the refresh threshold
+     */
     public void setRefreshThreshold(Duration refreshThreshold) { this.refreshThreshold = refreshThreshold; }
 
+    /**
+     * @return the stale tolerance window
+     */
     public Duration getStaleWindow() { return staleWindow; }
+
+    /**
+     * @param staleWindow the stale tolerance window
+     */
     public void setStaleWindow(Duration staleWindow) { this.staleWindow = staleWindow; }
 
+    /**
+     * @return the full sync interval
+     */
     public Duration getFullSyncInterval() { return fullSyncInterval; }
+
+    /**
+     * @param fullSyncInterval the full sync interval
+     */
     public void setFullSyncInterval(Duration fullSyncInterval) { this.fullSyncInterval = fullSyncInterval; }
 
+    /**
+     * @return the maximum wait timeout during resolution
+     */
     public Duration getResolveWaitTimeout() { return resolveWaitTimeout; }
+
+    /**
+     * @param resolveWaitTimeout the maximum wait timeout during resolution
+     */
     public void setResolveWaitTimeout(Duration resolveWaitTimeout) { this.resolveWaitTimeout = resolveWaitTimeout; }
 
+    /**
+     * @return the provider type (e.g., taas)
+     */
     public String getProviderType() { return providerType; }
+
+    /**
+     * @param providerType the provider type
+     */
     public void setProviderType(String providerType) { this.providerType = providerType; }
 
 

@@ -14,11 +14,11 @@ import java.nio.file.Paths;
 import java.util.Collections;
 
 /**
- * Auto-configuration Spring Boot pour enregistrer automatiquement le moteur de validation de clés Veridot
- * dans le contexte de l'application cliente.
+ * Spring Boot auto-configuration to automatically register the Veridot key validation engine
+ * into the client application's context.
  * <p>
- * S'active uniquement si la classe {@link TrustRoot} est présente dans le classpath.
- * Déclare de manière conditionnelle les Beans {@link TrustRootProvider} et {@link TrustRoot}.
+ * Activates only if the {@link TrustRoot} class is present in the classpath.
+ * Conditionally declares the {@link TrustRootProvider} and {@link TrustRoot} Beans.
  */
 @AutoConfiguration
 @ConditionalOnClass(TrustRoot.class)
@@ -26,16 +26,17 @@ import java.util.Collections;
 public class TrustRootsAutoConfiguration {
 
     /**
-     * Constructeur par défaut.
+     * Default constructor.
      */
     public TrustRootsAutoConfiguration() {
     }
 
     /**
-     * Enregistre le fournisseur d'API distant TAAS.
+     * Registers the remote TAAS API provider.
      *
-     * @param properties Propriétés de configuration injectées.
-     * @return L'instance {@link TrustRootProvider} du client TAAS.
+     * @param properties Injected configuration properties for the cache.
+     * @param taasProperties Configuration properties for the TAAS network endpoints.
+     * @return The {@link TrustRootProvider} instance of the TAAS client.
      */
     @Bean
     @ConditionalOnMissingBean(TrustRootProvider.class)
@@ -51,11 +52,11 @@ public class TrustRootsAutoConfiguration {
     }
 
     /**
-     * Enregistre et initialise le moteur de cache de validation de clés de confiance {@link TrustRoot} (CachingTrustRoot).
+     * Registers and initializes the trust key validation cache engine {@link TrustRoot} (CachingTrustRoot).
      *
-     * @param properties Propriétés de configuration.
-     * @param provider Fournisseur d'API TAAS injecté.
-     * @return L'instance {@link TrustRoot} initialisée.
+     * @param properties Configuration properties.
+     * @param provider Injected TAAS API provider.
+     * @return The initialized {@link TrustRoot} instance.
      */
     @Bean(initMethod = "initialize", destroyMethod = "close")
     @ConditionalOnMissingBean(TrustRoot.class)
