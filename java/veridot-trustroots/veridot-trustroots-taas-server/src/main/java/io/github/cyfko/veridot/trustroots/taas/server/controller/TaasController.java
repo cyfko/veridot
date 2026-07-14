@@ -60,13 +60,21 @@ public class TaasController {
     private final ObjectMapper objectMapper;
 
     /**
+     * Request body for bootstrapping a TrustEntry.
+     *
+     * @param entry            The TrustEntry to bootstrap.
+     */
+    public record BootstrapRequest(TrustEntry entry) {}
+
+    /**
      * Request body for publishing a TrustEntry with attestation proof.
      *
-     * @param entry            The TrustEntry to publish.
-     * @param attestationProof The attestation proof string.
+     * @param cn                The Common Name.
+     * @param publicKey         The Base64 encoded public key.
+     * @param algorithm         The algorithm code.
+     * @param attestationPlugin The attestation plugin identifier.
+     * @param attestationProof  The attestation proof string.
      */
-            public record BootstrapRequest(TrustEntry entry) {}
-
     public record PublishRequest(
         String cn,
         String publicKey,
@@ -91,7 +99,7 @@ public class TaasController {
      * @param raftEngine           Moteur Raft.
      * @param stateMachine         Machine d'état Raft.
      * @param store                Stockage persistant.
-     * @param attestationVerifier  Attestation verifier for pre-validation.
+     * @param attestationService   Attestation service for pre-validation.
      * @param digestService        Digest service for State Transparency (§18.2).
      */
     public TaasController(RaftServerEngine raftEngine, TaasStateMachine stateMachine,
@@ -216,11 +224,24 @@ public class TaasController {
         }
     }
 
+    /**
+     * Rotates a trust entry.
+     *
+     * @param subject The subject.
+     * @param request The publish request.
+     * @return 501 Not Implemented.
+     */
     @PutMapping("/v2/trust-entries/{subject}")
     public ResponseEntity<?> rotate(@PathVariable("subject") String subject, @RequestBody PublishRequest request) {
         return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).build();
     }
 
+    /**
+     * Resolves a trust entry by subject.
+     *
+     * @param subject The subject to resolve.
+     * @return 200 OK with the entry, or 404 Not Found.
+     */
     @GetMapping("/v2/trust-entries/{subject}")
     public ResponseEntity<?> resolve(@PathVariable("subject") String subject) {
         Optional<TrustEntry> entryOpt = store.get(subject);

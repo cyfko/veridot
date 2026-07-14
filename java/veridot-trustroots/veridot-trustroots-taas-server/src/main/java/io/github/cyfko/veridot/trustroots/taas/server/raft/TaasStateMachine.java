@@ -54,8 +54,8 @@ public class TaasStateMachine extends StateMachineAdapter {
     /**
      * Initialise la machine d'état V5.
      *
-     * @param store               Le stockage local RocksDB.
-     * @param attestationVerifier The attestation verifier for re-validating proofs.
+     * @param store              Le stockage local RocksDB.
+     * @param attestationService The attestation service for re-validating proofs.
      */
     public TaasStateMachine(TaasRocksDbStore store, AttestationService attestationService) {
         this.store = store;

@@ -20,6 +20,7 @@ import java.util.logging.Logger;
  */
 public class GcpIitAttestor implements io.github.cyfko.veridot.trustroots.api.spi.AttestationPlugin {
 
+    /** Logger. */
     private static final Logger LOG = Logger.getLogger(GcpIitAttestor.class.getName());
 
     /** Google's JWKS URI for verifying GCP identity tokens. */

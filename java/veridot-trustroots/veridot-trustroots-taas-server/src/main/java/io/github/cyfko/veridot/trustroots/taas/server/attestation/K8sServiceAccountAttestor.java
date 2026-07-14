@@ -20,6 +20,7 @@ import java.util.logging.Logger;
  */
 public class K8sServiceAccountAttestor implements io.github.cyfko.veridot.trustroots.api.spi.AttestationPlugin {
 
+    /** Logger. */
     private static final Logger LOG = Logger.getLogger(K8sServiceAccountAttestor.class.getName());
 
     /** Default Kubernetes OIDC issuer URL. Overridable via VDOT_K8S_OIDC_ISSUER env var. */

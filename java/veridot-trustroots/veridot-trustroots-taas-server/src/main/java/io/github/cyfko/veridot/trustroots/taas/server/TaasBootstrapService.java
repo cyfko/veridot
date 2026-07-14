@@ -29,6 +29,7 @@ import java.util.Base64;
  */
 public class TaasBootstrapService {
 
+    /** Utility class. */
     private TaasBootstrapService() {} // utility class
 
     /**
@@ -70,6 +71,9 @@ public class TaasBootstrapService {
 
     /**
      * Computes the SHA-256 fingerprint of a public key as a hex string.
+     *
+     * @param publicKeyBytes The raw bytes of the public key.
+     * @return The SHA-256 fingerprint as a hex string.
      */
     private static String computeFingerprint(byte[] publicKeyBytes) {
         try {

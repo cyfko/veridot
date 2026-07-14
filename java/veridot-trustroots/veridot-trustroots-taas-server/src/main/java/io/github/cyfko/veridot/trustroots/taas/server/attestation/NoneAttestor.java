@@ -9,6 +9,9 @@ import io.github.cyfko.veridot.trustroots.api.spi.AttestationResult;
  * ONLY permitted for root trust bootstrap or local dev.
  */
 public class NoneAttestor implements AttestationPlugin {
+    
+    /** Default constructor. */
+    public NoneAttestor() {}
 
     @Override
     public String getPluginId() {

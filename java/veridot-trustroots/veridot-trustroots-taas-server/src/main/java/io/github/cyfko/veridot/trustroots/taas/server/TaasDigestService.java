@@ -141,6 +141,9 @@ public class TaasDigestService {
 
     /**
      * Converts a long to an 8-byte big-endian representation.
+     *
+     * @param value The long value.
+     * @return The 8-byte array.
      */
     private static byte[] longToBytes(long value) {
         return ByteBuffer.allocate(8).putLong(value).array();

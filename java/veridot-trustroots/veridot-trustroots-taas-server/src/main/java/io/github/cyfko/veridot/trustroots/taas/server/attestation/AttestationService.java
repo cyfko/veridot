@@ -15,9 +15,15 @@ import java.util.ServiceLoader;
  * Uses Java ServiceLoader to dynamically load plugins from the classpath.
  */
 public class AttestationService {
+    /** Logger. */
     private static final Logger log = LoggerFactory.getLogger(AttestationService.class);
+    
+    /** Loaded plugins. */
     private final Map<String, AttestationPlugin> plugins = new HashMap<>();
 
+    /**
+     * Creates an AttestationService and loads plugins via ServiceLoader.
+     */
     public AttestationService() {
         ServiceLoader<AttestationPlugin> loader = ServiceLoader.load(AttestationPlugin.class);
         for (AttestationPlugin plugin : loader) {

@@ -17,6 +17,7 @@ import java.util.logging.Logger;
  */
 public class TpmQuoteAttestor implements io.github.cyfko.veridot.trustroots.api.spi.AttestationPlugin {
 
+    /** Logger. */
     private static final Logger LOG = Logger.getLogger(TpmQuoteAttestor.class.getName());
 
     /**

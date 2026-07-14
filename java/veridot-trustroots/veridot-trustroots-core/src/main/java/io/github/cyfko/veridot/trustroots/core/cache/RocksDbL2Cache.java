@@ -28,6 +28,7 @@ import java.util.logging.Logger;
  */
 public class RocksDbL2Cache implements L2Cache {
 
+    /** Logger. */
     private static final Logger logger = Logger.getLogger(RocksDbL2Cache.class.getName());
 
     /** V5 schema version. V1 = original (V4), V2 = V5 with instance-scoped, attestation, and KEM fields. */
@@ -178,6 +179,9 @@ public class RocksDbL2Cache implements L2Cache {
     
     /**
      * Convertit un long en tableau de 8 octets Big-Endian.
+     *
+     * @param val The long value.
+     * @return The 8-byte array.
      */
     private byte[] toBigEndian8(long val) {
         return new byte[] {
@@ -194,6 +198,9 @@ public class RocksDbL2Cache implements L2Cache {
 
     /**
      * Reconstitue un long à partir d'un tableau de 8 octets Big-Endian.
+     *
+     * @param bytes The 8-byte array.
+     * @return The long value.
      */
     private long fromBigEndian8(byte[] bytes) {
         return ((long) (bytes[0] & 0xFF) << 56) |
@@ -210,6 +217,10 @@ public class RocksDbL2Cache implements L2Cache {
      * Construit une clé composite unique pour la table {@code entries} :
      * {@code <subject_bytes> + 0x00 + <version_bytes_8>}.
      * Ce format évite les collisions tout en permettant des requêtes ordonnées par version.
+     *
+     * @param subject The subject.
+     * @param version The version.
+     * @return The composite key bytes.
      */
     private byte[] toCompositeKey(String subject, long version) {
         byte[] subjBytes = subject.getBytes(StandardCharsets.UTF_8);
