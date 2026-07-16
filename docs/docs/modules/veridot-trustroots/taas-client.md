@@ -22,43 +22,60 @@ The `taas-client` module provides the Java 21 SDK for interacting with a TAAS cl
 </dependency>
 ```
 
-## Registration Client
+## Registration Client (TaasPublisherClient)
 
-When a service starts, it uses the `TAASRegistrationClient` to acquire its identity. The client handles the protocol handshake and formats the `subject` as `CN@hash(pk)`.
+When a service starts, it uses the `TaasPublisherClient` to acquire its identity. The client handles the protocol handshake and formats the request.
 
 ```java
-TAASRegistrationClient client = TAASRegistrationClient.builder()
-    // Provide a single Load Balancer or API Gateway URL
-    // The TAAS cluster transparently handles internal Raft routing
-    .endpoints(List.of("https://taas.internal.company.com"))
+import java.time.Duration;
+import io.github.cyfko.veridot.trustroots.taas.client.TaasPublisherClient;
+import io.github.cyfko.veridot.trustroots.api.TrustEntry;
+import io.github.cyfko.veridot.trustroots.api.KeyAlgorithm;
+
+TaasPublisherClient client = new TaasPublisherClient(
+    List.of("https://taas.internal.company.com"), // Endpoints
+    null,                                         // SSLContext
+    Duration.ofSeconds(5)                         // Timeout
+);
+
+// Build the TrustEntry
+TrustEntry entry = TrustEntry.builder()
+    .subject("api-gateway@a1b2c3...")
+    .publicKeyEncoded("...")
+    .algorithm(KeyAlgorithm.ED25519)
+    // ... complete with notBefore, version, etc.
     .build();
 
-// Register with a Kubernetes Service Account Token (SAT)
-client.register(
-    "api-gateway",          // Common Name
-    myPublicKey,            // Generated ED25519 public key
-    "K8S_SAT",              // Attestation Type
-    readSatFromDisk()       // The proof
-);
+// Register with an explicit Attestation Proof (e.g. K8S SAT)
+client.publish(entry, readSatFromDisk());
 ```
 
 ## TaasTrustRootProvider
 
-For verification, `veridot-core` requires a `TrustRootProvider` to resolve identities to public keys. The `TaasTrustRootProvider` implements this, providing an aggressively caching, highly resilient resolver.
+For verification, `veridot-core` requires a `TrustRoot` to resolve identities to public keys. The `TaasTrustRootProvider` implements the `TrustRootProvider` interface.
 
 ```java
+import java.time.Duration;
+
 TrustRootProvider trustRootProvider = new TaasTrustRootProvider(
-    // Provide a single Load Balancer or API Gateway URL
-    List.of("https://taas.internal.company.com")
+    List.of("https://taas.internal.company.com"),
+    null,
+    Duration.ofSeconds(5)
 );
+
+// We wrap it in a CachingTrustRoot to minimize network calls (this implements TrustRoot)
+TrustRoot trustRoot = new CachingTrustRoot(trustRootProvider, ...);
 
 // Inject into the Veridot processor
 var sv = new GenericSignerVerifier(
     broker, 
-    trustRootProvider, 
-    "my-service@a1b2...", 
-    privateKey, 
-    Algorithm.ED25519
+    trustRoot, 
+    "my-service",               // CN
+    privateKey,                 // Instance Private Key
+    publicKey,                  // Instance Public Key
+    Algorithm.ED25519, 
+    1000,                       // Max sessions
+    EvictionPolicy.FIFO         // Eviction policy
 );
 ```
 

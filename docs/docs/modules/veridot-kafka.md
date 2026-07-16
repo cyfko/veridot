@@ -133,12 +133,39 @@ In Protocol V5, revocations are **not** null tombstones. They are explicitly sig
 
 ## Configuration
 
+Par défaut, `veridot-kafka` utilise le topic Kafka **`token-verifier`** pour la distribution des évènements. 
+
+Vous pouvez écraser (override) le nom de ce topic pour utiliser le vôtre. La configuration est résolue dans l'ordre de priorité suivant :
+
+### 1. Via les Propriétés Java (Prioritaire)
+C'est la méthode recommandée si vous configurez votre broker programmatiquement. Vous devez définir la propriété `veridot.broker.topic` (accessible via la constante `VerifierConfig.BROKER_TOPIC_CONFIG`).
+
 ```java
+import io.github.cyfko.veridot.kafka.VerifierConfig;
+import io.github.cyfko.veridot.kafka.KafkaBroker;
+import java.util.Properties;
+
 Properties props = new Properties();
 props.setProperty("bootstrap.servers", "kafka:9092");
 props.setProperty("embedded.db.path", "/var/lib/veridot/rocksdb");
+
+// Écraser le topic par défaut (remplace "token-verifier")
+props.setProperty(VerifierConfig.BROKER_TOPIC_CONFIG, "mon-nouveau-topic");
+
 Broker broker = KafkaBroker.of(props);
 ```
+
+### 2. Via les Variables d'Environnement (Alternative)
+Si la propriété Java n'est pas fournie, le module va chercher la variable d'environnement `VDOT_TOKEN_VERIFIER_TOPIC`. C'est l'approche idéale si vous déployez via Docker, Kubernetes, ou dans un environnement CI/CD.
+
+```bash
+export VDOT_TOKEN_VERIFIER_TOPIC="mon-nouveau-topic"
+```
+
+> **Résumé de l'ordre d'évaluation (Fallback) :**
+> 1. Valeur définie dans Java via `veridot.broker.topic`
+> 2. Valeur définie dans l'OS via `VDOT_TOKEN_VERIFIER_TOPIC`
+> 3. Valeur par défaut : `token-verifier`
 
 ## Snapshot (Range Scan)
 
