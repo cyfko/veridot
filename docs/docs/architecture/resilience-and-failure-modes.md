@@ -21,9 +21,9 @@ Veridot strictly isolates the **Bootstrap Path** (TAAS) from the **Hot Paths** (
 **Playbook:** Deploy TAAS as a multi-AZ Raft cluster. If the entire cluster is lost, restore the Raft state from backup. Existing workloads will not drop traffic during the outage.
 
 ## 2. Message Broker Outage
-*Kafka, RabbitMQ, or PostgreSQL goes offline or partitions.*
+*Kafka or Databases (MariaDB, MySQL, Postgres, MSSQL) goes offline or partitions.*
 
-- **Verification Impact (Stale State):** The verification engine will continue verifying tokens using its last known state. It will not receive new `LIVENESS` or `SIGNED_DATA` entries. If a token is revoked *during* the outage, the verifier won't know until the broker recovers (Fail-Open on stale cache).
+- **Verification Impact (Stale State):** The verification engine will continue verifying tokens using its last known state. It will not receive new `LIVENESS` or `SIGNED_DATA` entries. If a token is revoked *during* the outage, the verifier won't know until the broker recovers (Validates against local cache until stale window expires, then Fail-Closed).
 - **Signing Impact (High):** In `NATIVE` or `PRIVATE` modes, the signer cannot publish the payload to the broker. Signing will fail (Fail-Closed). In `DIRECT` mode, signing succeeds but `LIVENESS` cannot be published.
 
 **Playbook:** Configure your broker for high availability. Veridot is designed to gracefully handle transient broker disconnects by relying on its internal local cache, but a prolonged broker outage stops the flow of new native data.

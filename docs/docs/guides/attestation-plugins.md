@@ -65,8 +65,9 @@ The TAAS server ships with several built-in plugins, configured in the `taas-ser
 taas:
   attestation:
     modules:
-      - "kubernetes" # Verifies Kubernetes Service Account JWTs using the K8s API
-      - "tpm"        # Verifies hardware TPM quotes
+      - "kubernetes" # Verifies Kubernetes Service Account JWTs (K8sServiceAccountAttestor)
+      - "tpm"        # Verifies hardware TPM quotes (TpmQuoteAttestor)
+      - "gcp-iit"    # Verifies GCP Instance Identity Tokens (GcpIitAttestor)
 ```
 
 ### Writing a Custom Attestation Plugin (SPI)

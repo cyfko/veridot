@@ -20,7 +20,7 @@ classDiagram
         <<interface>>
         +resolve(String subject) TrustIdentity
     }
-    class TaasTrustRoot {
+    class CachingTrustRoot {
         <<implementation>>
     }
     class TrustIdentity {
@@ -29,7 +29,7 @@ classDiagram
         +isRoot() boolean
         +algorithm() Algorithm
     }
-    TrustRoot <|-- TaasTrustRoot
+    TrustRoot <|-- CachingTrustRoot
     TrustRoot ..> TrustIdentity : returns
 ```
 
@@ -45,7 +45,7 @@ TrustRoot resolution is a latency-critical operation (it occurs on every verific
 
 ### Setting Up CachingTrustRoot
 
-For production deployments, configure the `TaasTrustRoot` with L1 and L2 caching enabled:
+For production deployments, configure the `CachingTrustRoot` with L1 and L2 caching enabled:
 
 <Tabs>
 <TabItem value="maven" label="Maven">
@@ -69,7 +69,7 @@ implementation "io.github.cyfko:veridot-trustroots:${veridotVersion}"
 </Tabs>
 
 ```java
-TrustRoot trustRoot = TaasTrustRoot.builder()
+TrustRoot trustRoot = CachingTrustRoot.builder()
     .taasServerUrl("https://taas.internal:8443")
     .rocksDbPath("/var/lib/veridot/trustroot")
     .l1MaxEntries(10_000)
@@ -80,7 +80,7 @@ TrustRoot trustRoot = TaasTrustRoot.builder()
 
 ### Stale Window and Graceful Degradation
 
-If the TAAS cluster is temporarily unreachable, the `TaasTrustRoot` will serve entries that are technically expired (past their `notAfter` timestamp) but still within the L2 cache TTL window.
+If the TAAS cluster is temporarily unreachable, the `CachingTrustRoot` will serve entries that are technically expired (past their `notAfter` timestamp) but still within the L2 cache TTL window.
 
 - **Cache hit (fresh):** Verification succeeds normally.
 - **Cache hit (stale):** Verification succeeds with a warning logged. An async background thread attempts to refresh the entry from TAAS with exponential backoff.
@@ -101,7 +101,7 @@ For local development or CI pipelines, you can start a TAAS node allowing the `N
 
 ```java
 // Testing ONLY: Do not use NoneAttestor in production!
-TrustRoot devTrustRoot = TaasTrustRoot.builder()
+TrustRoot devTrustRoot = CachingTrustRoot.builder()
     .taasServerUrl("http://localhost:8080")
     .allowNoneAttestor(true)
     .build();

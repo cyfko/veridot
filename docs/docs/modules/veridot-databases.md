@@ -10,7 +10,7 @@ import TabItem from '@theme/TabItem';
 
 # veridot-databases
 
-`veridot-databases` provides a **SQL database-backed `Broker` implementation** for Protocol V5. It supports PostgreSQL, MySQL, Oracle, and SQL Server with **auto-DDL** and **dialect-aware upsert strategies**.
+`veridot-databases` provides a **SQL database-backed `Broker` implementation** for Protocol V5. It supports PostgreSQL, MySQL, MariaDB, and SQL Server with **auto-DDL** and **dialect-aware upsert strategies**.
 
 <Tabs>
 <TabItem value="maven" label="Maven">
@@ -181,7 +181,7 @@ public byte[] get(byte[] storageKey) {
 |----------|---------|---------|-----------------|
 | PostgreSQL | 13+ | `POSTGRES` | `ON CONFLICT DO UPDATE WHERE version < ?` |
 | MySQL | 8+ | `MYSQL` | `ON DUPLICATE KEY UPDATE` |
-| Oracle | 19c+ | `ORACLE` | `MERGE INTO USING DUAL` |
+| MariaDB | 10.5+ | `MARIADB` | `ON DUPLICATE KEY UPDATE` |
 
 ## See Also
 

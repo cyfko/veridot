@@ -105,6 +105,7 @@ private void runConsumerLoop() {
 
             try {
                 // Strict V5 Validation
+                EntryVerifier.verifyEnvelope(envelopeBytes); // Uses veridot-core EntryVerifier
                 Envelope incoming = Envelope.parse(envelopeBytes);
                 
                 // Enforce monotonic versioning against RocksDB

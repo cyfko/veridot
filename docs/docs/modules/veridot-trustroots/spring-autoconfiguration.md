@@ -5,17 +5,17 @@ keywords: [spring-boot, autoconfiguration, veridot, V5]
 sidebar_position: 7
 ---
 
-# L'intégration Spring Boot (spring-autoconfiguration)
+# Spring Boot Integration (spring-autoconfiguration)
 
-Bienvenue dans le guide d'intégration de Veridot V5 pour Spring Boot. 
+Welcome to the Veridot V5 integration guide for Spring Boot. 
 
-Le module `veridot-trustroots-spring` a été conçu pour simplifier considérablement l'intégration de la cryptographie et de la vérification d'identité au sein de vos microservices, en masquant la complexité de l'infrastructure de confiance.
+The `veridot-trustroots-spring` module is designed to dramatically simplify the integration of cryptography and identity verification into your microservices, hiding the complexity of the trust infrastructure.
 
 ---
 
-## 1. Auto-configuration de l'Infrastructure de Confiance
+## 1. Trust Infrastructure Auto-configuration
 
-L'ajout de la dépendance Maven active immédiatement la configuration automatique :
+Adding the Maven dependency immediately activates the auto-configuration:
 
 ```xml
 <dependency>
@@ -25,11 +25,11 @@ L'ajout de la dépendance Maven active immédiatement la configuration automatiq
 </dependency>
 ```
 
-Le starter se charge d'instancier la couche de confiance fondamentale :
-- **`TaasTrustRootProvider`** : Gère la communication réseau avec le cluster TAAS pour la résolution des clés.
-- **`CachingTrustRoot`** : Encapsule le provider pour offrir un cache L1 (mémoire) et L2 (disque), garantissant des performances de vérification sous la milliseconde.
+The starter automatically instantiates the foundational trust layer:
+- **`TaasTrustRootProvider`**: Manages network communication with the TAAS cluster to resolve identities.
+- **`CachingTrustRoot`**: Wraps the provider to offer L1 (memory) and L2 (RocksDB) caching, ensuring sub-millisecond verification performance.
 
-La connexion au cluster TAAS se paramètre simplement dans votre fichier `application.yml` :
+Connection to the TAAS cluster is simply configured in your `application.yml` file:
 
 ```yaml
 veridot:
@@ -43,76 +43,72 @@ veridot:
     refresh-threshold: 1h
 ```
 
-Ce cache (`TrustRoot`) est alors disponible dans le contexte Spring et peut être injecté directement si vous avez uniquement besoin de résoudre des identités.
+This cache (`TrustRoot`) is then available in the Spring context and can be injected directly if you only need to resolve identities.
 
 ---
 
-## 2. Configuration du Moteur Cryptographique
+## 2. Cryptographic Engine Configuration
 
-Pour signer des données ou vérifier des enveloppes, l'application a besoin du moteur principal : le **`GenericSignerVerifier`**. 
+To sign data or verify envelopes, the application requires the main engine: the **`GenericSignerVerifier`**. 
 
-Ce composant n'est pas instancié automatiquement car il requiert des éléments spécifiques à votre environnement de déploiement (vos clés privées et le paramétrage de votre Broker). Vous devez l'assembler dans une classe `@Configuration` dédiée.
+This component is not auto-instantiated because it requires elements specific to your deployment environment (your private keys and your Broker configuration). You must assemble it in a dedicated `@Configuration` class.
 
-### A. Configuration du Broker
-Le moteur doit s'appuyer sur un broker (par exemple Kafka) pour la distribution asynchrone des identités et des révocations.
+### A. Complete Configuration Class
+
+To facilitate integration, here is the complete configuration class ready to be copied/pasted into your project. It configures the Broker, instantiates the cryptographic engine by generating an ephemeral key (Single Key Per Instance), and exposes the `DataSigner` and `TokenVerifier` business interfaces.
 
 ```java
+import io.github.cyfko.veridot.core.Algorithm;
 import io.github.cyfko.veridot.core.Broker;
+import io.github.cyfko.veridot.core.DataSigner;
+import io.github.cyfko.veridot.core.EvictionPolicy;
+import io.github.cyfko.veridot.core.TokenVerifier;
+import io.github.cyfko.veridot.core.TrustRoot;
+import io.github.cyfko.veridot.core.impl.GenericSignerVerifier;
 import io.github.cyfko.veridot.kafka.KafkaBroker;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.beans.factory.annotation.Value;
+
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
 import java.util.Properties;
 
 @Configuration
 public class VeridotConfiguration {
 
+    // 1. Broker Configuration (Kafka Example)
     @Bean
     public Broker veridotBroker(@Value("${spring.kafka.bootstrap-servers}") String servers) {
         Properties props = new Properties();
         props.setProperty("bootstrap.servers", servers);
         return new KafkaBroker(props);
     }
-```
 
-### B. Instanciation du GenericSignerVerifier
-Une fois le broker défini, vous pouvez instancier le moteur en y injectant le `TrustRoot` généré par le starter, ainsi que vos clés cryptographiques.
-
-```java
-    import io.github.cyfko.veridot.core.impl.GenericSignerVerifier;
-    import io.github.cyfko.veridot.core.Algorithm;
-    import io.github.cyfko.veridot.core.EvictionPolicy;
-    import io.github.cyfko.veridot.core.TrustRoot;
-    import java.security.PrivateKey;
-    import java.security.PublicKey;
-
+    // 2. Cryptographic Engine Instantiation
     @Bean
     public GenericSignerVerifier genericSignerVerifier(
             Broker broker,               
-            TrustRoot trustRoot,         // Injecté automatiquement par le starter
-            PrivateKey privateKey,       // Idéalement chargé depuis un KMS ou Vault
-            PublicKey publicKey) {       
+            TrustRoot trustRoot, // Auto-injected by the starter
+            @Value("${veridot.identity.common-name}") String commonName) throws Exception {       
         
+        // The key pair is generated dynamically in memory (Single Key Per Instance)
+        KeyPairGenerator instance = KeyPairGenerator.getInstance(Algorithm.ED25519.getJcaKeyAlg());
+        KeyPair keyPair = instance.generateKeyPair();
+
         return new GenericSignerVerifier(
             broker, 
             trustRoot, 
-            "order-service",            // L'identifiant (CN) de ce microservice
-            privateKey, 
-            publicKey,
+            commonName,
+            keyPair.getPrivate(), 
+            keyPair.getPublic(),
             Algorithm.ED25519,
-            1000,                       // Nombre maximal de sessions
+            1000,
             EvictionPolicy.FIFO
         );
     }
-```
 
-### C. Exposition des Interfaces Métier
-Pour faciliter l'utilisation dans le reste de l'application, il est recommandé d'exposer les interfaces abstraites. Vos services métier pourront ainsi injecter `DataSigner` ou `TokenVerifier` sans se coupler à l'implémentation.
-
-```java
-    import io.github.cyfko.veridot.core.DataSigner;
-    import io.github.cyfko.veridot.core.TokenVerifier;
-
+    // 3. Business Interfaces Exposure
     @Bean
     public DataSigner dataSigner(GenericSignerVerifier sv) { 
         return sv; 
@@ -122,9 +118,15 @@ Pour faciliter l'utilisation dans le reste de l'application, il est recommandé 
     public TokenVerifier tokenVerifier(GenericSignerVerifier sv) { 
         return sv; 
     }
-} // Fin de la classe VeridotConfiguration
+}
 ```
+
+### B. Step Explanations
+
+- **Broker Configuration**: The engine relies on the broker for asynchronous distribution of identities and revocations.
+- **Instantiation**: The key is generated in memory (respecting the Zero-Trust and Instance-Native model) and provided to the `GenericSignerVerifier`.
+- **Business Exposure**: We expose `DataSigner` and `TokenVerifier` so your business services can inject them easily without coupling to the complete `GenericSignerVerifier` implementation.
 
 ## Conclusion
 
-Le module Spring Boot élimine le code répétitif (boilerplate) lié à la mise en place de la racine de confiance et du cache distribué. L'assemblage final du moteur cryptographique reste explicite, offrant ainsi le contrôle total nécessaire pour garantir la sécurité et s'adapter à n'importe quelle infrastructure.
+The Spring Boot module eliminates repetitive boilerplate code related to setting up the trust root and distributed cache. The final assembly of the cryptographic engine remains explicit, providing the total control necessary to guarantee security and adapt to any infrastructure.

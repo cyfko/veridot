@@ -59,7 +59,7 @@ graph TB
     subgraph "GenericSignerVerifier"
         IM["InstanceManager<br/>(Single Key, Attestation)"]
         JM["EnvelopeBuilder<br/>(V5 Binary Envelope)"]
-        JV["EnvelopeVerifier<br/>(TLV parsing & validation)"]
+        JV["EntryVerifier<br/>(TLV parsing & validation)"]
         EP["EntryPublisher<br/>(Broker writes)"]
         EV["EntryVerifier<br/>(Cryptographic checks)"]
         CV["CapabilityVerifier<br/>(Authorization checks)"]
@@ -130,7 +130,7 @@ Manages the instance's key lifecycle. For ephemeral environments, this enforces 
 
 Handles the V5 canonical binary envelope format.
 - Computes deterministic canonical byte order for signing.
-- `EnvelopeVerifier` parses the Tag-Length-Value (TLV) payloads.
+- `EntryVerifier` parses the Tag-Length-Value (TLV) payloads.
 - Rejects any unknown tags or extra trailing bytes with `V5005` or `V5007` error codes.
 
 ### LivenessManager

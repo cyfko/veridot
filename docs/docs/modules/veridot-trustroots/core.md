@@ -25,7 +25,7 @@ When an instance boots up, it undergoes the following lifecycle handled by `taas
 
 1. **PROPOSED**: The instance submits its public key and attestation proof.
 2. **VERIFIED**: The `AttestationPlugin` SPI in `taas-core` checks the proof (e.g., querying the AWS Nitro Enclave API or verifying a Kubernetes service account token).
-3. **COMMITTED**: The Raft consensus module commits the state to the replicated log. The instance can now sign objects using Protocol V5.
+3. **COMMITTED**: The Raft consensus module commits the state to the replicated log, storing data in TaasRocksDbStore. The instance can now sign objects using Protocol V5.
 
 ## Core Interfaces
 
@@ -42,4 +42,4 @@ Pluggable verifiers allow for different platform attestation documents (TPM 2.0,
 
 ### RaftStateMachine
 
-`taas-core` defines the interfaces that plug into the underlying Raft library (e.g., Apache Ratis or HashiCorp Raft) to replicate Trust Entries across the TAAS cluster, ensuring high availability and partition tolerance.
+`taas-core` defines the interfaces that plug into the underlying Raft library (e.g., RaftServerEngine and TaasStateMachine) to replicate Trust Entries across the TAAS cluster, ensuring high availability and partition tolerance.

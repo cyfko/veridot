@@ -14,9 +14,13 @@ Veridot enforces per-group limits on the number of concurrent active sessions. W
 Capacity management is configured when constructing `GenericSignerVerifier`:
 
 ```java
+KeyPairGenerator instance = KeyPairGenerator.getInstance(Algorithm.ED25519.getJcaKeyAlg());
+KeyPair keyPair = instance.generateKeyPair();
+
 // Allow at most 3 concurrent sessions per group, evict oldest on overflow
 var sv = new GenericSignerVerifier(
-    broker, trustRoot, "orders-service", instancePrivateKey,
+    broker, trustRoot, "orders-service", 
+    keyPair.getPrivate(), keyPair.getPublic(),
     Algorithm.ED25519,
     3,                    // maxSessions
     EvictionPolicy.FIFO   // eviction policy

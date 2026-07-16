@@ -53,7 +53,7 @@ graph LR
 
 In V5, each instance uses its **single, pre-generated asymmetric keypair**. There is no key rotation on the hot path.
 
-| Operation | Ed25519 | RSA-2048 | ML-DSA-65 |
+| Operation | Ed25519 | RSA-3072 | ML-DSA-65 |
 |---|:---:|:---:|:---:|
 | Signature generation | ~50 µs | ~2 ms | ~500 µs |
 | Broker write | ~1–5 ms | ~1–5 ms | ~1–5 ms |

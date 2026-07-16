@@ -14,8 +14,8 @@ Token signing in Veridot V5 is performed through the `DataSigner.sign()` method,
 ```java
 String result = signer.sign(payload,
     BasicConfigurer.builder()
-        .groupId("user-123")           // Required — business entity identifier
-        .sequenceId("session-A")       // Optional — auto-UUID if omitted
+        .scope("user-123")           // Required — business entity identifier
+        .key("session-A")       // Optional — auto-UUID if omitted
         .validity(3600)                // Required — seconds
         .distribution(DistributionMode.DIRECT)  // Optional — default: DIRECT
         .serializedBy(obj -> toJson(obj))       // Optional — default: Jackson
@@ -28,8 +28,8 @@ String result = signer.sign(payload,
 
 | Method | Required | Default | Description |
 |---|:---:|---|---|
-| `groupId(String)` | ✅ | — | Business entity identifier (1–125 chars) |
-| `sequenceId(String)` | ❌ | Auto-UUID | Session identifier within the group |
+| `scope(String)` | ✅ | — | Business entity identifier (1–125 chars) |
+| `key(String)` | ❌ | Auto-UUID | Session identifier within the group |
 | `validity(long)` | ✅ | — | Token validity window in seconds |
 | `distribution(DistributionMode)` | ❌ | `DIRECT` | How the token is delivered to the caller |
 | `serializedBy(Function<Object, String>)` | ❌ | Jackson `ObjectMapper` | Custom payload serializer |
@@ -54,9 +54,12 @@ Veridot V5 supports the following algorithms for the envelope signature:
 :::
 
 ```java
+KeyPairGenerator instance = KeyPairGenerator.getInstance(Algorithm.ED25519.getJcaKeyAlg());
+KeyPair keyPair = instance.generateKeyPair();
+
 var sv = new GenericSignerVerifier(
     broker, trustRoot, "auth-service",
-    instancePrivateKey,
+    keyPair.getPrivate(), keyPair.getPublic(),
     Algorithm.ED25519  // ← instance's signature algorithm
 );
 ```
@@ -70,14 +73,14 @@ Many developers default to standard JWTs (`DIRECT`), but Veridot's true power li
 ```java
 // ❌ DIRECT Mode (Legacy mindset: sends huge JWTs over the wire)
 String directJwt = signer.sign(largeUserPayload, BasicConfigurer.builder()
-    .groupId("user-123")
+    .scope("user-123")
     .validity(3600)
     .distribution(DistributionMode.DIRECT) // Heavy JWT returned
     .build());
 
 // ✅ NATIVE Mode (V5 mindset: stores payload in broker, returns 20-byte reference)
 String nativeRef = signer.sign(largeUserPayload, BasicConfigurer.builder()
-    .groupId("user-123")
+    .scope("user-123")
     .validity(3600)
     .distribution(DistributionMode.NATIVE) // Returns compact "8:user-123:seq"
     .build());
@@ -91,7 +94,7 @@ The signed data is returned directly to the caller as a JWT string.
 // Issue a token valid for 1 hour
 String jwt = signer.sign("user@example.com",
     BasicConfigurer.builder()
-        .groupId("user-123")
+        .scope("user-123")
         .validity(3600)
         .build());
 
@@ -107,7 +110,7 @@ The payload is natively encoded into a `SIGNED_DATA (0x08)` entry and stored on 
 ```java
 String messageId = signer.sign(sensitivePayload,
     BasicConfigurer.builder()
-        .groupId("service-X")
+        .scope("service-X")
         .distribution(DistributionMode.NATIVE)
         .validity(300)
         .build());
@@ -124,7 +127,7 @@ The payload is encrypted with AES-256-GCM and stored as a `SECURE_PAYLOAD (0x07)
 ```java
 String ref = signer.sign(medicalRecord,
     BasicConfigurer.builder()
-        .groupId("patient-456")
+        .scope("patient-456")
         .distribution(DistributionMode.PRIVATE)
         .recipients(List.of("radiology-service@hash123", "oncology-service@hash456"))
         .mimeType("application/json")
@@ -141,7 +144,7 @@ String ref = signer.sign(medicalRecord,
 When `sign()` is called in V5:
 
 1. The payload is serialized via the configurer's serializer.
-2. The envelope (JWT, `SIGNED_DATA`, or `SECURE_PAYLOAD`) is built and signed by the instance's **long-term private key**.
+2. The envelope (JWT, `SIGNED_DATA`, or `SECURE_PAYLOAD`) is built and signed by the instance's **ephemeral private key**.
 3. If mode is NATIVE or PRIVATE, the entry is published to the broker.
 4. A `LIVENESS(ACTIVE)` entry is published to the broker to attest session validity.
 5. A periodic renewal loop is started for the `LIVENESS` attestation.

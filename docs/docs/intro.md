@@ -78,7 +78,7 @@ sequenceDiagram
     participant TrustRoot
 
     Instance->>TAAS: POST {entry, attestation_proof}
-    TAAS-->>Instance: 201 {subject: CN@hash(pk), version}
+    TAAS-->>Instance: 201 {TrustIdentity}
     Instance->>Broker: put(LIVENESS(ACTIVE))
     Instance->>Instance: sign payload
     Instance->>Broker: put(SIGNED_DATA)
@@ -95,7 +95,7 @@ sequenceDiagram
 
 Veridot Protocol V5 introduces an **attestation-first** approach:
 - **Trust Authority & Attestation Service (TAAS)** for robust identity registration.
-- Identity based on `CN@hash(pk)`.
+- Identity based on `TrustIdentity` with `isRoot` exception.
 - **NATIVE** distribution mode using compact reference tokens (`8:<scope>:<key>`).
 - Completely removes the concept of Key Epochs.
 

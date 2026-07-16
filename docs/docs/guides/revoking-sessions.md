@@ -7,7 +7,7 @@ sidebar_position: 5
 
 # Revoking Sessions
 
-Veridot V5 provides instant revocation through the `TokenRevoker.revoke()` method. Revocation is expressed in terms of protocol identifiers — `groupId` and `sequenceId` — and takes effect as soon as verifiers observe the `LIVENESS(REVOKED)` entry from the broker.
+Veridot V5 provides instant revocation through the `TokenRevoker.revoke()` method. Revocation is expressed in terms of protocol identifiers — `scope` and `key` — and takes effect as soon as verifiers observe the `LIVENESS(REVOKED)` entry from the broker.
 
 ## Single Session Revocation
 
@@ -16,17 +16,17 @@ Revoke one specific session within a group:
 ```java
 // After verifying a token, revoke that specific session
 VerifiedData<String> result = verifier.verify(token, s -> s);
-revoker.revoke(result.groupId(), result.sequenceId());
-// e.g., revoker.revoke("user-123", "session-A");
+revoker.revoke(result.scope(), result.key());
+// e.g., revoker.revoke("group:user-123", "session-A");
 ```
 
 ## Group-Wide Revocation
 
-Revoke **all** active sessions for a group by passing `null` as the `sequenceId`:
+Revoke **all** active sessions for a group by passing `null` as the `key`:
 
 ```java
 // Security breach: revoke all sessions for this user
-revoker.revoke("user-123", null);
+revoker.revoke("group:user-123", null);
 ```
 
 This iterates over all active sessions in the group and publishes a `LIVENESS(REVOKED)` entry for each one.
@@ -87,7 +87,7 @@ Revocation is **irreversible**. Once a `LIVENESS(REVOKED)` entry is published:
 - No operation in the protocol can revert a `REVOKED` status back to `ACTIVE`
 - The monotonic version invariant prevents any lower-version `ACTIVE` entry from being accepted
 
-To re-authorize a user, you must call `sign()` to create a **new** session with a new sequenceId.
+To re-authorize a user, you must call `sign()` to create a **new** session with a new key.
 :::
 
 ## Revocation Propagation Latency

@@ -55,8 +55,8 @@ Unlike Protocol V4, there is no ephemeral key verification in V5. The instance's
 // Verify a DIRECT token (JWT)
 VerifiedData<String> result = verifier.verify(jwtToken, s -> s);
 String payload   = result.data();       // "user@example.com"
-String groupId   = result.groupId();    // "user-123"
-String sessionId = result.sequenceId(); // "session-A"
+String scope   = result.scope();    // "user-123"
+String sessionId = result.key(); // "session-A"
 
 // Verify a NATIVE token (messageId)
 VerifiedData<String> resultNative = verifier.verify("8:group:user-123:session-A", s -> s);
@@ -68,8 +68,8 @@ VerifiedData<String> resultNative = verifier.verify("8:group:user-123:session-A"
 
 ```java
 public record VerifiedData<T>(
-    String groupId,      // group identifier from the token
-    String sequenceId,   // session identifier from the token
+    String scope,      // group identifier from the token
+    String key,   // session identifier from the token
     T data               // deserialized payload
 ) {}
 ```
@@ -82,10 +82,10 @@ VerifiedData<UserClaims> result = verifier.verify(token,
 
 // Access verified data
 UserClaims claims = result.data();
-log.info("Verified user {} in session {}", result.groupId(), result.sequenceId());
+log.info("Verified user {} in session {}", result.scope(), result.key());
 
 // Revoke this session later if needed
-revoker.revoke(result.groupId(), result.sequenceId());
+revoker.revoke(result.scope(), result.key());
 ```
 
 ## Custom Deserializers

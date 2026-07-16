@@ -35,4 +35,4 @@ Design your applications to log these codes and alert on anomalous spikes, which
 - **TAAS Cluster:** Monitor Raft consensus latency and attestation rejection rates. 
 - **Broker Cache:** Monitor the local RocksDB/Memory cache lag. Veridot reads are sub-millisecond *because* they are local. If the cache falls behind the broker, verifications might fail due to missing `LIVENESS` entries.
 
-With TAAS anchoring your trust, `CN@hash(pk)` identities keeping things ephemeral, and strictly monotonic liveness entries, your system is now secure, distributed, and incredibly fast.
+With TAAS anchoring your trust, `TrustIdentity` structures keeping things ephemeral, and strictly monotonic liveness entries, your system is now secure, distributed, and incredibly fast.

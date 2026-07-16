@@ -60,7 +60,7 @@ Unlike older protocols that rely on shared secrets or rotating ephemeral keys, V
 ### 1. Instance Key Generation & Attestation
 
 When a Veridot instance starts, it generates exactly one asymmetric key pair (e.g., Ed25519) in memory. It then submits its public key alongside an attestation proof (e.g., TPM quote, Kubernetes service account token) to the TAAS cluster.
-The TAAS cluster verifies the proof and issues a cryptographic identity, structured as `CN@hash(pk)`. 
+The TAAS cluster verifies the proof and issues a cryptographic identity, structured as a `TrustIdentity` (containing the key, algorithm, and `isRoot` flag). 
 
 ### 2. Signing and Distribution
 
@@ -115,7 +115,7 @@ VerifiedData<String> result = instanceManager.verify(token);
 | 2 | **Local Retrieval** — Retrieve `SIGNED_DATA` and `LIVENESS` from RocksDB | Rejection |
 | 3 | **Structural Validation** — Parse V5 binary envelope, check magic bytes (`VD`) | `V5001`, `V5003` |
 | 4 | **Trust Validation** — Resolve `issuer` via TAAS cache, verify envelope signature | `V5101` |
-| 5 | **Capability Validation** — Confirm issuer holds a valid `CAPABILITY` for the scope | `V5102` |
+| 5 | **Capability Validation** — Confirm issuer holds a valid `CAPABILITY` for the scope (skipped if `isRoot=true`) | `V5102` |
 | 6 | **Temporal Validation** — Check `validFrom`/`validUntil` on entries | `V5203` |
 | 7 | **Liveness Validation** — Verify a fresh `LIVENESS(ACTIVE)` attestation exists | Rejection |
 | 8 | **Deserialization** — Extract and deserialize the `SIGNED_DATA` payload | Rejection |

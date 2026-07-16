@@ -70,7 +70,7 @@ var taasClient = new MockTaasClient();
 
 ## Step 3: Initialize the InstanceManager
 
-The `InstanceManager` is the core V5 primitive. Upon initialization, it generates a single asymmetric key pair, registers with TAAS to obtain a `CN@hash(pk)` identity, and begins tracking broker state.
+The `InstanceManager` is the core V5 primitive. Upon initialization, it generates a single asymmetric key pair, registers with TAAS to obtain a `TrustIdentity`, and begins tracking broker state.
 
 ```java
 import io.github.cyfko.veridot.core.InstanceManager;

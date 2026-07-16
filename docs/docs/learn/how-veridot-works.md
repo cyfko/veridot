@@ -22,7 +22,7 @@ For ephemeral workloads (like containers), the instance generates this keypair i
 
 How do we trust an ephemeral key? Enter the **TAAS**.
 
-Before an instance can sign anything, it must register with the TAAS. It submits its public key along with an **attestation proof** (e.g., a TPM quote or a Kubernetes service account token). The TAAS cluster reaches consensus via Raft, validates the proof, and grants the instance a unique identity subject, formatted as `CN@hash(pk)`.
+Before an instance can sign anything, it must register with the TAAS. It submits its public key along with an **attestation proof** (e.g., a TPM quote or a Kubernetes service account token). The TAAS cluster reaches consensus via Raft, validates the proof, and grants the instance a unique `TrustIdentity` containing the key, the algorithm, and an `isRoot` flag.
 
 ## The NATIVE Distribution Mode
 
@@ -36,7 +36,7 @@ When an instance wants to issue a token:
 When a downstream service receives this `8:<scope>:<key>` token:
 1. It parses the token to know what scope and key to look for.
 2. It looks up the associated `SIGNED_DATA` and `LIVENESS` entries from its local, sub-millisecond cache of the broker.
-3. It resolves the signer's public key (`CN@hash(pk)`) via a local TrustRoot cache (populated by the TAAS).
+3. It resolves the signer's identity (`TrustIdentity`) via a local TrustRoot cache (populated by the TAAS).
 4. It verifies the cryptographic signature and checks that the liveness state is exactly `ACTIVE`.
 
 Because everything is cached asynchronously, the verification takes less than a millisecond, with **no synchronous network calls**, while still providing **instant revocation**.

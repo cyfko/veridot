@@ -30,7 +30,7 @@ Veridot V5 combines three architectural primitives to achieve what traditional a
 
 ### 1. Single Key Per Instance & TAAS Attestation — No Shared Secrets
 
-Instead of sharing symmetric keys or rotating ephemeral keys, Veridot V5 adopts an **Instance-Native, Single Key Per Instance** model. Each instance generates exactly one asymmetric keypair upon startup and registers with the **Trust Authority & Attestation Service (TAAS)** using an attestation proof. The instance receives a cryptographic identity represented as `CN@hash(pk)`. The private key never leaves the instance, and verifiers only hold public keys.
+Instead of sharing symmetric keys or rotating ephemeral keys, Veridot V5 adopts an **Instance-Native, Single Key Per Instance** model. Each instance generates exactly one asymmetric keypair upon startup and registers with the **Trust Authority & Attestation Service (TAAS)** using an attestation proof. The instance receives a cryptographic identity represented as a `TrustIdentity` (key, algorithm, `isRoot` flag). The private key never leaves the instance, and verifiers only hold public keys.
 
 ### 2. Distributed Liveness & Untrusted Broker — Instant Revocation
 
@@ -55,7 +55,7 @@ sequenceDiagram
     IM->>TAAS: Register with attestation proof
     TAAS->>TAAS: Verify proof via Pluggable Attestor
     TAAS->>TAAS: Persist to Raft log
-    TAAS-->>IM: Returns Identity CN@hash(pk)
+    TAAS-->>IM: Returns Identity TrustIdentity
 
     Note over App,Broker: Signing
     App->>IM: sign(payload, scope, key)

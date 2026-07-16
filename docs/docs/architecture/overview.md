@@ -24,7 +24,7 @@ flowchart LR
     subgraph CP ["Control Plane (Global Trust)"]
         direction TB
         API["TAAS API Server"]:::taas
-        Attestor["Pluggable Attestation<br/>(SPIFFE / TPM / K8s)"]:::taas
+        Attestor["Pluggable Attestation<br/>(TPM / K8s / GCP)"]:::taas
         Raft[("Consensus State (Raft)")]:::taas
         
         API <-->|"Verify Proof"| Attestor
@@ -33,7 +33,7 @@ flowchart LR
 
     subgraph DP ["Data Plane (Event Propagation)"]
         direction TB
-        Broker[("Message Broker<br/>(Kafka / SQL)")]:::broker
+        Broker[("Message Broker<br/>(Kafka / MariaDB / Postgres / etc.)")]:::broker
     end
 
     subgraph MN ["Application Edge (Microservices)"]
@@ -56,7 +56,7 @@ In a production event-driven microservices environment, Veridot separates busine
 ### Key Architectural Characteristics:
 
 1. **Broker-Untrusted Delivery**: The message broker manages logical topics (e.g., Kafka topics or SQL tables) to carry business events and Veridot envelopes. The broker is completely untrusted and has no authority over the validity of any entry.
-2. **Instance-Native Identity**: An instance binds its identity to a generated keypair. While TAAS supports explicit key rotation, ephemeral instances typically use a Single-Key-Per-Instance pattern. It computes its subject as `CN@base64url(SHA-256(pk))[0:32]`.
+2. **Instance-Native Identity**: An instance binds its identity to a generated keypair. Ephemeral instances strictly use a Single-Key-Per-Instance pattern, replacing rotation with instance replacement. It computes its subject as `CN@base64url(SHA-256(pk))[0:32]`.
 3. **Attestation-First Trust**: Instances register their public keys at the **Trust Authority and Attestation Service (TAAS)** cluster by providing an attestation proof.
 4. **Three Distribution Modes**:
    - **DIRECT**: Standard JWT returned to the caller.
@@ -136,7 +136,7 @@ sequenceDiagram
 These principles govern V5 architecture:
 
 1. **Attestation-First**: Identities must be backed by a verifiable attestation proof.
-2. **Identity-Key Binding**: Identity `CN@hash` natively ties the instance to its key. Ephemeral instances skip rotation entirely.
+2. **Identity-Key Binding**: Identity `CN@hash` natively ties the instance to its key. Ephemeral instances strictly skip rotation entirely (Single Key Per Instance).
 3. **Broker-Untrusted**: Security guarantees hold even if the broker is compromised.
 4. **Structural Authorization**: Permissions are granted exclusively via signed `CAPABILITY` entries.
 5. **Instance-Native**: Fits ephemeral compute environments natively.

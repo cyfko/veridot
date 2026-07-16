@@ -20,7 +20,7 @@ KeyPair keyPair = Crypto.generateEd25519();
 
 // Submit to TAAS with attestation
 Identity subject = taasClient.register("orders-api", keyPair.getPublic(), attestationProof);
-// subject becomes CN@hash(pk)
+// subject becomes a TrustIdentity
 ```
 
 ## 2. Signing and Liveness
@@ -53,7 +53,7 @@ try {
 }
 ```
 
-Behind the scenes, Veridot resolves the signer's identity from the TrustRoot, reads the payload and liveness from the broker cache, and mathematically validates the signature.
+Behind the scenes, Veridot resolves the signer's identity from the TrustRoot (producing a TrustIdentity), reads the payload and liveness from the broker cache, and mathematically validates the signature.
 
 ## 4. Instant Revocation
 

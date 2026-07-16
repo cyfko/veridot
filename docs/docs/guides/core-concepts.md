@@ -11,33 +11,33 @@ This page defines the fundamental building blocks of the Veridot V5 protocol. Ev
 
 ## Identifiers
 
-### groupId
+### scope
 
-A **groupId** is a logical namespace that aggregates related sessions. It typically maps to a business entity: a user account, a service instance, an API client, or a device.
+A **scope** is a logical namespace that aggregates related sessions. It typically maps to a business entity: a user account, a service instance, an API client, or a device.
 
 ```java
 // groupId identifies the owner of all sessions beneath it
 BasicConfigurer.builder()
-    .groupId("user-123")   // ← the groupId
+    .scope("user-123")   // ← the groupId
     .validity(3600)
     .build();
 ```
 
 Constraints: 1–125 printable characters, must not contain `:`, `,`, `|`, or whitespace.
 
-### sequenceId
+### key
 
-A **sequenceId** identifies a single session within a group. If omitted at signing time, Veridot auto-generates a UUID.
+A **key** identifies a single session within a group. If omitted at signing time, Veridot auto-generates a UUID.
 
 ```java
 BasicConfigurer.builder()
-    .groupId("user-123")
-    .sequenceId("session-A")  // ← explicit sequenceId
+    .scope("user-123")
+    .key("session-A")  // ← explicit sequenceId
     .validity(3600)
     .build();
 ```
 
-The pair `(groupId, sequenceId)` uniquely identifies a session across the entire system.
+The pair `(scope, key)` uniquely identifies a session across the entire system.
 
 ## Trust Authority & Attestation Service (TAAS)
 
@@ -96,7 +96,7 @@ A **scope** is a typed, hierarchical namespace that determines which sessions or
 
 | Scope pattern | Java equivalent | Applies to |
 |---|---|---|
-| `group:<groupId>` | `Scope.group("user-123")` | A specific group only |
+| `group:<groupName>` | `Scope.group("user-123")` | A specific group only |
 | `site:<siteId>` | `Scope.site("eu-west")` | All groups declaring membership in this site |
 | `global` | `Scope.global()` | Every group across all sites |
 

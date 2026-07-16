@@ -49,7 +49,7 @@ The signed data is returned directly to the caller as a standard JSON Web Token 
 ```java
 String jwt = signer.sign("user@example.com",
     BasicConfigurer.builder()
-        .groupId("user-123")
+        .scope("user-123")
         .build());
 
 // jwt → "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI0..."
@@ -67,7 +67,7 @@ The signed payload is stored inside a `SIGNED_DATA` (0x08) entry on the broker. 
 ```java
 String messageId = signer.sign(sensitivePayload,
     BasicConfigurer.builder()
-        .groupId("service-X")
+        .scope("service-X")
         .distribution(DistributionMode.NATIVE)
         .build());
 
@@ -113,7 +113,7 @@ flowchart TD
 ```java
 String ref = signer.sign(medicalRecord,
     BasicConfigurer.builder()
-        .groupId("patient-456")
+        .scope("patient-456")
         .distribution(DistributionMode.PRIVATE)
         .recipients(List.of("radiology-service@hash123", "oncology-service@hash456"))
         .mimeType("application/json")

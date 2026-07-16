@@ -8,7 +8,7 @@ pagination_next: learn/session-management
 
 # Chapter 5: Who Can Sign? — Capabilities
 
-It's not enough to know that a token was signed by `CN@hash(pk)` belonging to the `shipping-service`. What if the `shipping-service` tries to sign a token for the `group:orders` scope?
+It's not enough to know that a token was signed by a `TrustIdentity` belonging to the `shipping-service`. What if the `shipping-service` tries to sign a token for the `group:orders` scope?
 
 Veridot Protocol V5 enforces **Structural Authorization** via **CAPABILITY** entries.
 
@@ -17,7 +17,7 @@ Veridot Protocol V5 enforces **Structural Authorization** via **CAPABILITY** ent
 A capability is a signed protocol entry that explicitly authorizes a specific issuer identity to act within a specific scope. 
 
 For instance, at bootstrap, a root trust anchor might issue a capability:
-> "Identity `shipping-service@hash123` is authorized to issue configurations and payloads for `site:logistics`."
+> "Identity `shipping-service` is authorized to issue configurations and payloads for `site:logistics`."
 
 ## Why Structural?
 
@@ -28,4 +28,8 @@ By contrast, Veridot's authorization is structural:
 2. It is **independently verifiable** by any node.
 3. It creates an **auditable trail**. An auditor can replay the capability entries and perfectly reconstruct the authorization state of the system at any historical moment.
 
-When verifying a NATIVE token (`8:<scope>:<key>`), the Veridot verifier automatically validates that the signer's `CN@hash(pk)` holds a valid, unexpired CAPABILITY for that `<scope>`. If it doesn't, verification strictly fails.
+When verifying a NATIVE token (`8:<scope>:<key>`), the Veridot verifier automatically validates that the signer's `TrustIdentity` holds a valid, unexpired CAPABILITY for that `<scope>`. If it doesn't, verification strictly fails.
+
+### The Root Identity Exception
+
+There is exactly one exception to the structural authorization rule: **Root Identities** (Trust Anchors). If a signer's identity is resolved by the TrustRoot ecosystem with `isRoot=true`, the verifier completely bypasses the CAPABILITY check. This exception is vital for the "Trust Bootstrap" phase, allowing foundational entities (like `TaasBootstrapService`) to issue the initial capabilities when a deployment first starts.

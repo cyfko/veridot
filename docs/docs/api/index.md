@@ -18,7 +18,7 @@ This section documents the public Java 21 API surface for Veridot Protocol V5.
 | [`TokenRevoker`](#tokenrevoker) | Publishes `LIVENESS(REVOKED)` entry for a session |
 | [`TokenTracker`](#tokentracker) | Checks liveness status locally |
 | [`Broker`](#broker) | Untrusted storage for V5 envelopes |
-| [`TrustRoot`](#trustroot) | Backed by TAAS, resolves `CN@hash(pk)` to Public Keys |
+| [`TrustRoot`](#trustroot) | Backed by TAAS, resolves identifiers to `TrustIdentity` |
 
 ---
 
@@ -76,7 +76,7 @@ public sealed interface TrustRoot permits TAASClientTrustRoot, LocalCachingTrust
 }
 ```
 
-V5 removes `KEY_EPOCH` and dynamically establishes trust via the TAAS. The `subject` string strictly follows the format `CN@hash(pk)`.
+V5 removes `KEY_EPOCH` and dynamically establishes trust via the TAAS. The `subject` string resolves to a `TrustIdentity` containing the key, algorithm, and `isRoot` flag.
 
 ---
 
@@ -114,7 +114,7 @@ Veridot V5 standardizes error formats using `V5xxx` prefixes.
 | `V5005` | Trailing bytes detected |
 | `V5007` | Invalid TLV structure |
 | `V5101` | TAAS Attestation Failure |
-| `V5102` | Invalid Subject Format `CN@hash(pk)` expected |
+| `V5102` | Invalid Subject Format for TrustIdentity |
 
 ```java
 public class VeridotException extends RuntimeException {

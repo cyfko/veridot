@@ -20,8 +20,8 @@ An operational pattern highly recommended for ephemeral workloads (like Kubernet
 ### Attestor SPI
 The Service Provider Interface used by instances to generate a hardware or environment-level proof of their identity. Implementations include `K8sAttestor` for Kubernetes Service Accounts, `GcpAttestor` for Google Cloud, and `NoneAttestor` strictly for local testing.
 
-### `CN@hash(pk)`
-The canonical identity format in V5. It combines a Common Name (CN) identifying the service (e.g., `shipping-svc`) with the first 32 bytes of the Base64Url-encoded SHA-256 hash of its public key. Example: `shipping-svc@aB3x9...`
+### `TrustIdentity`
+The canonical identity format in V5 returned by the `TrustRoot`. It contains the instance's public key, the cryptographic algorithm, and a critical `isRoot` flag used to bypass capability checks for trust anchors.
 
 ### Distribution Modes
 How Veridot delivers tokens to consumers:

@@ -26,7 +26,7 @@ graph TB
 
     subgraph "TAAS Cluster (Raft Consensus)"
         L["Node 1<br/><b>LEADER</b>"]
-        A["Pluggable Attestor<br/>(SPIFFE/TPM)"]
+        A["Pluggable Attestor<br/>(TPM / K8s / GCP)"]
         F1["Node 2<br/>FOLLOWER"]
         F2["Node 3<br/>FOLLOWER"]
         L -.->|"1. Verify Proof"| A
@@ -90,8 +90,8 @@ A["Instance"] -->|"POST TrustEntry + Proof"| B["TAAS Leader"]
     end
 
     subgraph "2. Consensus"
-        B -->|"Verify Proof"| Att["Pluggable Attestor"]
-        Att -->|"On Success, Write"| C["Raft Log"]
+        B -->|"Verify Proof"| Att["Pluggable Attestor (TpmQuoteAttestor, etc.)"]
+        Att -->|"On Success, Write"| C["Raft Log (TaasRocksDbStore)"]
         C -->|"AppendEntries"| D["Follower"]
         D -->|"ACK"| C
     end

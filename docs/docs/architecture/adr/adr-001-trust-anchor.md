@@ -6,7 +6,7 @@ description: Decision to use Trust Authority and Attestation Service (TAAS) for 
 # ADR 001: TAAS as Trust Anchor
 
 ## Context
-Veridot operates in a broker-untrusted environment. Verifiers need a reliable way to resolve the long-term identity (`issuer`) to a public key to verify signatures without sharing secrets. Cloud KMS systems violate the "Single Key Per Instance" and offline-verification requirements.
+Veridot operates in a broker-untrusted environment. Verifiers need a reliable way to resolve the long-term identity (`issuer`) to a public key to verify signatures without sharing secrets. While `DelegatedTrustRoot` permits KMS delegation, relying entirely on Cloud KMS systems for ephemeral instances violates the "Single Key Per Instance" and offline-verification requirements for the general case.
 
 ## Decision
 We introduce the **Trust Authority & Attestation Service (TAAS)**. Instances generate their own keys and register their public keys at TAAS by providing a verifiable attestation proof (e.g., TPM quote). TAAS replicates these entries via Raft consensus. Verifiers cache these keys locally (CachingTrustRoot).

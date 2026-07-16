@@ -46,7 +46,7 @@ An identity directly and successfully resolvable in the `TrustRoot` with `isRoot
 - **Treated as having delegation depth 0**
 
 ### Trust Bootstrap
-In a new deployment, the TAAS cluster is initialized with a bootstrap keypair (the root trust anchor). This key publishes the initial `CAPABILITY` entries authorizing service classes (e.g., using subject pattern `orders-service@*`).
+In a new deployment, the TAAS cluster is initialized with a bootstrap keypair (the root trust anchor). This key (via the `TaasBootstrapService`) publishes the initial `CAPABILITY` entries authorizing service classes (e.g., using subject pattern `orders-service@*`). The `DelegatedTrustRoot` also allows delegating signature verification to an external KMS without compromising the core architecture.
 
 ## Capability Delegation
 

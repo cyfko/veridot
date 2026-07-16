@@ -22,11 +22,12 @@ To register, the instance must provide an **attestation proof**. This is a crypt
 - A Kubernetes Service Account (KSA) signed by the cluster OIDC provider
 - An AWS Nitro Enclave attestation document
 
-## Identity as `CN@hash(pk)`
+## Identity as `TrustIdentity`
 
-When the TAAS verifies the attestation, it records the public key and assigns the instance a globally unique identifier formatted as `CN@hash(pk)`.
-- `CN`: The common name (e.g., `order-service`) validated from the proof.
-- `hash(pk)`: The hash of the instance's public key.
+When the TAAS verifies the attestation, it records the public key and assigns the instance a globally unique identifier returned as a `TrustIdentity`.
+- `key`: The public key of the instance validated from the proof.
+- `algorithm`: The signature algorithm (e.g., Ed25519).
+- `isRoot`: A flag indicating if this identity is a Trust Anchor (which bypasses CAPABILITY checks).
 
 ```mermaid
 sequenceDiagram
@@ -35,7 +36,7 @@ sequenceDiagram
     
     Instance->>TAAS Cluster (Raft): Register [PubKey + TPM Attestation]
     TAAS Cluster (Raft)->>TAAS Cluster (Raft): Verify TPM proof
-    TAAS Cluster (Raft)-->>Instance: Accepted: Identity CN@hash(pk)
+    TAAS Cluster (Raft)-->>Instance: Accepted: Identity TrustIdentity
 ```
 
 By removing the legacy "Key Epoch" concept from older versions, V5 vastly simplifies trust resolution. Every key is ephemeral, bound strictly to its instance lifecycle, and cryptographically anchored by the TAAS.

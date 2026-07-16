@@ -34,12 +34,12 @@ Veridot V5 supports the following signature algorithms:
 - `0x06` RSA_PSS_SHA512 (Supported)
 - `0x07` ML_DSA_65 (Supported - Post-Quantum)
 
-The protocol natively accommodates ML-DSA-65 (NIST FIPS 204) for post-quantum security in `NATIVE` mode. 
+The protocol natively accommodates ML-DSA-65 (NIST FIPS 204) for post-quantum security in `NATIVE` and `PRIVATE` modes. 
 *Note: ML_DSA_65 MUST NOT be used in `DIRECT` (JWT) mode due to lack of standardized JWT headers.*
 
 ## Single Key Per Instance
 
-In cloud-native environments, it is recommended that an instance generates exactly one asymmetric keypair during its lifetime (Single Key Per Instance). While V5 supports explicit Key Rotation via TAAS for long-lived systems, the SKPI pattern structurally bounds the compromise radius: compromising one instance's key compromises exactly that instance.
+In cloud-native environments, it is required that an instance generates exactly one asymmetric keypair during its lifetime (Single Key Per Instance). This SKPI pattern structurally bounds the compromise radius: compromising one instance's key compromises exactly that instance, which is resolved by instance replacement instead of key rotation.
 
 ## Envelope Signing Scope
 
